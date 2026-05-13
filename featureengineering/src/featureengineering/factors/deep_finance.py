@@ -270,6 +270,7 @@ def factor_pledge_ratio(context: FactorContext):
     ps = context.repo.load_financial_panel(
         "pledge_stat.parquet",
         value_cols=["pledge_ratio"],
+        date_col="end_date",
     )
     return cross_sectional_rank(-ps["pledge_ratio"])
 

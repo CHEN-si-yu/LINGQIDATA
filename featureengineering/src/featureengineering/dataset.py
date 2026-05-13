@@ -86,6 +86,7 @@ def _build_daily_financial(
     calendar: pd.DataFrame,
     value_cols: list[str],
     on_progress: Callable[[str, int, int], None] | None = None,
+    date_col: str = "ann_date",
 ) -> pd.DataFrame:
     """Convert report-frequency financial data into a daily-forward-filled panel.
 
@@ -100,13 +101,15 @@ def _build_daily_financial(
         Columns to forward-fill.
     on_progress : callable or None
         Called as on_progress(stage, current, total) for sub-progress reporting.
+    date_col : str
+        Name of the date column to use as ffill anchor (default: ann_date).
     """
     def _report(stage, current, total):
         if on_progress:
             on_progress(stage, current, total)
 
     df = df.copy()
-    df["ann_date"] = pd.to_datetime(df["ann_date"], errors="coerce")
+    df["ann_date"] = pd.to_datetime(df[date_col], errors="coerce")
     df["stock_code"] = df["stock_code"].apply(_pad_code)
     calendar_dates = pd.to_datetime(calendar["date"]).sort_values()
 
@@ -190,11 +193,23 @@ class DataRepository:
     # ── report-frequency financial loading ────────────────────────────
 
     def load_financial_panel(
-        self, relative_path: str, value_cols: list[str] | None = None
+        self, relative_path: str, value_cols: list[str] | None = None,
+        date_col: str = "ann_date",
     ) -> pd.DataFrame:
-        """Load a report-frequency financial table and forward-fill to daily panel."""
+        """Load a report-frequency financial table and forward-fill to daily panel.
+
+        Parameters
+        ----------
+        relative_path : str
+            Path to the parquet file relative to source_root.
+        value_cols : list[str] or None
+            Columns to forward-fill. If None, auto-detect all value columns.
+        date_col : str
+            Date column to use as ffill anchor (default: ann_date).
+            Use 'end_date' for data like pledge_stat.parquet.
+        """
         cols_tag = "" if value_cols is None else f"_{'_'.join(sorted(value_cols))}"
-        cache_key = f"__financial__{relative_path}{cols_tag}"
+        cache_key = f"__financial__{relative_path}{cols_tag}_{date_col}"
         if cache_key not in self._cache:
             raw = self._read_parquet(self.paths.source_root / relative_path)
             calendar = self._read_parquet(self.paths.source_root / "calendar.parquet")
@@ -204,7 +219,8 @@ class DataRepository:
                 value_cols = [c for c in raw.columns if c not in exclude]
             self._cache[cache_key] = self._filter_by_allowed(
                 _build_daily_financial(raw, calendar, value_cols,
-                                       on_progress=self.on_progress)
+                                       on_progress=self.on_progress,
+                                       date_col=date_col)
             )
         return self._cache[cache_key]
 

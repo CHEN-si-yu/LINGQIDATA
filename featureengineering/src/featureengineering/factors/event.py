@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
