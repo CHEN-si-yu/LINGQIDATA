@@ -1,0 +1,48 @@
+# API keys and secrets
+APIKey.txt
+
+# Claude Code local settings
+.claude/
+
+# Data files (large parquet/feather)
+data/*.parquet
+data/*.fea
+data/cyq_chips/
+data/targets/
+data/factors/
+data/manifests/
+data/factor_timing.json
+
+# Generated factor outputs
+featureengineering/data/factors/
+featureengineering/data/manifests/
+featureengineering/data/targets/
+featureengineering/data/factor_timing.json
+featureengineering/data/watch.ipynb
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup / temp
+*.bak
+*.tmp
+*.swp
+*~
