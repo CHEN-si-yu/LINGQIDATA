@@ -199,45 +199,6 @@ def factor_financing_dependency(context: FactorContext):
     return cross_sectional_rank(-ratio)
 
 
-# ── FS composite ─────────────────────────────────────────────────────────
-
-@register_factor(
-    name="financial_health_composite",
-    description="财务健康综合因子，低商誉+低存货+低应收+高FCF收益率的等权平均截面排名。",
-    category="financial",
-    thesis="多张报表综合评分可从多个维度交叉验证企业财务健康度。",
-    dependencies=("balancesheet.parquet", "cashflow.parquet", "finance.parquet", "calendar.parquet"),
-)
-def factor_financial_health_composite(context: FactorContext):
-    bs = context.repo.load_financial_panel(
-        "balancesheet.parquet",
-        value_cols=["goodwill", "inventories", "accounts_receiv", "total_assets", "total_hldr_eqy_exc_min_int"],
-    )
-    cf = context.repo.load_financial_panel(
-        "cashflow.parquet",
-        value_cols=["free_cashflow"],
-    )
-    finance = context.load("finance.parquet")
-
-    goodwill_r = -bs["goodwill"] / bs["total_hldr_eqy_exc_min_int"].replace(0, np.nan)
-    inv_r = -bs["inventories"] / bs["total_assets"].replace(0, np.nan)
-    ar_r = -bs["accounts_receiv"] / bs["total_assets"].replace(0, np.nan)
-
-    fcf = cf["free_cashflow"]
-    mkt_cap = finance["total_mv"]
-    common = fcf.index.intersection(mkt_cap.index)
-    fcf_r = fcf.loc[common] / mkt_cap.loc[common].replace(0, np.nan)
-    fcf_r = fcf_r.reindex(fcf.index)
-
-    rank_gw = goodwill_r.groupby(level="Date").rank(pct=True)
-    rank_inv = inv_r.groupby(level="Date").rank(pct=True)
-    rank_ar = ar_r.groupby(level="Date").rank(pct=True)
-    rank_fcf = fcf_r.groupby(level="Date").rank(pct=True)
-
-    composite = (rank_gw + rank_inv + rank_ar + rank_fcf) / 4.0
-    return composite.rename("financial_health_composite")
-
-
 # ── Shareholder concentration ───────────────────────────────────────────
 
 @register_factor(
@@ -311,54 +272,6 @@ def factor_cash_conversion_cycle(context: FactorContext):
     ccc = inv_days.loc[common] + ar_days.loc[common] - apturn_days.loc[common]
     ccc = ccc.clip(-1000, 1000)
     return cross_sectional_rank(-ccc)
-
-
-# ── Capital expenditure ratio ─────────────────────────────────────────────
-
-@register_factor(
-    name="capital_expenditure_ratio",
-    description="资本支出/折旧摊销因子，反映企业扩张意愿截面排名。",
-    category="financial",
-    thesis="capex/depreciation > 1 意味着企业在扩大再生产、有扩张意愿，长期高比率代表成长性投入。",
-    dependencies=("cashflow.parquet", "calendar.parquet"),
-)
-def factor_capital_expenditure_ratio(context: FactorContext):
-    cf = context.repo.load_financial_panel(
-        "cashflow.parquet",
-        value_cols=["c_pay_acq_const_fiolta", "depr_fa_coga_dpba",
-                     "amort_intang_assets", "lt_amort_deferred_exp"],
-    )
-    capex = cf["c_pay_acq_const_fiolta"]
-    depr = (
-        cf["depr_fa_coga_dpba"].fillna(0)
-        + cf["amort_intang_assets"].fillna(0)
-        + cf["lt_amort_deferred_exp"].fillna(0)
-    )
-    ratio = capex / depr.replace(0, np.nan)
-    ratio = ratio.clip(0, 10)
-    return cross_sectional_rank(ratio)
-
-
-# ── R&D YoY ───────────────────────────────────────────────────────────────
-
-@register_factor(
-    name="rd_yoy",
-    description="研发费用同比增速因子截面排名。",
-    category="financial",
-    thesis="研发费用持续增长反映企业对创新的持续投入，高研发增速是未来竞争力的先行指标。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_rd_yoy(context: FactorContext):
-    fin = context.repo.load_financial_panel(
-        "financial_indicator.parquet",
-        value_cols=["rd_exp"],
-    )
-    rd = fin["rd_exp"]
-    # Compare with 4 quarters ago (~252 trading days for YoY, but quarterly data
-    # updates every ~63 days, so look back 4 report cycles)
-    yoy = rd.groupby(level="Code").transform(lambda s: s.pct_change(252))
-    yoy = yoy.clip(-3, 3)
-    return cross_sectional_rank(yoy)
 
 
 # ── Gross margin stability ────────────────────────────────────────────────

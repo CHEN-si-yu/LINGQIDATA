@@ -41,6 +41,17 @@ build/
 .DS_Store
 Thumbs.db
 
+# Model outputs (generated)
+Model/*/logs/
+Model/*/model_res/
+Model/*/model_test/
+Model/*/model_train/
+*.pkl
+*.pth
+
+# Training data (generated)
+trainingdata/
+
 # Backup / temp
 *.bak
 *.tmp

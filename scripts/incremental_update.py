@@ -27,6 +27,7 @@ Strategy per dataset type:
 
 import argparse
 import inspect
+import json
 import sys
 import os
 import threading
@@ -49,6 +50,88 @@ from config import (
 OVERLAP_DAYS = 3  # days of overlap to catch data corrections
 DEFAULT_WORKERS = 6
 TODAY = date.today().strftime("%Y-%m-%d")
+
+# ── Incremental state tracking ──────────────────────────────────────────
+STATE_FILE = Path(DATA_DIR) / ".incr_state.json"
+_state_lock = threading.Lock()  # guards concurrent read-modify-write on state
+
+
+def _load_state():
+    """Load incremental update state tracking from disk."""
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_state(state):
+    """Save incremental update state tracking (caller must hold _state_lock)."""
+    tmp = STATE_FILE.with_suffix(f".state.{os.getpid()}.tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2, ensure_ascii=False)
+    # os.replace is atomic on Unix and won't fail if tmp was already renamed
+    os.replace(tmp, STATE_FILE)
+
+
+def _get_effective_overlap(name, base_overlap):
+    """Return extended overlap if the last fetch was stale (server lagging).
+
+    When a dataset was marked *pending* (server didn't reach the expected
+    date last run), widen the overlap window so the stale range is
+    re-fetched and replaced via the existing merge + dedup logic.
+    """
+    state = _load_state()
+    entry = state.get(name, {})
+    if entry.get("pending") and entry.get("last_fetch_max"):
+        try:
+            last_actual = datetime.strptime(entry["last_fetch_max"], "%Y-%m-%d")
+            today_dt = datetime.strptime(TODAY, "%Y-%m-%d")
+            gap = (today_dt - last_actual).days
+            if gap > base_overlap:
+                return gap + base_overlap
+        except Exception:
+            pass
+    return base_overlap
+
+
+def _record_state(name, fetch_max):
+    """Record the result of an incremental fetch for a dataset.
+
+    *fetch_max* is the actual max date in the data after the fetch
+    (None if the fetch failed or no data was returned).
+
+    A 1-day grace period is applied: daily data normally arrives T+1,
+    so a max_date of yesterday (relative to TODAY) is not considered
+    stale / pending.
+    """
+    with _state_lock:
+        state = _load_state()
+        entry = state.get(name, {})
+        entry["last_run"] = TODAY
+
+        if fetch_max:
+            entry["last_fetch_max"] = fetch_max
+            # Allow 1-day grace: daily data at T-1 is up-to-date
+            try:
+                max_dt = datetime.strptime(fetch_max, "%Y-%m-%d")
+                today_dt = datetime.strptime(TODAY, "%Y-%m-%d")
+                pending = max_dt < today_dt - timedelta(days=1)
+                entry["pending"] = pending
+                if pending:
+                    if not entry.get("pending_since"):
+                        entry["pending_since"] = TODAY
+                else:
+                    entry.pop("pending_since", None)
+            except Exception:
+                pass
+        else:
+            entry["pending"] = entry.get("pending", False)
+
+        state[name] = entry
+        _save_state(state)
 
 # ── Utility: auto-detect date column ──────────────────────────────────────
 _DATE_CANDIDATES = ["trade_date", "end_date", "date", "Date", "f_ann_date",
@@ -279,7 +362,7 @@ def merge_and_save(existing_path, new_df, dedup_keys, sort_cols,
 
 
 # ── Per-stock helpers ─────────────────────────────────────────────────────
-_EXCLUDE_PREFIXES = ("688", "300", "301", "8", "4")
+_EXCLUDE_PREFIXES = ("688", "300", "301", "92", "8", "4")
 _ST_PATTERN = r"ST|PT|\*ST"
 
 
@@ -301,44 +384,6 @@ def _filter_main_board_stocks():
 # Each stock produces ~50-200 rows/day; for a 5-day window with 50 stocks
 # that's ~12,500-50,000 rows, well under the 100K pagination limit.
 _PER_STOCK_BATCH_SIZE = 50
-
-
-def _update_per_stock_single(stock_code, out_dir, endpoint, api_key,
-                               start_date, end_date, date_col,
-                               extra_payload=None):
-    """Fetch and merge for a SINGLE stock (used for new/full-history stocks)."""
-    out_file = Path(out_dir) / f"{stock_code}.parquet"
-    existing = _safe_read_parquet(out_file) if out_file.exists() else pd.DataFrame()
-    old_rows = len(existing)
-
-    try:
-        rows = _api_range(endpoint, start_date, end_date, api_key,
-                          extra_payload=extra_payload)
-    except Exception as e:
-        log_print(f"  [per-stock] {stock_code} API FAILED: {e}")
-        return stock_code, old_rows, old_rows, 0
-
-    if not rows:
-        if existing.empty:
-            pd.DataFrame(columns=[date_col, "stock_code"]).to_parquet(
-                out_file, index=False
-            )
-        return stock_code, old_rows, old_rows, 0
-
-    new_chunk = pd.DataFrame(rows)
-    if existing.empty:
-        merged = new_chunk
-    else:
-        merged = pd.concat([existing, new_chunk], ignore_index=True)
-        merged = merged.drop_duplicates(keep="last")
-
-    if date_col and date_col in merged.columns:
-        merged = merged.sort_values(date_col).reset_index(drop=True)
-
-    tmp = out_file.with_suffix(".parquet.tmp")
-    merged.to_parquet(tmp, index=False)
-    tmp.replace(out_file)
-    return stock_code, old_rows, len(merged), len(merged) - old_rows
 
 
 def _merge_per_stock_batch(batch_results, out_dir, date_col):
@@ -377,13 +422,15 @@ def _merge_per_stock_batch(batch_results, out_dir, date_col):
 
 
 def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
-                               end_date, date_col, workers, dry_run,
-                               extra_payload=None):
-    """Update per-stock parquet files under data/<out_subdir>/.
+                             end_date, date_col, workers, dry_run,
+                             extra_payload=None):
+    """Update per-stock parquet files using multi-stock batched API calls.
 
-    Incremental stocks are batched (50 stocks per API call) for efficiency.
-    New stocks (never fetched) are processed individually since they need
-    full history and have a large date range.
+    Both new stocks (full history) and incremental stocks (recent window)
+    are batched into groups of _PER_STOCK_BATCH_SIZE, leveraging the API's
+    ability to accept multiple stock_codes in a single request.  This keeps
+    daily updates fast: ~3000 stocks need only ~60 API calls instead of
+    one per stock.
     """
     stocks = _filter_main_board_stocks()
     if not stocks:
@@ -394,22 +441,23 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
     out_dir.mkdir(exist_ok=True)
     api_key = load_api_key()
 
-    # Split stocks into "new" (full fetch) and "incremental" (batchable)
-    new_stocks = []       # (code, start_date) — full history
-    incremental = []      # (code, inc_start) — recent window only
+    # Categorise stocks
+    new_batch = []          # (code, full_start_date)  — never fetched
+    incr_batch = []         # (code, inc_start_date)   — needs catch-up
     uptodate = 0
 
     for code in stocks:
         f = out_dir / f"{code}.parquet"
         if not f.exists():
-            new_stocks.append((code, start_date))
+            new_batch.append((code, start_date))
             continue
         dc, max_s = get_max_date(f)
         if max_s is None:
-            new_stocks.append((code, start_date))
+            new_batch.append((code, start_date))
             continue
         max_dt = datetime.strptime(max_s, "%Y-%m-%d")
-        inc_start_dt = max_dt - timedelta(days=OVERLAP_DAYS)
+        effective_overlap = _get_effective_overlap(name, OVERLAP_DAYS)
+        inc_start_dt = max_dt - timedelta(days=effective_overlap)
         default_dt = datetime.strptime(start_date, "%Y-%m-%d")
         if inc_start_dt < default_dt:
             inc_start_dt = default_dt
@@ -418,98 +466,56 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
         if max_s >= end_date or max_s >= TODAY:
             uptodate += 1
             continue
-        incremental.append((code, inc_start))
+        incr_batch.append((code, inc_start))
 
     log_print(f"[{name}] {len(stocks)} stocks | "
-              f"{len(incremental)} incremental | "
-              f"{len(new_stocks)} new | "
+              f"{len(incr_batch)} incremental | "
+              f"{len(new_batch)} new | "
               f"{uptodate} up-to-date")
 
-    if not new_stocks and not incremental:
+    if not new_batch and not incr_batch:
         log_print(f"[{name}] All stocks up to date")
         return
 
     if dry_run:
-        log_print(f"[{name}] DRY-RUN: would fetch {len(new_stocks)} new + "
-                  f"{len(incremental)} incremental stocks")
-        if incremental:
-            sample = incremental[:3]
+        log_print(f"[{name}] DRY-RUN: would fetch {len(new_batch)} new + "
+                  f"{len(incr_batch)} incremental stocks")
+        if incr_batch:
+            sample = incr_batch[:3]
             for code, s in sample:
                 log_print(f"  incr: {code}: {s} ~ {end_date}")
-            log_print(f"  ... {len(incremental)} incremental stocks in "
-                      f"{len(incremental) // _PER_STOCK_BATCH_SIZE + 1} batches")
-        if new_stocks:
-            sample = new_stocks[:3]
+            log_print(f"  ... {len(incr_batch)} stocks in "
+                      f"{(len(incr_batch) + _PER_STOCK_BATCH_SIZE - 1) // _PER_STOCK_BATCH_SIZE} batches")
+        if new_batch:
+            sample = new_batch[:3]
             for code, s in sample:
                 log_print(f"  new:  {code}: {s} ~ {end_date}")
-            log_print(f"  ... {len(new_stocks)} new stocks (individual)")
+            log_print(f"  ... {len(new_batch)} stocks in "
+                      f"{(len(new_batch) + _PER_STOCK_BATCH_SIZE - 1) // _PER_STOCK_BATCH_SIZE} batches")
         return
 
     limiter = rate_limiter()
-    completed = 0
     total_added = 0
+    processed = 0
     lock = threading.Lock()
 
-    # ── Phase 1: New stocks (full history, one by one) ──
-    if new_stocks:
-        log_print(f"[{name}] Phase 1: {len(new_stocks)} new stocks (full history)")
-        if workers > 1:
-            with ThreadPoolExecutor(max_workers=min(workers, len(new_stocks))) as pool:
-                futures = {}
-                for code, s in new_stocks:
-                    ep = (extra_payload.copy() if extra_payload else {})
-                    ep["stock_code"] = [code]
-                    fut = pool.submit(
-                        _update_per_stock_single,
-                        code, out_dir, endpoint, api_key, s, end_date,
-                        date_col, ep
-                    )
-                    futures[fut] = code
-                for fut in as_completed(futures):
-                    code = futures[fut]
-                    try:
-                        sc, old, new, added = fut.result()
-                        with lock:
-                            completed += 1
-                            total_added += added
-                        log_print(f"[{name}] [new {completed}/{len(new_stocks)}] "
-                                  f"{sc} old={old} new={new} +{added}")
-                    except Exception as e:
-                        with lock:
-                            completed += 1
-                        log_print(f"[{name}] [new] {code} FAILED: {e}")
-        else:
-            for i, (code, s) in enumerate(new_stocks):
-                ep = (extra_payload.copy() if extra_payload else {})
-                ep["stock_code"] = [code]
-                try:
-                    sc, old, new, added = _update_per_stock_single(
-                        code, out_dir, endpoint, api_key, s, end_date,
-                        date_col, ep
-                    )
-                    completed += 1
-                    total_added += added
-                    log_print(f"[{name}] [new {completed}/{len(new_stocks)}] "
-                              f"{sc} old={old} new={new} +{added}")
-                except Exception as e:
-                    completed += 1
-                    log_print(f"[{name}] [new] {code} FAILED: {e}")
+    def _process_batches(stock_list, phase_label):
+        """Fetch and merge a list of (code, start) tuples in multi-stock batches."""
+        nonlocal processed, total_added
 
-    # ── Phase 2: Incremental stocks (batched) ──
-    if incremental:
-        # Group into batches, using the minimum start_date per batch
         batches = []
-        for i in range(0, len(incremental), _PER_STOCK_BATCH_SIZE):
-            batch = incremental[i:i + _PER_STOCK_BATCH_SIZE]
+        for i in range(0, len(stock_list), _PER_STOCK_BATCH_SIZE):
+            batch = stock_list[i:i + _PER_STOCK_BATCH_SIZE]
             min_start = min(s for _, s in batch)
             batches.append(([c for c, _ in batch], min_start))
 
-        log_print(f"[{name}] Phase 2: {len(incremental)} stocks in "
-                  f"{len(batches)} batches (batch_size={_PER_STOCK_BATCH_SIZE})")
+        n_batches = len(batches)
+        log_print(f"[{name}] Phase {phase_label}: {len(stock_list)} stocks in "
+                  f"{n_batches} batches (batch_size={_PER_STOCK_BATCH_SIZE})")
 
-        inc_completed = 0
-        if workers > 1:
-            with ThreadPoolExecutor(max_workers=min(workers, len(batches))) as pool:
+        completed = 0
+        if workers > 1 and n_batches > 1:
+            with ThreadPoolExecutor(max_workers=min(workers, n_batches)) as pool:
                 futures = {}
                 for codes, batch_start in batches:
                     ep = (extra_payload.copy() if extra_payload else {})
@@ -526,18 +532,18 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                         rows = fut.result()
                         results = _merge_per_stock_batch(rows, out_dir, date_col)
                         with lock:
-                            inc_completed += 1
+                            completed += 1
                             batch_added = sum(r[3] for r in results)
                             total_added += batch_added
-                            completed += len(results)
-                        log_print(f"[{name}] [batch {inc_completed}/{len(batches)}] "
+                            processed += len(results)
+                        log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                                   f"{len(codes)} stocks, {len(rows)} rows, "
                                   f"+{batch_added} new | "
                                   f"tokens={limiter.stats['tokens_available']}")
                     except Exception as e:
                         with lock:
-                            inc_completed += 1
-                        log_print(f"[{name}] [batch {inc_completed}/{len(batches)}] "
+                            completed += 1
+                        log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                                   f"{len(codes)} stocks FAILED: {e}")
         else:
             for bi, (codes, batch_start) in enumerate(batches):
@@ -547,21 +553,39 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                     rows = _api_range(endpoint, batch_start, end_date,
                                       api_key, ep, 10000)
                     results = _merge_per_stock_batch(rows, out_dir, date_col)
-                    inc_completed += 1
+                    completed += 1
                     batch_added = sum(r[3] for r in results)
                     total_added += batch_added
-                    completed += len(results)
-                    log_print(f"[{name}] [batch {inc_completed}/{len(batches)}] "
+                    processed += len(results)
+                    log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                               f"{len(codes)} stocks, {len(rows)} rows, "
                               f"+{batch_added} new | "
                               f"tokens={limiter.stats['tokens_available']}")
                 except Exception as e:
-                    inc_completed += 1
-                    log_print(f"[{name}] [batch {inc_completed}/{len(batches)}] "
+                    completed += 1
+                    log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                               f"{len(codes)} stocks FAILED: {e}")
 
-    log_print(f"[{name}] Done: {completed} stocks processed, "
+    if new_batch:
+        _process_batches(new_batch, "new")
+    if incr_batch:
+        _process_batches(incr_batch, "incr")
+
+    log_print(f"[{name}] Done: {processed} stocks processed, "
               f"{total_added} new rows total")
+
+    # Record state — sample a few stock files to detect the actual max date
+    if not dry_run and (new_batch or incr_batch):
+        sample_max = None
+        for f in sorted(out_dir.glob("*.parquet"))[:200]:
+            _, m = get_max_date(f)
+            if m and (sample_max is None or m > sample_max):
+                sample_max = m
+        _record_state(name, sample_max)
+    elif dry_run:
+        pass  # no state change on dry run
+    else:
+        _record_state(name, TODAY)  # all up to date
 
     # Update .done marker
     done_file = out_dir / ".done"
@@ -593,9 +617,10 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
                   f"full fetch needed, run scripts/main.py --force")
         return {"name": name, "status": "skip", "reason": "no date column"}
 
-    # Compute incremental range
+    # Compute incremental range (extend overlap if last fetch was stale)
     max_dt = datetime.strptime(max_str, "%Y-%m-%d")
-    inc_start_dt = max_dt - timedelta(days=OVERLAP_DAYS)
+    effective_overlap = _get_effective_overlap(name, OVERLAP_DAYS)
+    inc_start_dt = max_dt - timedelta(days=effective_overlap)
     default_dt = datetime.strptime(default_start, "%Y-%m-%d")
     if inc_start_dt < default_dt:
         inc_start_dt = default_dt
@@ -605,6 +630,7 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
     end_dt = datetime.strptime(TODAY, "%Y-%m-%d")
     if max_dt >= end_dt:
         log_print(f"[{name}] Up to date (max={max_str})")
+        _record_state(name, max_str)
         return {"name": name, "status": "uptodate", "max_date": max_str}
 
     log_print(f"[{name}] Existing max date: {max_str} | "
@@ -630,6 +656,7 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
     except Exception as e:
         log_print(f"[{name}] Fetch FAILED: {e}")
         Path(tmp_output).unlink(missing_ok=True)
+        _record_state(name, None)  # fetch failed, mark pending
         return {"name": name, "status": "error", "error": str(e)}
 
     # Read from temp file (more reliable than return value)
@@ -641,10 +668,12 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
         pass  # use the returned DataFrame
     else:
         log_print(f"[{name}] No new data returned")
+        _record_state(name, max_str)  # server may be behind
         return {"name": name, "status": "uptodate", "max_date": max_str}
 
     if new_df is None or (hasattr(new_df, 'empty') and new_df.empty):
         log_print(f"[{name}] No new data returned")
+        _record_state(name, max_str)  # server may be behind
         return {"name": name, "status": "uptodate", "max_date": max_str}
 
     # Now merge: original file is intact, new_df has the incremental data
@@ -656,6 +685,9 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
     _, new_max = get_max_date(path)
     log_print(f"[{name}] Merge: {before} → {after} rows (+{added}) | "
               f"max_date: {max_str} → {new_max}")
+
+    # Record state for next run's overlap logic
+    _record_state(name, new_max)
 
     return {
         "name": name,
@@ -1121,16 +1153,35 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
         )
 
     if parallel and len(selected) > 1:
-        with ThreadPoolExecutor(max_workers=min(len(selected), 4)) as pool:
-            futures = {pool.submit(_process_one, d): d["name"] for d in selected}
-            for fut in as_completed(futures):
-                name = futures[fut]
+        # Process reference datasets (calendar, stock_list) FIRST to avoid
+        # race conditions: dragon_tiger, top_list, etc. read calendar.parquet
+        # to determine trading days, so calendar must be up-to-date before
+        # those datasets start fetching.
+        ref_datasets = [d for d in selected if d["type"] == "reference"]
+        other_datasets = [d for d in selected if d["type"] != "reference"]
+
+        if ref_datasets:
+            log_print(f"[incremental] Processing {len(ref_datasets)} reference "
+                      f"dataset(s) first: {[d['name'] for d in ref_datasets]}")
+            for d in ref_datasets:
                 try:
-                    r = fut.result()
+                    r = _process_one(d)
                     results.append(r)
                 except Exception as e:
-                    log_print(f"[{name}] UNEXPECTED ERROR: {e}")
-                    results.append({"name": name, "status": "error", "error": str(e)})
+                    log_print(f"[{d['name']}] UNEXPECTED ERROR: {e}")
+                    results.append({"name": d["name"], "status": "error", "error": str(e)})
+
+        if other_datasets:
+            with ThreadPoolExecutor(max_workers=min(len(other_datasets), 4)) as pool:
+                futures = {pool.submit(_process_one, d): d["name"] for d in other_datasets}
+                for fut in as_completed(futures):
+                    name = futures[fut]
+                    try:
+                        r = fut.result()
+                        results.append(r)
+                    except Exception as e:
+                        log_print(f"[{name}] UNEXPECTED ERROR: {e}")
+                        results.append({"name": name, "status": "error", "error": str(e)})
     else:
         for d in selected:
             try:
@@ -1179,6 +1230,17 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
     log_print(f"[incremental] Total API calls: {total_calls}")
     for ep, n in sorted(stats["endpoint_counts"].items()):
         log_print(f"  {ep}: {n}")
+
+    # Pending datasets (server lagging)
+    state = _load_state()
+    pending = {k: v for k, v in state.items() if v.get("pending")}
+    if pending:
+        log_print(f"\n[incremental] PENDING (server behind, "
+                  f"will re-fetch with extended overlap next run):")
+        for name, entry in sorted(pending.items()):
+            since = entry.get("pending_since", "?")
+            actual = entry.get("last_fetch_max", "?")
+            log_print(f"  [pending] {name:<28} last_data={actual}  since={since}")
 
     return results
 

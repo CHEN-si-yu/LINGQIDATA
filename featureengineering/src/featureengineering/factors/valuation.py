@@ -22,19 +22,6 @@ def factor_bp(context: FactorContext):
 
 
 @register_factor(
-    name="ep_ttm",
-    description="市盈率倒数(EP_TTM)因子，1/PE_TTM截面排名。",
-    category="valuation",
-    thesis="EP是经典价值因子，高EP（低PE）股票在A股截面中具有稳定的正向IC。",
-    dependencies=("finance.parquet",),
-)
-def factor_ep_ttm(context: FactorContext):
-    finance = context.load("finance.parquet")
-    ep = 1.0 / finance["pe_ttm"].replace(0, np.nan)
-    return cross_sectional_rank(ep)
-
-
-@register_factor(
     name="sp_ttm",
     description="市销率倒数(SP_TTM)因子，1/PS_TTM截面排名。",
     category="valuation",
@@ -177,27 +164,6 @@ def factor_pe_ttm_percentile(context: FactorContext):
     finance = context.load("finance.parquet")
     percentile = finance["pe_ttm_percentile"]
     return cross_sectional_rank(-percentile)
-
-
-# ── Composite value ─────────────────────────────────────────────────────
-
-@register_factor(
-    name="value_composite",
-    description="价值综合因子，BP+EP+SP三个价值因子的等权平均截面排名。",
-    category="valuation",
-    thesis="多维度价值因子综合可降低单一估值指标的噪声，提升因子稳健性。",
-    dependencies=("finance.parquet",),
-)
-def factor_value_composite(context: FactorContext):
-    finance = context.load("finance.parquet")
-    bp = 1.0 / finance["pb"].replace(0, np.nan)
-    ep = 1.0 / finance["pe_ttm"].replace(0, np.nan)
-    sp = 1.0 / finance["ps_ttm"].replace(0, np.nan)
-    rank_bp = bp.groupby(level="Date").rank(pct=True)
-    rank_ep = ep.groupby(level="Date").rank(pct=True)
-    rank_sp = sp.groupby(level="Date").rank(pct=True)
-    composite = (rank_bp + rank_ep + rank_sp) / 3.0
-    return composite.rename("value_composite")
 
 
 # ── Dividend composite ────────────────────────────────────────────────────

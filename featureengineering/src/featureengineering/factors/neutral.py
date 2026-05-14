@@ -42,22 +42,6 @@ def factor_bp_neutral(context: FactorContext):
     return cross_sectional_rank(neutral)
 
 
-# ── EP neutral ────────────────────────────────────────────────────────────
-
-@register_factor(
-    name="ep_ttm_neutral",
-    description="行业中性化盈利市值比因子，行业内截面排名后的EP_TTM。",
-    category="neutral",
-    thesis="EP因子在不同行业间天然水平差异大，行业中性化后可提取行业内相对盈利能力信号。",
-    dependencies=("finance.parquet", "stock_list.parquet"),
-)
-def factor_ep_ttm_neutral(context: FactorContext):
-    finance = context.load("finance.parquet")
-    ep = 1.0 / finance["pe_ttm"].replace(0, np.nan)
-    neutral = _industry_neutral_rank(ep, context)
-    return cross_sectional_rank(neutral)
-
-
 # ── Momentum neutral ──────────────────────────────────────────────────────
 
 @register_factor(
