@@ -8,6 +8,16 @@ APIKey.txt
 data/*.parquet
 data/*.fea
 data/cyq_chips/
+data/history_1min/
+data/history_5min/
+data/history_15min/
+data/history_30min/
+data/history_60min/
+data/min_adj_1min/
+data/min_adj_5min/
+data/min_adj_15min/
+data/min_adj_30min/
+data/min_adj_60min/
 data/targets/
 data/factors/
 data/manifests/

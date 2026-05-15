@@ -1,0 +1,36 @@
+[2026-05-15 15:29:07] [main] stock_list -> skip (output exists: /root/shared-nvme/lingqiData/data/stock_list.parquet)
+[2026-05-15 15:29:07] [main] calendar -> skip (output exists: /root/shared-nvme/lingqiData/data/calendar.parquet)
+[2026-05-15 15:29:07] [main] ths_sector_categories -> skip (output exists: /root/shared-nvme/lingqiData/data/ths_sector_categories.parquet)
+[2026-05-15 15:29:07] [main] ths_constituent_stocks -> skip (output exists: /root/shared-nvme/lingqiData/data/ths_constituent_stocks.parquet)
+[2026-05-15 15:29:07] [main] holder_number -> skip (output exists: /root/shared-nvme/lingqiData/data/holder_number.parquet)
+[2026-05-15 15:29:07] [main] pledge_stat -> skip (output exists: /root/shared-nvme/lingqiData/data/pledge_stat.parquet)
+[2026-05-15 15:29:07] [main] financial -> skip (output exists: /root/shared-nvme/lingqiData/data/financial_indicator.parquet)
+[2026-05-15 15:29:07] [main] income -> skip (output exists: /root/shared-nvme/lingqiData/data/income.parquet)
+[2026-05-15 15:29:07] [main] balancesheet -> skip (output exists: /root/shared-nvme/lingqiData/data/balancesheet.parquet)
+[2026-05-15 15:29:07] [main] cashflow -> skip (output exists: /root/shared-nvme/lingqiData/data/cashflow.parquet)
+[2026-05-15 15:29:07] [main] limit_list -> skip (output exists: /root/shared-nvme/lingqiData/data/limit_list.parquet)
+[2026-05-15 15:29:07] [main] limit_up -> skip (output exists: /root/shared-nvme/lingqiData/data/limit_up.parquet)
+[2026-05-15 15:29:07] [main] kline_monthly -> skip (output exists: /root/shared-nvme/lingqiData/data/kline_monthly.parquet)
+[2026-05-15 15:29:07] [main] kline_adj_monthly -> skip (output exists: /root/shared-nvme/lingqiData/data/kline_adj_monthly.parquet)
+[2026-05-15 15:29:07] [main] top_list -> skip (output exists: /root/shared-nvme/lingqiData/data/top_list.parquet)
+[2026-05-15 15:29:07] [main] dragon_tiger -> skip (output exists: /root/shared-nvme/lingqiData/data/dragon_tiger.parquet)
+[2026-05-15 15:29:07] [main] kline_weekly -> skip (output exists: /root/shared-nvme/lingqiData/data/kline_weekly.parquet)
+[2026-05-15 15:29:07] [main] kline_adj_weekly -> skip (output exists: /root/shared-nvme/lingqiData/data/kline_adj_weekly.parquet)
+[2026-05-15 15:29:07] [main] finance -> skip (output exists: /root/shared-nvme/lingqiData/data/finance.parquet)
+[2026-05-15 15:29:07] [main] daily -> skip (output exists: /root/shared-nvme/lingqiData/data/daily.parquet)
+[2026-05-15 15:29:07] [main] daily_adj -> skip (output exists: /root/shared-nvme/lingqiData/data/daily_adj.parquet)
+[2026-05-15 15:29:07] [main] main_fund_flow -> skip (output exists: /root/shared-nvme/lingqiData/data/main_fund_flow.parquet)
+[2026-05-15 15:29:07] [main] margin_detail -> skip (output exists: /root/shared-nvme/lingqiData/data/margin_detail.parquet)
+[2026-05-15 15:29:07] [main] ths_daily -> skip (output exists: /root/shared-nvme/lingqiData/data/ths_daily.parquet)
+[2026-05-15 15:29:07] [main] index_weight -> skip (output exists: /root/shared-nvme/lingqiData/data/index_weight.parquet)
+[2026-05-15 15:29:07] [main] cyq_chips -> skip (output exists: /root/shared-nvme/lingqiData/data/cyq_chips/.done)
+[2026-05-15 15:29:07] [main] start | rate_limit=280 req/min | parallel=False | workers=6 | tasks=['history', 'min_adj']
+[2026-05-15 15:29:07] [main] === history (2019-01-01 ~ 2026-05-15) ===
+[2026-05-15 15:29:07] [history_60min] 3310 stocks | level=60min | 2019-01-01 ~ 2026-05-15 | workers=6
+[2026-05-15 15:29:08] [history_60min] 3310 stocks to fetch
+[2026-05-15 15:29:54]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-15 15:29:54]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-15 15:29:54]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-15 15:29:54]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-15 15:29:54]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-15 15:29:55]   [retry 1/3] API Error: code=429, msg=请求过于频繁

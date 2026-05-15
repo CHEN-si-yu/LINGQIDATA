@@ -27,6 +27,10 @@ from fetch_kline import fetch_kline_adj_weekly, fetch_kline_adj_monthly
 from fetch_holder_number import fetch_holder_number
 from fetch_pledge_stat import fetch_pledge_stat
 from fetch_margin_detail import fetch_margin_detail
+from fetch_ths_daily import fetch_ths_daily
+from fetch_ths_sector_categories import fetch_ths_sector_categories
+from fetch_ths_constituent_stocks import fetch_ths_constituent_stocks
+from fetch_index_weight import fetch_index_weight
 
 # ── Task registry ──────────────────────────────────────────────────
 # Comment out any line to skip that endpoint.
@@ -45,6 +49,16 @@ TASKS = [
         "fn": fetch_calendar,
         "start": "2020-01-01",
         "output": f"{DATA_DIR}/calendar.parquet",
+    },
+    {
+        "name": "ths_sector_categories",
+        "fn": fetch_ths_sector_categories,
+        "output": f"{DATA_DIR}/ths_sector_categories.parquet",
+    },
+    {
+        "name": "ths_constituent_stocks",
+        "fn": fetch_ths_constituent_stocks,
+        "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
     },
     # ════════════════════ 分钟级 ════════════════════
     {
@@ -163,6 +177,18 @@ TASKS = [
         "start": "2019-01-01",
         "output": f"{DATA_DIR}/margin_detail.parquet",
     },
+    {
+        "name": "ths_daily",
+        "fn": fetch_ths_daily,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/ths_daily.parquet",
+    },
+    {
+        "name": "index_weight",
+        "fn": fetch_index_weight,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/index_weight.parquet",
+    },
     # ════════════════════ 天级 (per-stock, 散文件落盘) ════════════════════
     {
         "name": "cyq_chips",
@@ -170,18 +196,18 @@ TASKS = [
         "start": "2019-01-01",
         "output": f"{DATA_DIR}/cyq_chips/.done",
     },
-    # {
-    #     "name": "history",
-    #     "fn": fetch_history,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/history/.done",
-    # },
-    # {
-    #     "name": "min_adj",
-    #     "fn": fetch_min_adj,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/min_adj/.done",
-    # },
+    {
+        "name": "history",
+        "fn": fetch_history,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/history/.done",
+    },
+    {
+        "name": "min_adj",
+        "fn": fetch_min_adj,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/min_adj/.done",
+    },
 ]
 
 
@@ -239,7 +265,8 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
                 for t in active:
                     if t["name"] == "calendar":
                         fut = pool.submit(t["fn"], t["start"], end_date)
-                    elif t["name"] == "stock_list":
+                    elif t["name"] in ("stock_list", "ths_sector_categories",
+                                       "ths_constituent_stocks"):
                         fut = pool.submit(t["fn"])
                     else:
                         fut = pool.submit(
@@ -260,7 +287,8 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
                 log_print(f"[main] === {t['name']}{date_info} ===")
                 if t["name"] == "calendar":
                     t["fn"](t["start"], end_date)
-                elif t["name"] == "stock_list":
+                elif t["name"] in ("stock_list", "ths_sector_categories",
+                                   "ths_constituent_stocks"):
                     t["fn"]()
                 else:
                     t["fn"](
