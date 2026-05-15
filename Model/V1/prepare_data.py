@@ -51,12 +51,23 @@ def _clean_code(code_series: pd.Series) -> pd.Series:
 # ── Per-factor loader (runs in thread pool) ─────────────────────────────
 
 def _load_one_factor(ff: Path, min_date: str, allowed_codes: set | None) -> dict:
-    """Load and filter a single factor .fea file. Returns dict with result."""
+    """Load and filter a factor, merging base + incremental files if present."""
     name = ff.stem
     try:
         df = pd.read_feather(ff)
     except Exception as e:
         return {"name": name, "error": str(e)}
+
+    # Merge incremental file if present: {name}_incr.fea
+    incr_path = ff.parent / f"{name}_incr.fea"
+    if incr_path.exists():
+        try:
+            df_incr = pd.read_feather(incr_path)
+            df = pd.concat([df, df_incr])
+            df = df[~df.index.duplicated(keep="last")]
+            df = df.sort_index(level=["Date", "Code"])
+        except Exception:
+            pass
 
     col = df.columns[0]
     dl = df.index.get_level_values("Date")
@@ -146,7 +157,9 @@ def main():
 
     # ── Parallel load all factors ──────────────────────────────────────
     fea_files = sorted(factor_dir.glob("*.fea"))
-    fea_files = [f for f in fea_files if not f.stem.startswith("label_")]
+    fea_files = [f for f in fea_files
+                 if not f.stem.startswith("label_")
+                 and not f.stem.endswith("_incr")]
     print(f"\n=== Loading {len(fea_files)} factor files (workers={args.workers}) ===")
 
     factor_series = {}       # name -> Series

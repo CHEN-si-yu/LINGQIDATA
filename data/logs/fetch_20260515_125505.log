@@ -1,0 +1,70 @@
+[2026-05-15 12:55:05] [incremental] DRY-RUN: 6 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-15 12:55:05] [incremental] Datasets: ['daily', 'daily_adj', 'finance', 'main_fund_flow', 'dragon_tiger', 'limit_up']
+[2026-05-15 12:55:05] 
+============================================================
+[2026-05-15 12:55:05] [daily] Starting incremental update
+[2026-05-15 12:55:06] [daily] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:06] [daily] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:06] 
+============================================================
+[2026-05-15 12:55:06] [daily_adj] Starting incremental update
+[2026-05-15 12:55:06] [daily_adj] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:06] [daily_adj] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:06] 
+============================================================
+[2026-05-15 12:55:06] [finance] Starting incremental update
+[2026-05-15 12:55:07] [finance] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:07] [finance] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:07] 
+============================================================
+[2026-05-15 12:55:07] [main_fund_flow] Starting incremental update
+[2026-05-15 12:55:08] [main_fund_flow] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] [main_fund_flow] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] 
+============================================================
+[2026-05-15 12:55:08] [dragon_tiger] Starting incremental update
+[2026-05-15 12:55:08] [dragon_tiger] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] [dragon_tiger] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] 
+============================================================
+[2026-05-15 12:55:08] [limit_up] Starting incremental update
+[2026-05-15 12:55:08] [limit_up] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] [limit_up] DRY-RUN: would fetch 2026-05-11 ~ 2026-05-15
+[2026-05-15 12:55:08] 
+============================================================
+[2026-05-15 12:55:08] [incremental] DRY-RUN Summary:
+[2026-05-15 12:55:08]   [dry-run] daily: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08]   [dry-run] daily_adj: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08]   [dry-run] finance: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08]   [dry-run] main_fund_flow: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08]   [dry-run] dragon_tiger: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08]   [dry-run] limit_up: 2026-05-11~2026-05-15
+[2026-05-15 12:55:08] [incremental] Done: 0 updated, 0 uptodate, 0 skipped, 0 errors
+[2026-05-15 12:55:08] [incremental] Total API calls: 0
+[2026-05-15 12:55:08] 
+[incremental] PENDING (server behind, will re-fetch with extended overlap next run):
+[2026-05-15 12:55:08]   [pending] balancesheet                 last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:55:08]   [pending] cashflow                     last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:55:08]   [pending] financial_indicator          last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:55:08]   [pending] income                       last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:55:08]   [pending] pledge_stat                  last_data=2026-04-30  since=2026-05-14
+[2026-05-15 12:55:08] 
+============================================================
+[2026-05-15 12:55:08] [timing] Per-dataset timing report
+[2026-05-15 12:55:08] Dataset                      Phase                    Elapsed  Details
+[2026-05-15 12:55:08] -------------------------------------------------------------------------------------
+[2026-05-15 12:55:08]   daily                      total                      0.7s  
+[2026-05-15 12:55:08]   daily_adj                  total                      0.7s  
+[2026-05-15 12:55:08]   dragon_tiger               total                      0.0s  
+[2026-05-15 12:55:08]   finance                    total                      0.6s  
+[2026-05-15 12:55:08]   limit_up                   total                      0.0s  
+[2026-05-15 12:55:08]   main_fund_flow             total                      0.6s  
+[2026-05-15 12:55:08] -------------------------------------------------------------------------------------
+[2026-05-15 12:55:08]   TOTAL                                                 2.7s
+[2026-05-15 12:55:08] 
+[timing] Top 5 slowest datasets:
+[2026-05-15 12:55:08]   daily                          0.7s ( 25.9%) #####
+[2026-05-15 12:55:08]   daily_adj                      0.7s ( 25.8%) #####
+[2026-05-15 12:55:08]   main_fund_flow                 0.6s ( 23.1%) ####
+[2026-05-15 12:55:08]   finance                        0.6s ( 22.6%) ####
+[2026-05-15 12:55:08]   limit_up                       0.0s (  1.4%) 

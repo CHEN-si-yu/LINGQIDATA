@@ -18,7 +18,7 @@ from fetch_limit_up import fetch_limit_up
 from fetch_limit_list import fetch_limit_list
 from fetch_dragon_tiger import fetch_dragon_tiger
 from fetch_main_fund_flow import fetch_main_fund_flow
-from fetch_main_fund_flow_overview import fetch_main_fund_flow_overview
+
 from fetch_top_list import fetch_top_list
 from fetch_cyq_chips import fetch_cyq_chips
 from fetch_minute import fetch_history, fetch_min_adj
@@ -35,17 +35,17 @@ from fetch_margin_detail import fetch_margin_detail
 
 TASKS = [
     # ════════════════════ 秒级 ════════════════════
-    # {
-    #     "name": "stock_list",
-    #     "fn": fetch_stock_list,
-    #     "output": f"{DATA_DIR}/stock_list.parquet",
-    # },
-    # {
-    #     "name": "calendar",
-    #     "fn": fetch_calendar,
-    #     "start": "2020-01-01",
-    #     "output": f"{DATA_DIR}/calendar.parquet",
-    # },
+    {
+        "name": "stock_list",
+        "fn": fetch_stock_list,
+        "output": f"{DATA_DIR}/stock_list.parquet",
+    },
+    {
+        "name": "calendar",
+        "fn": fetch_calendar,
+        "start": "2020-01-01",
+        "output": f"{DATA_DIR}/calendar.parquet",
+    },
     # ════════════════════ 分钟级 ════════════════════
     {
         "name": "holder_number",
@@ -59,110 +59,104 @@ TASKS = [
         "start": "2019-01-01",
         "output": f"{DATA_DIR}/pledge_stat.parquet",
     },
-    # {
-    #     "name": "financial",
-    #     "fn": fetch_financial_indicator,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/financial_indicator.parquet",
-    # },
-    # {
-    #     "name": "income",
-    #     "fn": fetch_income,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/income.parquet",
-    # },
-    # {
-    #     "name": "balancesheet",
-    #     "fn": fetch_balancesheet,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/balancesheet.parquet",
-    # },
-    # {
-    #     "name": "cashflow",
-    #     "fn": fetch_cashflow,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/cashflow.parquet",
-    # },
-    # {
-    #     "name": "limit_list",
-    #     "fn": fetch_limit_list,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/limit_list.parquet",
-    # },
-    # {
-    #     "name": "limit_up",
-    #     "fn": fetch_limit_up,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/limit_up.parquet",
-    # },
-    # {
-    #     "name": "kline_monthly",
-    #     "fn": fetch_kline_monthly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_monthly.parquet",
-    # },
-    # {
-    #     "name": "kline_adj_monthly",
-    #     "fn": fetch_kline_adj_monthly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_adj_monthly.parquet",
-    # },
+    {
+        "name": "financial",
+        "fn": fetch_financial_indicator,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/financial_indicator.parquet",
+    },
+    {
+        "name": "income",
+        "fn": fetch_income,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/income.parquet",
+    },
+    {
+        "name": "balancesheet",
+        "fn": fetch_balancesheet,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/balancesheet.parquet",
+    },
+    {
+        "name": "cashflow",
+        "fn": fetch_cashflow,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/cashflow.parquet",
+    },
+    {
+        "name": "limit_list",
+        "fn": fetch_limit_list,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/limit_list.parquet",
+    },
+    {
+        "name": "limit_up",
+        "fn": fetch_limit_up,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/limit_up.parquet",
+    },
+    {
+        "name": "kline_monthly",
+        "fn": fetch_kline_monthly,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/kline_monthly.parquet",
+    },
+    {
+        "name": "kline_adj_monthly",
+        "fn": fetch_kline_adj_monthly,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/kline_adj_monthly.parquet",
+    },
     # # ════════════════════ 十分钟级 ════════════════════
-    # {
-    #     "name": "top_list",
-    #     "fn": fetch_top_list,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/top_list.parquet",
-    # },
-    # {
-    #     "name": "dragon_tiger",
-    #     "fn": fetch_dragon_tiger,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/dragon_tiger.parquet",
-    # },
-    # {
-    #     "name": "kline_weekly",
-    #     "fn": fetch_kline_weekly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_weekly.parquet",
-    # },
-    # {
-    #     "name": "kline_adj_weekly",
-    #     "fn": fetch_kline_adj_weekly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_adj_weekly.parquet",
-    # },
+    {
+        "name": "top_list",
+        "fn": fetch_top_list,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/top_list.parquet",
+    },
+    {
+        "name": "dragon_tiger",
+        "fn": fetch_dragon_tiger,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/dragon_tiger.parquet",
+    },
+    {
+        "name": "kline_weekly",
+        "fn": fetch_kline_weekly,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/kline_weekly.parquet",
+    },
+    {
+        "name": "kline_adj_weekly",
+        "fn": fetch_kline_adj_weekly,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/kline_adj_weekly.parquet",
+    },
     # # ════════════════════ 小时级 ════════════════════
-    # {
-    #     "name": "main_fund_flow_overview",
-    #     "fn": fetch_main_fund_flow_overview,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/main_fund_flow_overview.parquet",
-    # },
-    # {
-    #     "name": "finance",
-    #     "fn": fetch_finance,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/finance.parquet",
-    # },
-    # {
-    #     "name": "daily",
-    #     "fn": fetch_daily,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/daily.parquet",
-    # },
-    # {
-    #     "name": "daily_adj",
-    #     "fn": fetch_daily_adj,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/daily_adj.parquet",
-    # },
-    # {
-    #     "name": "main_fund_flow",
-    #     "fn": fetch_main_fund_flow,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/main_fund_flow.parquet",
-    # },
+    {
+        "name": "finance",
+        "fn": fetch_finance,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/finance.parquet",
+    },
+    {
+        "name": "daily",
+        "fn": fetch_daily,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/daily.parquet",
+    },
+    {
+        "name": "daily_adj",
+        "fn": fetch_daily_adj,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/daily_adj.parquet",
+    },
+    {
+        "name": "main_fund_flow",
+        "fn": fetch_main_fund_flow,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/main_fund_flow.parquet",
+    },
     {
         "name": "margin_detail",
         "fn": fetch_margin_detail,
@@ -170,12 +164,12 @@ TASKS = [
         "output": f"{DATA_DIR}/margin_detail.parquet",
     },
     # ════════════════════ 天级 (per-stock, 散文件落盘) ════════════════════
-    # {
-    #     "name": "cyq_chips",
-    #     "fn": fetch_cyq_chips,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/cyq_chips/.done",
-    # },
+    {
+        "name": "cyq_chips",
+        "fn": fetch_cyq_chips,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/cyq_chips/.done",
+    },
     # {
     #     "name": "history",
     #     "fn": fetch_history,

@@ -11,8 +11,29 @@ def safe_divide(left: pd.Series, right: pd.Series) -> pd.Series:
     return result
 
 
-def cross_sectional_rank(series: pd.Series) -> pd.Series:
-    return series.groupby(level="Date").rank(pct=True)
+def cross_sectional_rank(
+    series: pd.Series,
+    winsorize: bool = True,
+    lower: float = 0.01,
+    upper: float = 0.99,
+) -> pd.Series:
+    """Cross-sectional percentile rank within each date.
+
+    When *winsorize* is True (the default), raw values are first clipped
+    to [*lower*, *upper*] quantiles per date to limit the influence of
+    extreme outliers on the rank distribution.
+    """
+    if winsorize:
+        def _clip(grp: pd.Series) -> pd.Series:
+            with np.errstate(invalid="ignore"):
+                lo, hi = grp.quantile(lower), grp.quantile(upper)
+            if np.isnan(lo) or np.isnan(hi):
+                return grp
+            return grp.clip(lower=lo, upper=hi)
+
+        series = series.groupby(level="Date").transform(_clip)
+    with np.errstate(invalid="ignore"):
+        return series.groupby(level="Date").rank(pct=True)
 
 
 def rolling_group_mean(series: pd.Series, window: int, min_periods: int | None = None) -> pd.Series:

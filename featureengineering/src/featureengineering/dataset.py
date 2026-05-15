@@ -81,6 +81,37 @@ def _normalize_index_frame(df: pd.DataFrame) -> pd.DataFrame:
     raise ValueError("Failed to normalize panel index.")
 
 
+def _filter_by_date_range(
+    df: pd.DataFrame,
+    min_date: str | None,
+    max_date: str | None,
+    lookback_days: int = 0,
+) -> pd.DataFrame:
+    """Filter a (Date, Code) MultiIndex DataFrame to a date range.
+
+    If *min_date* is provided, dates >= (min_date - lookback_days) are kept.
+    If *max_date* is provided, dates <= max_date are kept.
+    When both are None, returns the DataFrame unchanged.
+    """
+    if min_date is None and max_date is None:
+        return df
+
+    dates = df.index.get_level_values("Date")
+
+    if min_date is not None:
+        from datetime import datetime, timedelta
+        min_dt = datetime.strptime(min_date, "%Y%m%d")
+        lookback_dt = min_dt - timedelta(days=lookback_days)
+        cutoff = lookback_dt.strftime("%Y%m%d")
+        df = df.loc[dates >= cutoff]
+
+    if max_date is not None:
+        dates = df.index.get_level_values("Date")
+        df = df.loc[dates <= max_date]
+
+    return df
+
+
 def _build_daily_financial(
     df: pd.DataFrame,
     calendar: pd.DataFrame,
@@ -90,19 +121,8 @@ def _build_daily_financial(
 ) -> pd.DataFrame:
     """Convert report-frequency financial data into a daily-forward-filled panel.
 
-    Parameters
-    ----------
-    df : DataFrame
-        Raw report-level data with columns ``stock_code``, ``ann_date``, ``end_date``,
-        and the target value columns.
-    calendar : DataFrame
-        Trading calendar with column ``date`` (YYYY-MM-DD strings).
-    value_cols : list[str]
-        Columns to forward-fill.
-    on_progress : callable or None
-        Called as on_progress(stage, current, total) for sub-progress reporting.
-    date_col : str
-        Name of the date column to use as ffill anchor (default: ann_date).
+    Uses a vectorized pivot-ffill-stack approach instead of per-stock iteration
+    to avoid O(n_stocks) Python-level overhead.
     """
     def _report(stage, current, total):
         if on_progress:
@@ -113,36 +133,38 @@ def _build_daily_financial(
     df["stock_code"] = df["stock_code"].apply(_pad_code)
     calendar_dates = pd.to_datetime(calendar["date"]).sort_values()
 
-    # Build a stock-date grid
-    codes = sorted(df["stock_code"].unique())
-    n_codes = len(codes)
-
-    # For each (stock_code, ann_date), keep the latest report before ann_date
+    # Keep latest report per (stock_code, ann_date)
     df = df.sort_values(["stock_code", "ann_date"])
     df = df.drop_duplicates(subset=["stock_code", "ann_date"], keep="last")
 
-    _report("ffill", 0, n_codes)
+    n_cols = len(value_cols)
+
+    _report("ffill", 0, n_cols)
 
     panels = []
-    for i, (code, group) in enumerate(df.groupby("stock_code")):
-        group = group.set_index("ann_date").sort_index()
-        sub = group[value_cols].reindex(calendar_dates, method="ffill")
-        sub["code"] = code
-        sub = sub.reset_index().rename(columns={"index": "date"})
-        panels.append(sub)
-        if (i + 1) % 200 == 0 or i + 1 == n_codes:
-            _report("ffill", i + 1, n_codes)
+    for i, col in enumerate(value_cols):
+        # Pivot to wide: rows=ann_date, cols=stock_code
+        pivot = df.pivot_table(
+            index="ann_date", columns="stock_code", values=col, aggfunc="last"
+        )
+        # Reindex to full calendar → forward-fill → stack back to long
+        pivot = pivot.reindex(calendar_dates).ffill()
+        stacked = pivot.stack().rename(col)
+        panels.append(stacked)
+        _report("ffill", i + 1, n_cols)
 
     if not panels:
         return pd.DataFrame(columns=value_cols)
 
     _report("concat", 0, 1)
-    result = pd.concat(panels, ignore_index=True)
+    result = pd.concat(panels, axis=1)
     _report("concat", 1, 1)
 
     _report("index", 0, 1)
-    result["code"] = result["code"].apply(_pad_code)
+    result.index = result.index.set_names(["date", "code"])
+    result = result.reset_index()
     result["date"] = result["date"].dt.strftime("%Y%m%d")
+    result["code"] = result["code"].apply(_pad_code)
     result = result.set_index(["date", "code"]).sort_index()
     result.index = result.index.set_names(["Date", "Code"])
     result = result.reorder_levels(["Date", "Code"]).sort_index()
@@ -167,6 +189,10 @@ class DataRepository:
     def _read_parquet(self, path: Path) -> pd.DataFrame:
         return pd.read_parquet(path)
 
+    def _read_parquet_columns(self, path: Path, columns: list[str]) -> pd.DataFrame:
+        """Read only specified columns from a parquet file (columnar access)."""
+        return pd.read_parquet(path, columns=columns)
+
     def _filter_by_allowed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep only rows whose Code is in the allowed stock pool."""
         allowed = self.allowed_codes
@@ -178,9 +204,21 @@ class DataRepository:
 
     # ── daily panel loading ───────────────────────────────────────────
 
-    def load_panel(self, relative_path: str) -> pd.DataFrame:
-        """Load a daily-frequency parquet file and normalize to (Date, Code) panel."""
-        if relative_path not in self._cache:
+    def load_panel(
+        self,
+        relative_path: str,
+        min_date: str | None = None,
+        max_date: str | None = None,
+        lookback_days: int = 0,
+    ) -> pd.DataFrame:
+        """Load a daily-frequency parquet file and normalize to (Date, Code) panel.
+
+        When *min_date* or *max_date* are provided, the returned panel is
+        filtered to the specified date range (with *lookback_days* buffer
+        subtracted from *min_date* to provide context for rolling windows).
+        """
+        cache_key = relative_path
+        if cache_key not in self._cache:
             if self.on_progress:
                 self.on_progress("load", 0, 1)
             raw = self._read_parquet(self.paths.source_root / relative_path)
@@ -188,13 +226,20 @@ class DataRepository:
             self._cache[relative_path] = self._filter_by_allowed(normalized)
             if self.on_progress:
                 self.on_progress("load", 1, 1)
-        return self._cache[relative_path]
+
+        full = self._cache[relative_path]
+        return _filter_by_date_range(full, min_date, max_date, lookback_days)
 
     # ── report-frequency financial loading ────────────────────────────
 
     def load_financial_panel(
-        self, relative_path: str, value_cols: list[str] | None = None,
+        self,
+        relative_path: str,
+        value_cols: list[str] | None = None,
         date_col: str = "ann_date",
+        min_date: str | None = None,
+        max_date: str | None = None,
+        lookback_days: int = 0,
     ) -> pd.DataFrame:
         """Load a report-frequency financial table and forward-fill to daily panel.
 
@@ -207,22 +252,35 @@ class DataRepository:
         date_col : str
             Date column to use as ffill anchor (default: ann_date).
             Use 'end_date' for data like pledge_stat.parquet.
+        min_date, max_date : str or None
+            Date range filter (YYYYMMDD). When provided, the returned panel
+            is filtered after forward-filling.
+        lookback_days : int
+            Extra days subtracted from *min_date* for rolling-window context.
         """
         cols_tag = "" if value_cols is None else f"_{'_'.join(sorted(value_cols))}"
         cache_key = f"__financial__{relative_path}{cols_tag}_{date_col}"
         if cache_key not in self._cache:
-            raw = self._read_parquet(self.paths.source_root / relative_path)
+            # Read only needed columns (parquet is columnar)
+            if value_cols is not None:
+                needed = list(value_cols) + ["stock_code", date_col]
+                raw = self._read_parquet_columns(self.paths.source_root / relative_path, needed)
+            else:
+                raw = self._read_parquet(self.paths.source_root / relative_path)
             calendar = self._read_parquet(self.paths.source_root / "calendar.parquet")
             if value_cols is None:
                 exclude = {"stock_code", "ann_date", "f_ann_date", "end_date",
-                           "report_type", "comp_type", "end_type"}
+                           "report_type", "comp_type", "end_type", "update_time",
+                           "name", "stock_name"}
                 value_cols = [c for c in raw.columns if c not in exclude]
             self._cache[cache_key] = self._filter_by_allowed(
                 _build_daily_financial(raw, calendar, value_cols,
                                        on_progress=self.on_progress,
                                        date_col=date_col)
             )
-        return self._cache[cache_key]
+
+        full = self._cache[cache_key]
+        return _filter_by_date_range(full, min_date, max_date, lookback_days)
 
     # ── stock pool ─────────────────────────────────────────────────────
 

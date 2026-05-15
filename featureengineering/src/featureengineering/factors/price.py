@@ -81,7 +81,7 @@ def factor_mom_120_skip5(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
     close = daily_adj["close"]
     ret = close.groupby(level="Code").transform(
-        lambda s: s.shift(5) / s.shift(120) - 1.0
+        lambda s: s.shift(5) / s.shift(120).replace(0, np.nan) - 1.0
     )
     return cross_sectional_rank(ret)
 
@@ -223,7 +223,7 @@ def factor_bias_20(context: FactorContext):
     ma_20 = close.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).mean()
     )
-    bias = close / ma_20 - 1.0
+    bias = close / ma_20.replace(0, np.nan) - 1.0
     return cross_sectional_rank(bias)
 
 
@@ -268,7 +268,7 @@ def factor_max_drawdown_60(context: FactorContext):
 
     def _max_dd(s):
         peak = s.rolling(60, min_periods=30).max()
-        dd = s / peak - 1.0
+        dd = s / peak.replace(0, np.nan) - 1.0
         return dd.rolling(60, min_periods=30).min()
 
     mdd = close.groupby(level="Code").transform(_max_dd)

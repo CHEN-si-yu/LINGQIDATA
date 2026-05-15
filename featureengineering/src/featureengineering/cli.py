@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .builder import build_all, list_factors, recommend_worker_count
+from .builder import build_all, check_factor_dates, list_factors, recommend_worker_count
 from .factor_loader import ensure_builtin_factors_loaded
 from .settings import configure_paths
 
@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true",
         help="Force rebuild all factors (ignore date-based skip/incremental logic).",
     )
+    parser.add_argument(
+        "--check-dates", action="store_true",
+        help="Scan all factor files and report their last date.",
+    )
     return parser
 
 
@@ -46,6 +50,27 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     configure_paths(project_root=args.project_root, source_root=args.source_root)
     ensure_builtin_factors_loaded()
+
+    if args.check_dates:
+        counts = {"ok": 0, "stale": 0, "future": 0, "error": 0}
+        date_info = check_factor_dates()
+        effective_end = next(iter(date_info.values()))["effective_end"] if date_info else "N/A"
+        print(f"\n{'='*64}")
+        print(f"Factor last-date report  (effective end: {effective_end})")
+        print(f"{'='*64}")
+        print(f"{'Factor':<35} {'Last date':>10}  Status")
+        print(f"{'-'*35} {'-'*10}  {'-'*6}")
+        for name, info in date_info.items():
+            last = info["last_date"] or "---"
+            status = info["status"]
+            marker = {"ok": "", "stale": "!", "future": ">>", "error": "ERR", "empty": "---"}.get(status, "?")
+            print(f"{name:<35} {last:>10}  {marker:<4} {status}")
+            counts[status] = counts.get(status, 0) + 1
+        print(f"{'='*64}")
+        total = sum(counts.values())
+        print(f"Total: {total}  |  ok: {counts['ok']}  stale: {counts['stale']}  future: {counts['future']}  error: {counts['error']}")
+        return 0
+
     specs = list_factors()
 
     if args.list:
@@ -83,5 +108,6 @@ def main(argv: list[str] | None = None) -> int:
         force=args.force,
     )
     for result in results:
-        print(f"[OK] {result.factor_name} -> {result.factor_path}")
+        status = "OK" if result.action not in ("error",) else "ERROR"
+        print(f"[{status}] {result.factor_name} -> {result.factor_path}")
     return 0

@@ -51,9 +51,49 @@ OVERLAP_DAYS = 3  # days of overlap to catch data corrections
 DEFAULT_WORKERS = 6
 TODAY = date.today().strftime("%Y-%m-%d")
 
+
+def _effective_today():
+    """Return the date through which daily data is expected to be available.
+
+    Before 18:00 local time, today's trading data may not have been
+    published yet, so the expected latest date is yesterday (T-1).
+    After 18:00, expect data through today.
+    """
+    now = datetime.now()
+    if now.hour < 18:
+        return (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
+
+
+EFFECTIVE_TODAY = _effective_today()
+
 # ── Incremental state tracking ──────────────────────────────────────────
 STATE_FILE = Path(DATA_DIR) / ".incr_state.json"
 _state_lock = threading.Lock()  # guards concurrent read-modify-write on state
+
+# ── Per-stock date cache (avoids scanning 3000+ parquet files) ─────────
+CYQ_CACHE_FILE = Path(DATA_DIR) / ".cyq_cache.json"
+_cyq_cache_lock = threading.Lock()
+
+
+def _load_cyq_cache():
+    """Return {stock_code: max_date_str} from the per-stock date cache."""
+    if CYQ_CACHE_FILE.exists():
+        try:
+            with open(CYQ_CACHE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_cyq_cache(cache):
+    """Atomically write the per-stock date cache."""
+    with _cyq_cache_lock:
+        tmp = CYQ_CACHE_FILE.with_suffix(f".cyq_cache.{os.getpid()}.tmp")
+        with open(tmp, "w") as f:
+            json.dump(cache, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, CYQ_CACHE_FILE)
 
 
 def _load_state():
@@ -103,9 +143,9 @@ def _record_state(name, fetch_max):
     *fetch_max* is the actual max date in the data after the fetch
     (None if the fetch failed or no data was returned).
 
-    A 1-day grace period is applied: daily data normally arrives T+1,
-    so a max_date of yesterday (relative to TODAY) is not considered
-    stale / pending.
+    Uses EFFECTIVE_TODAY (which respects the 18:00 cutoff) to determine
+    whether the dataset is behind: before 18:00 data through yesterday
+    is considered current; after 18:00 data through today is expected.
     """
     with _state_lock:
         state = _load_state()
@@ -114,11 +154,10 @@ def _record_state(name, fetch_max):
 
         if fetch_max:
             entry["last_fetch_max"] = fetch_max
-            # Allow 1-day grace: daily data at T-1 is up-to-date
             try:
                 max_dt = datetime.strptime(fetch_max, "%Y-%m-%d")
-                today_dt = datetime.strptime(TODAY, "%Y-%m-%d")
-                pending = max_dt < today_dt - timedelta(days=1)
+                effective_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
+                pending = max_dt < effective_dt
                 entry["pending"] = pending
                 if pending:
                     if not entry.get("pending_since"):
@@ -132,6 +171,61 @@ def _record_state(name, fetch_max):
 
         state[name] = entry
         _save_state(state)
+
+# ── Performance timing ─────────────────────────────────────────────────────
+_timings = {}         # dataset_name -> list of {phase, elapsed, ...}
+_timing_lock = threading.Lock()
+
+def _add_timing(dataset, phase, elapsed, **kw):
+    """Record a timing measurement (thread-safe)."""
+    entry = {"phase": phase, "elapsed": round(elapsed, 3)}
+    entry.update(kw)
+    with _timing_lock:
+        _timings.setdefault(dataset, []).append(entry)
+
+def _print_timing_report():
+    """Print a formatted per-dataset timing report."""
+    if not _timings:
+        return
+    log_print(f"\n{'='*60}")
+    log_print("[timing] Per-dataset timing report")
+    log_print(f"{'Dataset':<28} {'Phase':<22} {'Elapsed':>9}  {'Details'}")
+    log_print("-" * 85)
+
+    ds_totals = {}
+    for ds_name in sorted(_timings):
+        entries = _timings[ds_name]
+        ds_total = sum(e["elapsed"] for e in entries)
+        ds_totals[ds_name] = ds_total
+        phases = {}
+        for e in entries:
+            ph = e["phase"]
+            phases.setdefault(ph, {"elapsed": 0, "count": 0, "rows": 0, "calls": 0})
+            phases[ph]["elapsed"] += e["elapsed"]
+            phases[ph]["count"] += 1
+            phases[ph]["rows"] += e.get("rows", 0)
+            phases[ph]["calls"] += e.get("calls", 0)
+        for ph, info in sorted(phases.items()):
+            detail_parts = []
+            if info["calls"]:
+                detail_parts.append(f"{info['calls']} calls")
+            if info["rows"]:
+                detail_parts.append(f"{info['rows']:,} rows")
+            detail = ", ".join(detail_parts) if detail_parts else ""
+            cnt = f" x{info['count']}" if info["count"] > 1 else ""
+            log_print(f"  {ds_name:<26} {ph + cnt:<22} {info['elapsed']:>7.1f}s  {detail}")
+
+    total = sum(ds_totals.values())
+    log_print("-" * 85)
+    log_print(f"  {'TOTAL':<26} {'':<22} {total:>7.1f}s")
+
+    slowest = sorted(ds_totals.items(), key=lambda x: -x[1])[:5]
+    if slowest:
+        log_print(f"\n[timing] Top 5 slowest datasets:")
+        for ds_name, ds_total in slowest:
+            pct = ds_total / total * 100 if total > 0 else 0
+            bar = "#" * int(pct / 5)
+            log_print(f"  {ds_name:<26} {ds_total:>7.1f}s ({pct:5.1f}%) {bar}")
 
 # ── Utility: auto-detect date column ──────────────────────────────────────
 _DATE_CANDIDATES = ["trade_date", "end_date", "date", "Date", "f_ann_date",
@@ -170,6 +264,42 @@ def get_max_date(filepath):
         return date_col, str(max_val)[:10]
     except Exception as e:
         log_print(f"  [warn] get_max_date({filepath}): {e}")
+        return None, None
+
+
+def get_real_max_date(filepath):
+    """Like get_max_date but excludes backfilled rows when is_backfill column exists.
+
+    This prevents the backfill-inflated max date from suppressing the next
+    incremental fetch — the state tracking must reflect the server's actual
+    data, not the forward-filled placeholders.
+    """
+    try:
+        schema = pq.read_schema(filepath)
+        available = set(schema.names)
+        date_col = _detect_date_col(available)
+        if date_col is None:
+            return None, None
+        if "is_backfill" in available:
+            table = pq.read_table(filepath, columns=[date_col, "is_backfill"])
+            df = table.to_pandas()
+            real = df[df["is_backfill"] != True][date_col]
+            if real.empty:
+                return date_col, None
+            max_val = real.max()
+        else:
+            table = pq.read_table(filepath, columns=[date_col])
+            series = pd.Series(table.column(0).to_pandas())
+            if series.empty:
+                return date_col, None
+            max_val = series.max()
+        if pd.isna(max_val):
+            return date_col, None
+        if hasattr(max_val, "strftime"):
+            return date_col, max_val.strftime("%Y-%m-%d")
+        return date_col, str(max_val)[:10]
+    except Exception as e:
+        log_print(f"  [warn] get_real_max_date({filepath}): {e}")
         return None, None
 
 
@@ -312,12 +442,18 @@ def _safe_read_parquet(filepath):
 
 
 def merge_and_save(existing_path, new_df, dedup_keys, sort_cols,
-                   date_col=None):
+                   date_col=None, strict_dedup=False):
     """Merge new data into an existing parquet file.
 
     If *existing_path* exists, read it, concatenate with *new_df*,
     drop duplicates (keeping last = newest), sort, and save.
     Otherwise just save *new_df*.
+
+    When *strict_dedup* is True, deduplication uses *dedup_keys* as
+    the subset, so data corrections in the overlap window properly
+    replace old rows.  When False, only fully identical rows are
+    deduped (safe for datasets with multiple valid rows per key, e.g.
+    holder_number which has several ann_date per end_date).
 
     Returns (rows_before, rows_after, rows_new).
     """
@@ -336,11 +472,11 @@ def merge_and_save(existing_path, new_df, dedup_keys, sort_cols,
         merged = new_df
     else:
         merged = pd.concat([existing, new_df], ignore_index=True)
-        # Drop exact row duplicates only — keep the last (newest fetch).
-        # We intentionally do NOT dedup on a key subset because many
-        # datasets have multiple valid rows per (date, stock_code) —
-        # e.g. holder_number has several ann_date per end_date.
-        merged = merged.drop_duplicates(keep="last")
+        if strict_dedup:
+            available_keys = [k for k in dedup_keys if k in merged.columns]
+            merged = merged.drop_duplicates(subset=available_keys, keep="last")
+        else:
+            merged = merged.drop_duplicates(keep="last")
 
     # Clean up internal sort column from original fetch scripts
     if "_sort_code" in merged.columns:
@@ -359,6 +495,100 @@ def merge_and_save(existing_path, new_df, dedup_keys, sort_cols,
     merged.to_parquet(tmp, index=False)
     tmp.replace(existing_path)
     return before, after, rows_new
+
+
+# ── Backfill helpers ────────────────────────────────────────────────────────
+def _backfill_missing_dates(filepath, date_col, today_str):
+    """Forward-fill missing trading days for daily-frequency datasets.
+
+    When the server hasn't updated for the latest trading days, copy the
+    last available data forward to fill the gap.  Each filled row is
+    marked ``is_backfill=True`` so downstream consumers can distinguish
+    real data from forward-filled placeholders.
+
+    When the server later updates, the merge+dedup logic (keep='last')
+    in update_consolidated naturally replaces backfilled rows with
+    real data, since both share the same (trade_date, stock_code) key.
+
+    Returns True if any backfill rows were added.
+    """
+    cal_path = Path(DATA_DIR) / "calendar.parquet"
+    if not cal_path.exists():
+        log_print("  [backfill] calendar.parquet not found, cannot determine trading days")
+        return False
+
+    cal = pd.read_parquet(cal_path)
+    trading_days = sorted(cal[cal["is_open"] == 1]["date"].tolist())
+
+    df = pd.read_parquet(filepath)
+    if df.empty or date_col not in df.columns:
+        return False
+
+    # Ensure is_backfill column: missing or NaN means real data
+    if "is_backfill" not in df.columns:
+        df["is_backfill"] = False
+    else:
+        df["is_backfill"] = df["is_backfill"].fillna(False).astype(bool)
+
+    # Per-stock last available date
+    if "stock_code" not in df.columns:
+        log_print("  [backfill] No stock_code column, cannot backfill per-stock")
+        return False
+
+    last_per_stock = df.groupby("stock_code")[date_col].max().reset_index()
+    last_per_stock.columns = ["stock_code", "last_date"]
+
+    # Which stocks are behind today?
+    behind = last_per_stock[last_per_stock["last_date"] < today_str]
+    if behind.empty:
+        return False
+
+    # Get full rows for each stock's last date via a single merge
+    # (avoids slow per-stock boolean indexing on large DataFrames)
+    last_data = df.merge(
+        behind,
+        left_on=["stock_code", date_col],
+        right_on=["stock_code", "last_date"],
+        how="inner",
+    )
+    last_data = last_data.drop(columns=["last_date"])
+
+    if last_data.empty:
+        return False
+
+    # For each missing trading day, create backfill rows
+    fill_parts = []
+    global_max_behind = behind["last_date"].max()
+    for d in trading_days:
+        if d <= global_max_behind or d > today_str:
+            continue
+        eligible_codes = behind.loc[behind["last_date"] < d, "stock_code"]
+        part = last_data[last_data["stock_code"].isin(eligible_codes)].copy()
+        if part.empty:
+            continue
+        part[date_col] = d
+        part["is_backfill"] = True
+        fill_parts.append(part)
+
+    if not fill_parts:
+        return False
+
+    fill_df = pd.concat(fill_parts, ignore_index=True)
+    df = pd.concat([df, fill_df], ignore_index=True)
+
+    if "stock_code" in df.columns:
+        df = df.sort_values(["stock_code", date_col]).reset_index(drop=True)
+
+    # Atomic save
+    tmp = Path(filepath).with_suffix(".parquet.tmp")
+    df.to_parquet(tmp, index=False)
+    tmp.replace(Path(filepath))
+
+    n_stocks = fill_df["stock_code"].nunique()
+    n_days = len(fill_parts)
+    log_print(f"  [backfill] Filled {len(fill_df)} rows for {n_stocks} stocks "
+              f"across {n_days} missing trading day(s)")
+    return True
 
 
 # ── Per-stock helpers ─────────────────────────────────────────────────────
@@ -383,22 +613,24 @@ def _filter_main_board_stocks():
 # Batch size for per-stock multi-stock API calls.
 # Each stock produces ~50-200 rows/day; for a 5-day window with 50 stocks
 # that's ~12,500-50,000 rows, well under the 100K pagination limit.
-_PER_STOCK_BATCH_SIZE = 50
+_PER_STOCK_BATCH_SIZE = 500
 
 
 def _merge_per_stock_batch(batch_results, out_dir, date_col):
     """Split a batch API result by stock_code and merge each into its file.
 
     *batch_results* is a list of dict rows from the API (all stocks mixed).
-    Returns list of (stock_code, old_rows, new_total, added).
+    Returns (results_list, cache_updates_dict) where cache_updates maps
+    stock_code -> new_max_date_str for the cyq_cache.
     """
     if not batch_results:
-        return []
+        return [], {}
     df_all = pd.DataFrame(batch_results)
     if df_all.empty or "stock_code" not in df_all.columns:
-        return []
+        return [], {}
 
     results = []
+    cache_updates = {}
     for code, group in df_all.groupby("stock_code"):
         out_file = Path(out_dir) / f"{code}.parquet"
         existing = _safe_read_parquet(out_file) if out_file.exists() else pd.DataFrame()
@@ -413,12 +645,19 @@ def _merge_per_stock_batch(batch_results, out_dir, date_col):
 
         if date_col and date_col in merged.columns:
             merged = merged.sort_values(date_col).reset_index(drop=True)
+            # Record new max date for cache
+            max_val = merged[date_col].max()
+            if not pd.isna(max_val):
+                max_str = str(max_val)[:10] if hasattr(max_val, "strftime") \
+                          else max_val.strftime("%Y-%m-%d") if hasattr(max_val, "strftime") \
+                          else str(max_val)[:10]
+                cache_updates[code] = max_str
 
         tmp = out_file.with_suffix(".parquet.tmp")
         merged.to_parquet(tmp, index=False)
         tmp.replace(out_file)
         results.append((code, old_rows, len(merged), len(merged) - old_rows))
-    return results
+    return results, cache_updates
 
 
 def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
@@ -441,7 +680,9 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
     out_dir.mkdir(exist_ok=True)
     api_key = load_api_key()
 
-    # Categorise stocks
+    # Categorise stocks — use cache to avoid opening 3000+ parquet files
+    cache = _load_cyq_cache()
+    cache_updated = False
     new_batch = []          # (code, full_start_date)  — never fetched
     incr_batch = []         # (code, inc_start_date)   — needs catch-up
     uptodate = 0
@@ -451,7 +692,13 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
         if not f.exists():
             new_batch.append((code, start_date))
             continue
-        dc, max_s = get_max_date(f)
+        # Use cached date if available, otherwise read from parquet
+        max_s = cache.get(code)
+        if max_s is None:
+            dc, max_s = get_max_date(f)
+            if max_s is not None:
+                cache[code] = max_s
+                cache_updated = True
         if max_s is None:
             new_batch.append((code, start_date))
             continue
@@ -467,6 +714,9 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
             uptodate += 1
             continue
         incr_batch.append((code, inc_start))
+
+    if cache_updated:
+        _save_cyq_cache(cache)
 
     log_print(f"[{name}] {len(stocks)} stocks | "
               f"{len(incr_batch)} incremental | "
@@ -514,28 +764,39 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                   f"{n_batches} batches (batch_size={_PER_STOCK_BATCH_SIZE})")
 
         completed = 0
+        batch_cache_updates = {}  # collect cache updates from all batches
         if workers > 1 and n_batches > 1:
+            # Helper: time an _api_range call in a pool thread
+            def _timed_fetch(codes_arg, batch_start_arg):
+                ep_inner = (extra_payload.copy() if extra_payload else {})
+                ep_inner["stock_code"] = codes_arg
+                t0 = time.perf_counter()
+                rows_result = _api_range(endpoint, batch_start_arg, end_date,
+                                         api_key, ep_inner, 10000)
+                _add_timing(name, "fetch", time.perf_counter() - t0,
+                           rows=len(rows_result), calls=1)
+                return rows_result
+
             with ThreadPoolExecutor(max_workers=min(workers, n_batches)) as pool:
                 futures = {}
                 for codes, batch_start in batches:
-                    ep = (extra_payload.copy() if extra_payload else {})
-                    ep["stock_code"] = codes
-                    fut = pool.submit(
-                        _api_range, endpoint, batch_start, end_date,
-                        api_key, ep, 10000
-                    )
+                    fut = pool.submit(_timed_fetch, codes, batch_start)
                     futures[fut] = (codes, batch_start)
 
                 for fut in as_completed(futures):
                     codes, batch_start = futures[fut]
                     try:
                         rows = fut.result()
-                        results = _merge_per_stock_batch(rows, out_dir, date_col)
+                        t0 = time.perf_counter()
+                        merge_results, cache_upd = _merge_per_stock_batch(rows, out_dir, date_col)
+                        _add_timing(name, "merge", time.perf_counter() - t0,
+                                   rows=len(rows), stocks=len(merge_results))
                         with lock:
                             completed += 1
-                            batch_added = sum(r[3] for r in results)
+                            batch_added = sum(r[3] for r in merge_results)
                             total_added += batch_added
-                            processed += len(results)
+                            processed += len(merge_results)
+                            batch_cache_updates.update(cache_upd)
                         log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                                   f"{len(codes)} stocks, {len(rows)} rows, "
                                   f"+{batch_added} new | "
@@ -550,13 +811,20 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                 ep = (extra_payload.copy() if extra_payload else {})
                 ep["stock_code"] = codes
                 try:
+                    t0 = time.perf_counter()
                     rows = _api_range(endpoint, batch_start, end_date,
                                       api_key, ep, 10000)
-                    results = _merge_per_stock_batch(rows, out_dir, date_col)
+                    _add_timing(name, "fetch", time.perf_counter() - t0,
+                               rows=len(rows), calls=1)
+                    t0 = time.perf_counter()
+                    merge_results, cache_upd = _merge_per_stock_batch(rows, out_dir, date_col)
+                    _add_timing(name, "merge", time.perf_counter() - t0,
+                               rows=len(rows), stocks=len(merge_results))
                     completed += 1
-                    batch_added = sum(r[3] for r in results)
+                    batch_added = sum(r[3] for r in merge_results)
                     total_added += batch_added
-                    processed += len(results)
+                    processed += len(merge_results)
+                    batch_cache_updates.update(cache_upd)
                     log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                               f"{len(codes)} stocks, {len(rows)} rows, "
                               f"+{batch_added} new | "
@@ -565,11 +833,19 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                     completed += 1
                     log_print(f"[{name}] [{phase_label} {completed}/{n_batches}] "
                               f"{len(codes)} stocks FAILED: {e}")
+        return batch_cache_updates
 
+    all_cache_updates = {}
     if new_batch:
-        _process_batches(new_batch, "new")
+        all_cache_updates.update(_process_batches(new_batch, "new"))
     if incr_batch:
-        _process_batches(incr_batch, "incr")
+        all_cache_updates.update(_process_batches(incr_batch, "incr"))
+
+    # Persist cache updates
+    if all_cache_updates:
+        cache = _load_cyq_cache()
+        cache.update(all_cache_updates)
+        _save_cyq_cache(cache)
 
     log_print(f"[{name}] Done: {processed} stocks processed, "
               f"{total_added} new rows total")
@@ -595,7 +871,8 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
 # ── Consolidated dataset updater ──────────────────────────────────────────
 def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
                           sort_cols, default_start, workers, dry_run,
-                          extra_params=None):
+                          extra_params=None, strict_dedup=False,
+                          overlap_days=None, backfill=False):
     """Incrementally update a consolidated (single-parquet) dataset.
 
     1. Read existing file, find max date
@@ -609,7 +886,9 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
                   f"full fetch needed, run scripts/main.py first")
         return {"name": name, "status": "skip", "reason": "no existing file"}
 
-    dc, max_str = get_max_date(path)
+    # Use get_real_max_date so backfill-inflated dates don't suppress
+    # the next incremental fetch (state tracking must reflect server reality)
+    dc, max_str = get_real_max_date(path)
     effective_dc = dc or date_col
 
     if max_str is None:
@@ -619,7 +898,8 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
 
     # Compute incremental range (extend overlap if last fetch was stale)
     max_dt = datetime.strptime(max_str, "%Y-%m-%d")
-    effective_overlap = _get_effective_overlap(name, OVERLAP_DAYS)
+    base_overlap = overlap_days if overlap_days is not None else OVERLAP_DAYS
+    effective_overlap = _get_effective_overlap(name, base_overlap)
     inc_start_dt = max_dt - timedelta(days=effective_overlap)
     default_dt = datetime.strptime(default_start, "%Y-%m-%d")
     if inc_start_dt < default_dt:
@@ -642,6 +922,7 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
 
     # Fetch new data to a TEMP file so the original is never overwritten
     tmp_output = str(path.parent / f"_incr_{name}.tmp.parquet")
+    t_fetch = time.perf_counter()
     try:
         new_df = _call_fetch(
             fetch_fn,
@@ -654,10 +935,12 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
             **(extra_params or {})
         )
     except Exception as e:
+        _add_timing(name, "fetch", time.perf_counter() - t_fetch, error=str(e))
         log_print(f"[{name}] Fetch FAILED: {e}")
         Path(tmp_output).unlink(missing_ok=True)
         _record_state(name, None)  # fetch failed, mark pending
         return {"name": name, "status": "error", "error": str(e)}
+    _add_timing(name, "fetch", time.perf_counter() - t_fetch)
 
     # Read from temp file (more reliable than return value)
     tmp_path = Path(tmp_output)
@@ -677,17 +960,28 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
         return {"name": name, "status": "uptodate", "max_date": max_str}
 
     # Now merge: original file is intact, new_df has the incremental data
+    t_merge = time.perf_counter()
     before, after, added = merge_and_save(
-        filepath, new_df, dedup_keys, sort_cols, effective_dc
+        filepath, new_df, dedup_keys, sort_cols, effective_dc,
+        strict_dedup=strict_dedup,
     )
+    _add_timing(name, "merge", time.perf_counter() - t_merge,
+               rows_before=before, rows_added=added)
 
-    # Check new max date
-    _, new_max = get_max_date(path)
+    # Check new max date (use get_real_max_date so state tracks server reality)
+    _, new_max = get_real_max_date(path)
     log_print(f"[{name}] Merge: {before} → {after} rows (+{added}) | "
               f"max_date: {max_str} → {new_max}")
 
     # Record state for next run's overlap logic
     _record_state(name, new_max)
+
+    # Backfill missing trading days for daily-frequency datasets
+    # (state is recorded BEFORE backfill so pending flag reflects server reality)
+    # Uses EFFECTIVE_TODAY (respects 18:00 cutoff): before 18:00 we only
+    # expect data through yesterday, so don't backfill today's date yet.
+    if backfill and new_max and new_max < EFFECTIVE_TODAY:
+        _backfill_missing_dates(filepath, effective_dc, EFFECTIVE_TODAY)
 
     return {
         "name": name,
@@ -733,6 +1027,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "daily_adj",
@@ -743,6 +1039,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "finance",
@@ -753,6 +1051,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2020-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "margin_detail",
@@ -763,6 +1063,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "main_fund_flow",
@@ -773,17 +1075,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
-    },
-    {
-        "name": "main_fund_flow_overview",
-        "module": "fetch_main_fund_flow_overview",
-        "fn_name": "fetch_main_fund_flow_overview",
-        "file": "main_fund_flow_overview.parquet",
-        "date_col": "trade_date",
-        "dedup": ["trade_date"],
-        "sort": ["trade_date"],
-        "start": "2019-01-01",
-        "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     # ═══ Day-by-day (consolidated output) ═══
     {
@@ -795,6 +1088,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "top_list",
@@ -805,6 +1100,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "limit_up",
@@ -815,6 +1112,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "limit_list",
@@ -825,6 +1124,8 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
+        "backfill": True,
     },
     {
         "name": "ths_hot",
@@ -835,6 +1136,7 @@ DATASETS = [
         "sort": ["trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
     },
     # ═══ Weekly / Monthly K-line ═══
     {
@@ -846,6 +1148,7 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
     },
     {
         "name": "kline_monthly",
@@ -856,6 +1159,7 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
     },
     {
         "name": "kline_adj_weekly",
@@ -866,6 +1170,7 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
     },
     {
         "name": "kline_adj_monthly",
@@ -876,6 +1181,7 @@ DATASETS = [
         "sort": ["stock_code", "trade_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "strict_dedup": True,
     },
     # ═══ Quarterly / report-period data ═══
     {
@@ -887,6 +1193,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "pledge_stat",
@@ -897,6 +1204,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "financial_indicator",
@@ -907,6 +1215,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "income",
@@ -917,6 +1226,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "balancesheet",
@@ -927,6 +1237,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "cashflow",
@@ -937,6 +1248,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     {
         "name": "report_rc",
@@ -947,6 +1259,7 @@ DATASETS = [
         "sort": ["stock_code", "end_date"],
         "start": "2019-01-01",
         "type": "consolidated",
+        "overlap_days": 95,
     },
     # ═══ Reference data (small, re-fetch entirely) ═══
     {
@@ -1086,71 +1399,80 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
     def _process_one(d):
         """Process a single dataset entry."""
         name = d["name"]
+        t0 = time.perf_counter()
         filepath = str(Path(DATA_DIR) / d["file"])
         log_print(f"\n{'='*60}")
         log_print(f"[{name}] Starting incremental update")
 
-        if d["type"] == "per_stock":
-            if skip_per_stock:
-                log_print(f"[{name}] Skipped (per-stock disabled)")
-                return {"name": name, "status": "skip", "reason": "per_stock_disabled"}
-            update_per_stock_dataset(
-                name=name,
-                out_subdir=d["out_subdir"],
-                endpoint=d["endpoint"],
-                start_date=d["start"],
-                end_date=TODAY,
-                date_col=d["date_col"],
-                workers=workers,
-                dry_run=dry_run,
-                extra_payload=d.get("extra_payload"),
-            )
-            return {"name": name, "status": "updated" if not dry_run else "dry_run"}
-
-        if d["type"] == "reference":
-            if skip_reference:
-                log_print(f"[{name}] Skipped (reference disabled)")
-                return {"name": name, "status": "skip", "reason": "reference_disabled"}
-            # Reference data: fetch entirely, small enough to just replace
-            if dry_run:
-                log_print(f"[{name}] DRY-RUN: would re-fetch entirely")
-                return {"name": name, "status": "dry_run"}
-            fn = _import_fn(d["module"], d["fn_name"])
-            try:
-                new_df = _call_fetch(
-                    fn,
+        try:
+            if d["type"] == "per_stock":
+                if skip_per_stock:
+                    log_print(f"[{name}] Skipped (per-stock disabled)")
+                    return {"name": name, "status": "skip", "reason": "per_stock_disabled"}
+                update_per_stock_dataset(
+                    name=name,
+                    out_subdir=d["out_subdir"],
+                    endpoint=d["endpoint"],
                     start_date=d["start"],
                     end_date=TODAY,
-                    workers=1,
-                    cleanup=True,
-                    resume=False,
+                    date_col=d["date_col"],
+                    workers=workers,
+                    dry_run=dry_run,
+                    extra_payload=d.get("extra_payload"),
                 )
-                if new_df is not None and not new_df.empty:
-                    dest = Path(DATA_DIR) / d["file"]
-                    tmp = dest.with_suffix(".parquet.tmp")
-                    new_df.to_parquet(tmp, index=False)
-                    tmp.replace(dest)
-                    log_print(f"[{name}] Re-fetched: {len(new_df)} rows → {dest}")
-                return {"name": name, "status": "updated",
-                        "rows": len(new_df) if new_df is not None else 0}
-            except Exception as e:
-                log_print(f"[{name}] FAILED: {e}")
-                return {"name": name, "status": "error", "error": str(e)}
+                return {"name": name, "status": "updated" if not dry_run else "dry_run"}
 
-        # Consolidated type
-        fn = _import_fn(d["module"], d["fn_name"])
-        return update_consolidated(
-            name=name,
-            fetch_fn=fn,
-            filepath=filepath,
-            date_col=d["date_col"],
-            dedup_keys=d["dedup"],
-            sort_cols=d["sort"],
-            default_start=d["start"],
-            workers=workers,
-            dry_run=dry_run,
-            extra_params=d.get("extra"),
-        )
+            if d["type"] == "reference":
+                if skip_reference:
+                    log_print(f"[{name}] Skipped (reference disabled)")
+                    return {"name": name, "status": "skip", "reason": "reference_disabled"}
+                # Reference data: fetch entirely, small enough to just replace
+                if dry_run:
+                    log_print(f"[{name}] DRY-RUN: would re-fetch entirely")
+                    return {"name": name, "status": "dry_run"}
+                fn = _import_fn(d["module"], d["fn_name"])
+                try:
+                    t_fetch = time.perf_counter()
+                    new_df = _call_fetch(
+                        fn,
+                        start_date=d["start"],
+                        end_date=TODAY,
+                        workers=1,
+                        cleanup=True,
+                        resume=False,
+                    )
+                    _add_timing(name, "fetch", time.perf_counter() - t_fetch)
+                    if new_df is not None and not new_df.empty:
+                        dest = Path(DATA_DIR) / d["file"]
+                        tmp = dest.with_suffix(".parquet.tmp")
+                        new_df.to_parquet(tmp, index=False)
+                        tmp.replace(dest)
+                        log_print(f"[{name}] Re-fetched: {len(new_df)} rows → {dest}")
+                    return {"name": name, "status": "updated",
+                            "rows": len(new_df) if new_df is not None else 0}
+                except Exception as e:
+                    log_print(f"[{name}] FAILED: {e}")
+                    return {"name": name, "status": "error", "error": str(e)}
+
+            # Consolidated type
+            fn = _import_fn(d["module"], d["fn_name"])
+            return update_consolidated(
+                name=name,
+                fetch_fn=fn,
+                filepath=filepath,
+                date_col=d["date_col"],
+                dedup_keys=d["dedup"],
+                sort_cols=d["sort"],
+                default_start=d["start"],
+                workers=workers,
+                dry_run=dry_run,
+                extra_params=d.get("extra"),
+                strict_dedup=d.get("strict_dedup", False),
+                overlap_days=d.get("overlap_days"),
+                backfill=d.get("backfill", False),
+            )
+        finally:
+            _add_timing(name, "total", time.perf_counter() - t0)
 
     if parallel and len(selected) > 1:
         # Process reference datasets (calendar, stock_list) FIRST to avoid
@@ -1241,6 +1563,9 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
             since = entry.get("pending_since", "?")
             actual = entry.get("last_fetch_max", "?")
             log_print(f"  [pending] {name:<28} last_data={actual}  since={since}")
+
+    # Performance timing report
+    _print_timing_report()
 
     return results
 

@@ -1,0 +1,142 @@
+{
+  "daily": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 8402978,
+    "category": "日频"
+  },
+  "daily_adj": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 8402978,
+    "category": "日频"
+  },
+  "finance": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 7308514,
+    "category": "日频"
+  },
+  "main_fund_flow": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 7931756,
+    "category": "日频"
+  },
+  "margin_detail": {
+    "max_date": "2026-05-12",
+    "lag_days": 2,
+    "status": "LAG",
+    "rows": 4608090,
+    "category": "日频"
+  },
+  "dragon_tiger": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 1321213,
+    "category": "日频"
+  },
+  "top_list": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 94828,
+    "category": "日频"
+  },
+  "limit_up": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 122536,
+    "category": "日频"
+  },
+  "limit_list": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 153108,
+    "category": "日频"
+  },
+  "holder_number": {
+    "max_date": "2026-05-11",
+    "lag_days": 3,
+    "status": "LAG",
+    "rows": 320646,
+    "category": "日频"
+  },
+  "kline_weekly": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 1975923,
+    "category": "周频"
+  },
+  "kline_monthly": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 438433,
+    "category": "月频"
+  },
+  "kline_adj_weekly": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 1975920,
+    "category": "周频"
+  },
+  "kline_adj_monthly": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 438433,
+    "category": "月频"
+  },
+  "pledge_stat": {
+    "max_date": "2026-04-30",
+    "lag_days": 14,
+    "status": "STALE",
+    "rows": 86099,
+    "category": "月频"
+  },
+  "financial_indicator": {
+    "max_date": "2026-03-31",
+    "lag_days": 44,
+    "status": "OK",
+    "rows": 180630,
+    "category": "季频"
+  },
+  "income": {
+    "max_date": "2026-03-31",
+    "lag_days": 44,
+    "status": "OK",
+    "rows": 152657,
+    "category": "季频"
+  },
+  "balancesheet": {
+    "max_date": "2026-03-31",
+    "lag_days": 44,
+    "status": "OK",
+    "rows": 151113,
+    "category": "季频"
+  },
+  "cashflow": {
+    "max_date": "2026-03-31",
+    "lag_days": 44,
+    "status": "OK",
+    "rows": 139706,
+    "category": "季频"
+  },
+  "calendar": {
+    "max_date": "2026-05-14",
+    "lag_days": 0,
+    "status": "OK",
+    "rows": 2326,
+    "category": "其他"
+  }
+}

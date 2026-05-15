@@ -21,6 +21,30 @@ def _forward_open_ret(series, horizon: int):
     return sell_price / buy_price - 1.0
 
 
+def _trim_tail(series, horizon: int):
+    """去掉每只股票尾部因前视数据不足产生的 NaN。
+
+    label_ret 需要未来 open 数据，最近 (1+horizon) 个日期无法计算有效值。
+    这里直接截断尾部，而非用 NaN 填充。
+    """
+    drop = 1 + horizon
+    if len(series) <= drop:
+        return series.iloc[:0]
+    return series.iloc[:-drop]
+
+
+def _compute_label_ret(daily_adj, horizon: int, name: str):
+    open_price = daily_adj["open"].replace(0, float("nan"))
+    raw = open_price.groupby(level="Code").transform(
+        lambda s: _forward_open_ret(s, horizon)
+    )
+    raw.replace([float("inf"), float("-inf")], float("nan"), inplace=True)
+    raw = raw.groupby(level="Code", group_keys=False).apply(
+        _trim_tail, horizon=horizon,
+    )
+    return raw.rename(name)
+
+
 @register_factor(
     name="label_ret_1d",
     description="T+1开盘买入、T+2开盘卖出，1日目标收益。",
@@ -30,12 +54,7 @@ def _forward_open_ret(series, horizon: int):
 )
 def factor_label_ret_1d(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
-    open_price = daily_adj["open"].replace(0, float("nan"))
-    raw = open_price.groupby(level="Code").transform(
-        lambda s: _forward_open_ret(s, 1)
-    )
-    raw.replace([float("inf"), float("-inf")], float("nan"), inplace=True)
-    return raw.rename("label_ret_1d")
+    return _compute_label_ret(daily_adj, 1, "label_ret_1d")
 
 
 @register_factor(
@@ -47,12 +66,7 @@ def factor_label_ret_1d(context: FactorContext):
 )
 def factor_label_ret_5d(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
-    open_price = daily_adj["open"].replace(0, float("nan"))
-    raw = open_price.groupby(level="Code").transform(
-        lambda s: _forward_open_ret(s, 5)
-    )
-    raw.replace([float("inf"), float("-inf")], float("nan"), inplace=True)
-    return raw.rename("label_ret_5d")
+    return _compute_label_ret(daily_adj, 5, "label_ret_5d")
 
 
 @register_factor(
@@ -64,12 +78,7 @@ def factor_label_ret_5d(context: FactorContext):
 )
 def factor_label_ret_10d(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
-    open_price = daily_adj["open"].replace(0, float("nan"))
-    raw = open_price.groupby(level="Code").transform(
-        lambda s: _forward_open_ret(s, 10)
-    )
-    raw.replace([float("inf"), float("-inf")], float("nan"), inplace=True)
-    return raw.rename("label_ret_10d")
+    return _compute_label_ret(daily_adj, 10, "label_ret_10d")
 
 
 @register_factor(
@@ -81,9 +90,4 @@ def factor_label_ret_10d(context: FactorContext):
 )
 def factor_label_ret_20d(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
-    open_price = daily_adj["open"].replace(0, float("nan"))
-    raw = open_price.groupby(level="Code").transform(
-        lambda s: _forward_open_ret(s, 20)
-    )
-    raw.replace([float("inf"), float("-inf")], float("nan"), inplace=True)
-    return raw.rename("label_ret_20d")
+    return _compute_label_ret(daily_adj, 20, "label_ret_20d")

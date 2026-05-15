@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import pandas as pd
@@ -21,9 +21,32 @@ class FactorSpec:
 @dataclass
 class FactorContext:
     repo: DataRepository
+    start_date: str | None = None
+    end_date: str | None = None
+    _lookback_days: int = 252
 
     def load(self, relative_path: str) -> pd.DataFrame:
-        return self.repo.load_panel(relative_path)
+        return self.repo.load_panel(
+            relative_path,
+            min_date=self.start_date,
+            max_date=self.end_date,
+            lookback_days=self._lookback_days,
+        )
+
+    def load_financial(
+        self,
+        relative_path: str,
+        value_cols: list[str] | None = None,
+        date_col: str = "ann_date",
+    ) -> pd.DataFrame:
+        return self.repo.load_financial_panel(
+            relative_path,
+            value_cols=value_cols,
+            date_col=date_col,
+            min_date=self.start_date,
+            max_date=self.end_date,
+            lookback_days=self._lookback_days,
+        )
 
 
 FACTOR_REGISTRY: dict[str, FactorSpec] = {}

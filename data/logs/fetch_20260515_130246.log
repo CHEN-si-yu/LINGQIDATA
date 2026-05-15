@@ -1,0 +1,387 @@
+[2026-05-15 13:02:46] [incremental] 22 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-15 13:02:46] [incremental] Datasets: ['daily', 'daily_adj', 'finance', 'margin_detail', 'main_fund_flow', 'dragon_tiger', 'top_list', 'limit_up', 'limit_list', 'kline_weekly', 'kline_monthly', 'kline_adj_weekly', 'kline_adj_monthly', 'holder_number', 'pledge_stat', 'financial_indicator', 'income', 'balancesheet', 'cashflow', 'calendar', 'stock_list', 'cyq_chips']
+[2026-05-15 13:02:46] 
+============================================================
+[2026-05-15 13:02:46] [daily] Starting incremental update
+[2026-05-15 13:02:47] [daily] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:02:47] [daily] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:02:47] [daily] 1 to fetch, workers=6, tokens=4.4
+[2026-05-15 13:02:53] [daily] [1/1] 2026-05 -> 21967 rows | tokens=30.0
+[2026-05-15 13:02:53] [daily] Total: 21967 rows, 12 columns
+[2026-05-15 13:02:53] [daily] Saved -> /root/shared-nvme/lingqiData/data/_incr_daily.tmp.parquet
+[2026-05-15 13:02:53] [daily] Cleaned up 1 checkpoint files
+[2026-05-15 13:03:03] [daily] Merge: 8402978 → 8402978 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:03:03] 
+============================================================
+[2026-05-15 13:03:03] [daily_adj] Starting incremental update
+[2026-05-15 13:03:03] [daily_adj] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:03] [daily_adj] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:03] [daily_adj] 1 to fetch, workers=6, tokens=79.9
+[2026-05-15 13:03:11] [daily_adj] [1/1] 2026-05 -> 21967 rows | tokens=113.1
+[2026-05-15 13:03:11] [daily_adj] Total: 21967 rows, 11 columns
+[2026-05-15 13:03:11] [daily_adj] Saved -> /root/shared-nvme/lingqiData/data/_incr_daily_adj.tmp.parquet
+[2026-05-15 13:03:11] [daily_adj] Cleaned up 1 checkpoint files
+[2026-05-15 13:03:21] [daily_adj] Merge: 8402978 → 8402978 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:03:21] 
+============================================================
+[2026-05-15 13:03:21] [finance] Starting incremental update
+[2026-05-15 13:03:22] [finance] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:22] [finance] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:22] [finance] 1 to fetch, workers=6, tokens=161.5
+[2026-05-15 13:03:27] [finance] [1/1] 2026-05 → 21967 rows | tokens=184.7
+[2026-05-15 13:03:27] [finance] Total: 21967 rows, 20 columns
+[2026-05-15 13:03:27] [finance] Saved → /root/shared-nvme/lingqiData/data/_incr_finance.tmp.parquet
+[2026-05-15 13:03:27] [finance] Cleaned up 1 checkpoint files
+[2026-05-15 13:03:38] [finance] Merge: 7308514 → 7308514 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:03:38] 
+============================================================
+[2026-05-15 13:03:38] [margin_detail] Starting incremental update
+[2026-05-15 13:03:38] [margin_detail] Existing max date: 2026-05-12 | Fetching: 2026-05-09 ~ 2026-05-15
+[2026-05-15 13:03:38] [margin_detail] 1 months: 2026-05-09 ~ 2026-05-15
+[2026-05-15 13:03:38] [margin_detail] 1 to fetch, workers=6, tokens=235.4
+[2026-05-15 13:03:40] [margin_detail] [1/1] 2026-05 -> 13064 rows | tokens=241.9
+[2026-05-15 13:03:40] [margin_detail] Total: 13064 rows, 10 columns
+[2026-05-15 13:03:40] [margin_detail] Saved -> /root/shared-nvme/lingqiData/data/_incr_margin_detail.tmp.parquet
+[2026-05-15 13:03:40] [margin_detail] Cleaned up 1 checkpoint files
+[2026-05-15 13:03:46] [margin_detail] Merge: 4613837 → 4613837 rows (+0) | max_date: 2026-05-12 → 2026-05-12
+[2026-05-15 13:03:47] 
+============================================================
+[2026-05-15 13:03:47] [main_fund_flow] Starting incremental update
+[2026-05-15 13:03:48] [main_fund_flow] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:48] [fund_flow] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:03:48] [fund_flow] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:03:53] [fund_flow] [1/1] 2026-05 -> 20725 rows | tokens=280.0
+[2026-05-15 13:03:53] [fund_flow] Total: 20725 rows, 20 columns
+[2026-05-15 13:03:53] [fund_flow] Saved -> /root/shared-nvme/lingqiData/data/_incr_main_fund_flow.tmp.parquet
+[2026-05-15 13:03:53] [fund_flow] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:05] [main_fund_flow] Merge: 7931756 → 7931756 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:05] 
+============================================================
+[2026-05-15 13:04:05] [dragon_tiger] Starting incremental update
+[2026-05-15 13:04:05] [dragon_tiger] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:05] [dragon_tiger] 5 trading days: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:05] [dragon_tiger] 1 months
+[2026-05-15 13:04:05] [dragon_tiger] 1 months to fetch
+[2026-05-15 13:04:05] [dragon_tiger] [1/1] 2026-05: 5 days
+[2026-05-15 13:04:06]   [dragon_tiger/2026-05] [1/5] 2026-05-11 -> 836 rows
+[2026-05-15 13:04:06]   [dragon_tiger/2026-05] [2/5] 2026-05-12 -> 955 rows
+[2026-05-15 13:04:06]   [dragon_tiger/2026-05] [3/5] 2026-05-13 -> 985 rows
+[2026-05-15 13:04:07]   [dragon_tiger/2026-05] [4/5] 2026-05-14 -> 859 rows
+[2026-05-15 13:04:07]   [dragon_tiger/2026-05] [5/5] 2026-05-15 -> 0 rows
+[2026-05-15 13:04:07] [dragon_tiger] [1/1] 2026-05 -> 3635 rows
+[2026-05-15 13:04:07] [dragon_tiger] Total: 3635 rows, 10 columns
+[2026-05-15 13:04:07] [dragon_tiger] Saved -> /root/shared-nvme/lingqiData/data/_incr_dragon_tiger.tmp.parquet
+[2026-05-15 13:04:07] [dragon_tiger] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:07] [dragon_tiger] Merge: 90159 → 90159 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:07] 
+============================================================
+[2026-05-15 13:04:07] [top_list] Starting incremental update
+[2026-05-15 13:04:07] [top_list] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:07] [top_list] 5 trading days: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:07] [top_list] 1 months
+[2026-05-15 13:04:07] [top_list] 1 months to fetch
+[2026-05-15 13:04:07] [top_list] [1/1] 2026-05: 5 days
+[2026-05-15 13:04:07]   [top_list/2026-05] [1/5] 2026-05-11 -> 88 rows
+[2026-05-15 13:04:08]   [top_list/2026-05] [2/5] 2026-05-12 -> 101 rows
+[2026-05-15 13:04:08]   [top_list/2026-05] [3/5] 2026-05-13 -> 110 rows
+[2026-05-15 13:04:08]   [top_list/2026-05] [4/5] 2026-05-14 -> 91 rows
+[2026-05-15 13:04:08]   [top_list/2026-05] [5/5] 2026-05-15 -> 0 rows
+[2026-05-15 13:04:08] [top_list] [1/1] 2026-05 -> 390 rows
+[2026-05-15 13:04:08] [top_list] Dropped 38 rows with malformed stock_code
+[2026-05-15 13:04:08] [top_list] Total: 352 rows, 15 columns
+[2026-05-15 13:04:08] [top_list] Saved -> /root/shared-nvme/lingqiData/data/_incr_top_list.tmp.parquet
+[2026-05-15 13:04:08] [top_list] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:09] [top_list] Merge: 86492 → 86492 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:09] 
+============================================================
+[2026-05-15 13:04:09] [limit_up] Starting incremental update
+[2026-05-15 13:04:09] [limit_up] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:09] [limit_up] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:09] [limit_up] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:09] [limit_up] [1/1] 2026-05 -> 456 rows | tokens=280.0
+[2026-05-15 13:04:09] [limit_up] Total: 456 rows, 17 columns
+[2026-05-15 13:04:09] [limit_up] Saved -> /root/shared-nvme/lingqiData/data/_incr_limit_up.tmp.parquet
+[2026-05-15 13:04:09] [limit_up] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:09] [limit_up] Merge: 122536 → 122536 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:09] 
+============================================================
+[2026-05-15 13:04:09] [limit_list] Starting incremental update
+[2026-05-15 13:04:09] [limit_list] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:09] [limit_list] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:09] [limit_list] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:10] [limit_list] [1/1] 2026-05 -> 462 rows | tokens=280.0
+[2026-05-15 13:04:10] [limit_list] Total: 462 rows, 18 columns
+[2026-05-15 13:04:10] [limit_list] Saved -> /root/shared-nvme/lingqiData/data/_incr_limit_list.tmp.parquet
+[2026-05-15 13:04:10] [limit_list] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:10] [limit_list] Merge: 153108 → 153108 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:10] 
+============================================================
+[2026-05-15 13:04:10] [kline_weekly] Starting incremental update
+[2026-05-15 13:04:11] [kline_weekly] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:11] [kline/weekly] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:11] [kline/weekly] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:12] [kline/weekly] [1/1] 2026-05 -> 5496 rows | tokens=280.0
+[2026-05-15 13:04:12] [kline/weekly] Total: 5496 rows, 12 columns
+[2026-05-15 13:04:12] [kline/weekly] Saved -> /root/shared-nvme/lingqiData/data/_incr_kline_weekly.tmp.parquet
+[2026-05-15 13:04:12] [kline/weekly] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:15] [kline_weekly] Merge: 1970433 → 1970433 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:15] 
+============================================================
+[2026-05-15 13:04:15] [kline_monthly] Starting incremental update
+[2026-05-15 13:04:15] [kline_monthly] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:15] [kline/monthly] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:15] [kline/monthly] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:16] [kline/monthly] [1/1] 2026-05 -> 5496 rows | tokens=280.0
+[2026-05-15 13:04:16] [kline/monthly] Total: 5496 rows, 12 columns
+[2026-05-15 13:04:16] [kline/monthly] Saved -> /root/shared-nvme/lingqiData/data/_incr_kline_monthly.tmp.parquet
+[2026-05-15 13:04:16] [kline/monthly] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:17] [kline_monthly] Merge: 438425 → 438425 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:17] 
+============================================================
+[2026-05-15 13:04:17] [kline_adj_weekly] Starting incremental update
+[2026-05-15 13:04:17] [kline_adj_weekly] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:17] [kline_adj/weekly] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:17] [kline_adj/weekly] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:19] [kline_adj/weekly] [1/1] 2026-05 -> 5496 rows | tokens=280.0
+[2026-05-15 13:04:19] [kline_adj/weekly] Total: 5496 rows, 11 columns
+[2026-05-15 13:04:19] [kline_adj/weekly] Saved -> /root/shared-nvme/lingqiData/data/_incr_kline_adj_weekly.tmp.parquet
+[2026-05-15 13:04:19] [kline_adj/weekly] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:21] [kline_adj_weekly] Merge: 1970433 → 1970433 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:21] 
+============================================================
+[2026-05-15 13:04:21] [kline_adj_monthly] Starting incremental update
+[2026-05-15 13:04:21] [kline_adj_monthly] Existing max date: 2026-05-14 | Fetching: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:21] [kline_adj/monthly] 1 months: 2026-05-11 ~ 2026-05-15
+[2026-05-15 13:04:21] [kline_adj/monthly] 1 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:23] [kline_adj/monthly] [1/1] 2026-05 -> 5496 rows | tokens=280.0
+[2026-05-15 13:04:23] [kline_adj/monthly] Total: 5496 rows, 11 columns
+[2026-05-15 13:04:23] [kline_adj/monthly] Saved -> /root/shared-nvme/lingqiData/data/_incr_kline_adj_monthly.tmp.parquet
+[2026-05-15 13:04:23] [kline_adj/monthly] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:24] [kline_adj_monthly] Merge: 438425 → 438425 rows (+0) | max_date: 2026-05-14 → 2026-05-14
+[2026-05-15 13:04:24] 
+============================================================
+[2026-05-15 13:04:24] [holder_number] Starting incremental update
+[2026-05-15 13:04:24] [holder_number] Up to date (max=2026-05-15)
+[2026-05-15 13:04:24] 
+============================================================
+[2026-05-15 13:04:24] [pledge_stat] Starting incremental update
+[2026-05-15 13:04:24] [pledge_stat] Existing max date: 2026-04-30 | Fetching: 2026-01-25 ~ 2026-05-15
+[2026-05-15 13:04:24] [pledge_stat] 5 months: 2026-01-25 ~ 2026-05-15
+[2026-05-15 13:04:24] [pledge_stat] 5 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:24] [pledge_stat] [1/5] 2026-03 -> 0 rows | tokens=275.8
+[2026-05-15 13:04:24] [pledge_stat] [2/5] 2026-01 -> 0 rows | tokens=275.8
+[2026-05-15 13:04:24] [pledge_stat] [3/5] 2026-02 -> 0 rows | tokens=275.8
+[2026-05-15 13:04:24] [pledge_stat] [4/5] 2026-05 -> 0 rows | tokens=277.1
+[2026-05-15 13:04:25] [pledge_stat] [5/5] 2026-04 -> 4193 rows | tokens=277.4
+[2026-05-15 13:04:25] [pledge_stat] Total: 4193 rows, 7 columns
+[2026-05-15 13:04:25] [pledge_stat] Saved -> /root/shared-nvme/lingqiData/data/_incr_pledge_stat.tmp.parquet
+[2026-05-15 13:04:25] [pledge_stat] Cleaned up 1 checkpoint files
+[2026-05-15 13:04:25] [pledge_stat] Merge: 86099 → 86099 rows (+0) | max_date: 2026-04-30 → 2026-04-30
+[2026-05-15 13:04:25] 
+============================================================
+[2026-05-15 13:04:25] [financial_indicator] Starting incremental update
+[2026-05-15 13:04:25] [financial_indicator] Existing max date: 2026-03-31 | Fetching: 2025-12-26 ~ 2026-05-15
+[2026-05-15 13:04:25] [financial] 2 quarters: 2025-12-31 ~ 2026-03-31
+[2026-05-15 13:04:25] [financial] 2 to fetch, workers=6, tokens=278.5
+[2026-05-15 13:04:34] [financial] [1/2] 2026-03-31 → 5607 rows | tokens=280.0
+[2026-05-15 13:04:35] [financial] [2/2] 2025-12-31 → 6462 rows | tokens=280.0
+[2026-05-15 13:04:35] [financial] Dropped 395 rows with malformed stock_code
+[2026-05-15 13:04:35] [financial] Total: 11674 rows, 167 columns
+[2026-05-15 13:04:35] [financial] Saved → /root/shared-nvme/lingqiData/data/_incr_financial_indicator.tmp.parquet
+[2026-05-15 13:04:36] [financial] Cleaned up 2 checkpoint files
+[2026-05-15 13:04:40] [financial_indicator] Merge: 186721 → 186721 rows (+0) | max_date: 2026-03-31 → 2026-03-31
+[2026-05-15 13:04:40] 
+============================================================
+[2026-05-15 13:04:40] [income] Starting incremental update
+[2026-05-15 13:04:40] [income] Existing max date: 2026-03-31 | Fetching: 2025-12-26 ~ 2026-05-15
+[2026-05-15 13:04:40] [income] 2 quarters: 2025-12-31 ~ 2026-03-31
+[2026-05-15 13:04:40] [income] 2 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:04:44] [income] [1/2] 2026-03-31 -> 5561 rows | tokens=280.0
+[2026-05-15 13:04:45] [income] [2/2] 2025-12-31 -> 6215 rows | tokens=280.0
+[2026-05-15 13:04:45] [income] Dropped 7 rows with malformed stock_code
+[2026-05-15 13:04:45] [income] Total: 11769 rows, 96 columns
+[2026-05-15 13:04:45] [income] Saved -> /root/shared-nvme/lingqiData/data/_incr_income.tmp.parquet
+[2026-05-15 13:04:45] [income] Cleaned up 2 checkpoint files
+[2026-05-15 13:04:47] [income] Merge: 152657 → 152657 rows (+0) | max_date: 2026-03-31 → 2026-03-31
+[2026-05-15 13:04:47] 
+============================================================
+[2026-05-15 13:04:47] [balancesheet] Starting incremental update
+[2026-05-15 13:04:47] [balancesheet] Existing max date: 2026-03-31 | Fetching: 2025-12-26 ~ 2026-05-15
+[2026-05-15 13:04:47] [balancesheet] 2 quarters: 2025-12-31 ~ 2026-03-31
+[2026-05-15 13:04:47] [balancesheet] 2 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:05:00] [balancesheet] [1/2] 2026-03-31 -> 5564 rows | tokens=280.0
+[2026-05-15 13:05:01] [balancesheet] [2/2] 2025-12-31 -> 6218 rows | tokens=280.0
+[2026-05-15 13:05:01] [balancesheet] Dropped 10 rows with malformed stock_code
+[2026-05-15 13:05:01] [balancesheet] Total: 11772 rows, 157 columns
+[2026-05-15 13:05:01] [balancesheet] Saved -> /root/shared-nvme/lingqiData/data/_incr_balancesheet.tmp.parquet
+[2026-05-15 13:05:01] [balancesheet] Cleaned up 2 checkpoint files
+[2026-05-15 13:05:03] [balancesheet] Merge: 151113 → 151113 rows (+0) | max_date: 2026-03-31 → 2026-03-31
+[2026-05-15 13:05:03] 
+============================================================
+[2026-05-15 13:05:03] [cashflow] Starting incremental update
+[2026-05-15 13:05:03] [cashflow] Existing max date: 2026-03-31 | Fetching: 2025-12-26 ~ 2026-05-15
+[2026-05-15 13:05:03] [cashflow] 2 quarters: 2025-12-31 ~ 2026-03-31
+[2026-05-15 13:05:03] [cashflow] 2 to fetch, workers=6, tokens=280.0
+[2026-05-15 13:05:11] [cashflow] [1/2] 2026-03-31 -> 5203 rows | tokens=280.0
+[2026-05-15 13:05:11] [cashflow] [2/2] 2025-12-31 -> 4801 rows | tokens=280.0
+[2026-05-15 13:05:11] [cashflow] Dropped 4 rows with malformed stock_code
+[2026-05-15 13:05:11] [cashflow] Total: 10000 rows, 97 columns
+[2026-05-15 13:05:11] [cashflow] Saved -> /root/shared-nvme/lingqiData/data/_incr_cashflow.tmp.parquet
+[2026-05-15 13:05:11] [cashflow] Cleaned up 2 checkpoint files
+[2026-05-15 13:05:13] [cashflow] Merge: 140009 → 140009 rows (+0) | max_date: 2026-03-31 → 2026-03-31
+[2026-05-15 13:05:13] 
+============================================================
+[2026-05-15 13:05:13] [calendar] Starting incremental update
+[2026-05-15 13:05:13] [calendar] 2020-01-01 ~ 2026-05-15 | 2327 days | Trading: 1540 | Non-trading: 787
+[2026-05-15 13:05:13] [calendar] Saved → /root/shared-nvme/lingqiData/data/calendar.parquet
+[2026-05-15 13:05:13] [calendar] Re-fetched: 2327 rows → /root/shared-nvme/lingqiData/data/calendar.parquet
+[2026-05-15 13:05:13] 
+============================================================
+[2026-05-15 13:05:13] [stock_list] Starting incremental update
+[2026-05-15 13:05:14] [stock_list] page 0: 5839 rows | total=5839
+[2026-05-15 13:05:14] [stock_list] Total: 5839 stocks, 11 columns
+[2026-05-15 13:05:14] [stock_list] Saved -> /root/shared-nvme/lingqiData/data/stock_list.parquet
+[2026-05-15 13:05:14] [stock_list] Re-fetched: 5839 rows → /root/shared-nvme/lingqiData/data/stock_list.parquet
+[2026-05-15 13:05:14] 
+============================================================
+[2026-05-15 13:05:14] [cyq_chips] Starting incremental update
+[2026-05-15 13:05:17] [cyq_chips] 3002 stocks | 3002 incremental | 0 new | 0 up-to-date
+[2026-05-15 13:05:17] [cyq_chips] Phase incr: 3002 stocks in 7 batches (batch_size=500)
+[2026-05-15 13:07:08] [cyq_chips] [incr 1/7] 500 stocks, 186421 rows, +0 new | tokens=280.0
+[2026-05-15 13:07:09] [cyq_chips] [incr 2/7] 2 stocks, 1128 rows, +0 new | tokens=280.0
+[2026-05-15 13:08:31] [cyq_chips] [incr 3/7] 500 stocks, 209603 rows, +0 new | tokens=280.0
+[2026-05-15 13:09:56] [cyq_chips] [incr 4/7] 500 stocks, 199756 rows, +0 new | tokens=280.0
+[2026-05-15 13:11:39] [cyq_chips] [incr 5/7] 500 stocks, 212953 rows, +0 new | tokens=280.0
+[2026-05-15 13:13:07] [cyq_chips] [incr 6/7] 500 stocks, 200585 rows, +0 new | tokens=280.0
+[2026-05-15 13:14:28] [cyq_chips] [incr 7/7] 500 stocks, 397902 rows, +85164 new | tokens=280.0
+[2026-05-15 13:14:28] [cyq_chips] Done: 3002 stocks processed, 85164 new rows total
+[2026-05-15 13:14:33] 
+============================================================
+[2026-05-15 13:14:33] [incremental] Summary:
+[2026-05-15 13:14:33]   [updated]  daily: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  daily_adj: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  finance: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  margin_detail: +0 rows | 2026-05-12 → 2026-05-12
+[2026-05-15 13:14:33]   [updated]  main_fund_flow: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  dragon_tiger: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  top_list: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  limit_up: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  limit_list: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  kline_weekly: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  kline_monthly: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  kline_adj_weekly: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  kline_adj_monthly: +0 rows | 2026-05-14 → 2026-05-14
+[2026-05-15 13:14:33]   [updated]  pledge_stat: +0 rows | 2026-04-30 → 2026-04-30
+[2026-05-15 13:14:33]   [updated]  financial_indicator: +0 rows | 2026-03-31 → 2026-03-31
+[2026-05-15 13:14:33]   [updated]  income: +0 rows | 2026-03-31 → 2026-03-31
+[2026-05-15 13:14:33]   [updated]  balancesheet: +0 rows | 2026-03-31 → 2026-03-31
+[2026-05-15 13:14:33]   [updated]  cashflow: +0 rows | 2026-03-31 → 2026-03-31
+[2026-05-15 13:14:33]   [updated]  calendar: +2327 rows | ? → ?
+[2026-05-15 13:14:33]   [updated]  stock_list: +5839 rows | ? → ?
+[2026-05-15 13:14:33]   [updated]  cyq_chips: +? rows | ? → ?
+[2026-05-15 13:14:33]   [uptodate] holder_number: max=2026-05-15
+[2026-05-15 13:14:33] [incremental] Done: 21 updated, 1 uptodate, 0 skipped, 0 errors
+[2026-05-15 13:14:33] [incremental] Total API calls: 223
+[2026-05-15 13:14:33]   basic/calendar: 1
+[2026-05-15 13:14:33]   stock/balancesheet: 2
+[2026-05-15 13:14:33]   stock/cashflow: 2
+[2026-05-15 13:14:33]   stock/cyq_chips: 176
+[2026-05-15 13:14:33]   stock/daily: 3
+[2026-05-15 13:14:33]   stock/daily_adj: 3
+[2026-05-15 13:14:33]   stock/dragon_tiger: 5
+[2026-05-15 13:14:33]   stock/finance: 3
+[2026-05-15 13:14:33]   stock/financial_indicator: 2
+[2026-05-15 13:14:33]   stock/income: 2
+[2026-05-15 13:14:33]   stock/kline: 2
+[2026-05-15 13:14:33]   stock/kline_adj: 4
+[2026-05-15 13:14:33]   stock/limit_list: 1
+[2026-05-15 13:14:33]   stock/limit_up: 1
+[2026-05-15 13:14:33]   stock/list: 1
+[2026-05-15 13:14:33]   stock/main_fund_flow: 3
+[2026-05-15 13:14:33]   stock/margin_detail: 2
+[2026-05-15 13:14:33]   stock/pledge_stat: 5
+[2026-05-15 13:14:33]   stock/top_list: 5
+[2026-05-15 13:14:33] 
+[incremental] PENDING (server behind, will re-fetch with extended overlap next run):
+[2026-05-15 13:14:33]   [pending] balancesheet                 last_data=2026-03-31  since=2026-05-14
+[2026-05-15 13:14:33]   [pending] cashflow                     last_data=2026-03-31  since=2026-05-14
+[2026-05-15 13:14:33]   [pending] financial_indicator          last_data=2026-03-31  since=2026-05-14
+[2026-05-15 13:14:33]   [pending] income                       last_data=2026-03-31  since=2026-05-14
+[2026-05-15 13:14:33]   [pending] margin_detail                last_data=2026-05-12  since=2026-05-14
+[2026-05-15 13:14:33]   [pending] pledge_stat                  last_data=2026-04-30  since=2026-05-14
+[2026-05-15 13:14:33] 
+============================================================
+[2026-05-15 13:14:33] [timing] Per-dataset timing report
+[2026-05-15 13:14:33] Dataset                      Phase                    Elapsed  Details
+[2026-05-15 13:14:33] -------------------------------------------------------------------------------------
+[2026-05-15 13:14:33]   balancesheet               fetch                     13.9s  
+[2026-05-15 13:14:33]   balancesheet               merge                      2.3s  
+[2026-05-15 13:14:33]   balancesheet               total                     16.3s  
+[2026-05-15 13:14:33]   calendar                   fetch                      0.3s  
+[2026-05-15 13:14:33]   calendar                   total                      0.3s  
+[2026-05-15 13:14:33]   cashflow                   fetch                      8.0s  
+[2026-05-15 13:14:33]   cashflow                   merge                      1.6s  
+[2026-05-15 13:14:33]   cashflow                   total                      9.7s  
+[2026-05-15 13:14:33]   cyq_chips                  fetch x7                 145.6s  7 calls, 1,408,348 rows
+[2026-05-15 13:14:33]   cyq_chips                  merge x7                 534.5s  1,408,348 rows
+[2026-05-15 13:14:33]   cyq_chips                  total                    558.1s  
+[2026-05-15 13:14:33]   daily                      fetch                      6.3s  
+[2026-05-15 13:14:33]   daily                      merge                      9.1s  
+[2026-05-15 13:14:33]   daily                      total                     16.9s  
+[2026-05-15 13:14:33]   daily_adj                  fetch                      7.9s  
+[2026-05-15 13:14:33]   daily_adj                  merge                      8.9s  
+[2026-05-15 13:14:33]   daily_adj                  total                     18.2s  
+[2026-05-15 13:14:33]   dragon_tiger               fetch                      1.7s  
+[2026-05-15 13:14:33]   dragon_tiger               merge                      0.2s  
+[2026-05-15 13:14:33]   dragon_tiger               total                      1.9s  
+[2026-05-15 13:14:33]   finance                    fetch                      5.8s  
+[2026-05-15 13:14:33]   finance                    merge                      9.5s  
+[2026-05-15 13:14:33]   finance                    total                     16.6s  
+[2026-05-15 13:14:33]   financial_indicator        fetch                     10.8s  
+[2026-05-15 13:14:33]   financial_indicator        merge                      4.3s  
+[2026-05-15 13:14:33]   financial_indicator        total                     15.2s  
+[2026-05-15 13:14:33]   holder_number              total                      0.1s  
+[2026-05-15 13:14:33]   income                     fetch                      5.4s  
+[2026-05-15 13:14:33]   income                     merge                      1.6s  
+[2026-05-15 13:14:33]   income                     total                      7.1s  
+[2026-05-15 13:14:33]   kline_adj_monthly          fetch                      2.0s  
+[2026-05-15 13:14:33]   kline_adj_monthly          merge                      0.5s  
+[2026-05-15 13:14:33]   kline_adj_monthly          total                      2.7s  
+[2026-05-15 13:14:33]   kline_adj_weekly           fetch                      2.2s  
+[2026-05-15 13:14:33]   kline_adj_weekly           merge                      2.0s  
+[2026-05-15 13:14:33]   kline_adj_weekly           total                      4.6s  
+[2026-05-15 13:14:33]   kline_monthly              fetch                      1.1s  
+[2026-05-15 13:14:33]   kline_monthly              merge                      0.6s  
+[2026-05-15 13:14:33]   kline_monthly              total                      1.9s  
+[2026-05-15 13:14:33]   kline_weekly               fetch                      1.5s  
+[2026-05-15 13:14:33]   kline_weekly               merge                      2.4s  
+[2026-05-15 13:14:33]   kline_weekly               total                      4.3s  
+[2026-05-15 13:14:33]   limit_list                 fetch                      0.5s  
+[2026-05-15 13:14:33]   limit_list                 merge                      0.4s  
+[2026-05-15 13:14:33]   limit_list                 total                      1.0s  
+[2026-05-15 13:14:33]   limit_up                   fetch                      0.4s  
+[2026-05-15 13:14:33]   limit_up                   merge                      0.4s  
+[2026-05-15 13:14:33]   limit_up                   total                      0.9s  
+[2026-05-15 13:14:33]   main_fund_flow             fetch                      4.7s  
+[2026-05-15 13:14:33]   main_fund_flow             merge                     11.8s  
+[2026-05-15 13:14:33]   main_fund_flow             total                     17.9s  
+[2026-05-15 13:14:33]   margin_detail              fetch                      1.9s  
+[2026-05-15 13:14:33]   margin_detail              merge                      5.3s  
+[2026-05-15 13:14:33]   margin_detail              total                      9.9s  
+[2026-05-15 13:14:33]   pledge_stat                fetch                      0.6s  
+[2026-05-15 13:14:33]   pledge_stat                merge                      0.1s  
+[2026-05-15 13:14:33]   pledge_stat                total                      0.8s  
+[2026-05-15 13:14:33]   stock_list                 fetch                      1.1s  
+[2026-05-15 13:14:33]   stock_list                 total                      1.1s  
+[2026-05-15 13:14:33]   top_list                   fetch                      1.0s  
+[2026-05-15 13:14:33]   top_list                   merge                      0.2s  
+[2026-05-15 13:14:33]   top_list                   total                      1.3s  
+[2026-05-15 13:14:33] -------------------------------------------------------------------------------------
+[2026-05-15 13:14:33]   TOTAL                                              1525.2s
+[2026-05-15 13:14:33] 
+[timing] Top 5 slowest datasets:
+[2026-05-15 13:14:33]   cyq_chips                   1238.3s ( 81.2%) ################
+[2026-05-15 13:14:33]   daily_adj                     35.0s (  2.3%) 
+[2026-05-15 13:14:33]   main_fund_flow                34.3s (  2.3%) 
+[2026-05-15 13:14:33]   balancesheet                  32.4s (  2.1%) 
+[2026-05-15 13:14:33]   daily                         32.3s (  2.1%) 

@@ -16,10 +16,10 @@ from featureengineering.cli import main
 # - If parameters are provided, they take precedence.
 RUN_MODE = "all"  # "all", "list", "targets-only", or "custom"
 FACTORS: list[str] = []
-JOBS: int | None = 2
+JOBS: int | None = 8
 SEQUENTIAL = False
 SKIP_TARGETS = False
-FORCE = False
+FORCE = True
 SOURCE_ROOT: str | None = None
 
 

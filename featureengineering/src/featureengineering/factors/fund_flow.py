@@ -182,20 +182,20 @@ def factor_mf_net_inflow_trend_5d(context: FactorContext):
     )
     daily_ratio = ff["net_mf_amount"] / total_amount.replace(0, np.nan)
 
-    def _trend_slope(s):
-        s = s.dropna()
-        if len(s) < 3:
+    def _trend_slope(y):
+        y = y[~np.isnan(y)]
+        if len(y) < 3:
             return np.nan
-        x = np.arange(len(s))
+        x = np.arange(len(y), dtype=float)
         x = x - x.mean()
-        y = s.values - s.values.mean()
+        y = y - y.mean()
         denom = (x * x).sum()
         if denom == 0:
             return np.nan
         return (x * y).sum() / denom
 
     slope = daily_ratio.groupby(level="Code").transform(
-        lambda s: s.rolling(5, min_periods=3).apply(_trend_slope)
+        lambda s: s.rolling(5, min_periods=3).apply(_trend_slope, raw=True)
     )
     return cross_sectional_rank(slope)
 
@@ -225,8 +225,9 @@ def factor_big_order_divergence(context: FactorContext):
     )
     big_net_rate = big_net / total_amount.replace(0, np.nan)
 
-    rank_big = big_net_rate.groupby(level="Date").rank(pct=True)
-    rank_pct = daily_adj["pct_chg"].groupby(level="Date").rank(pct=True)
+    with np.errstate(invalid="ignore"):
+        rank_big = big_net_rate.groupby(level="Date").rank(pct=True)
+        rank_pct = daily_adj["pct_chg"].groupby(level="Date").rank(pct=True)
 
     # Align on common index
     common = rank_big.index.intersection(rank_pct.index)

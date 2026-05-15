@@ -177,7 +177,8 @@ def factor_pe_ttm_percentile(context: FactorContext):
 )
 def factor_dv_composite(context: FactorContext):
     finance = context.load("finance.parquet")
-    rank_ratio = finance["dv_ratio"].groupby(level="Date").rank(pct=True)
-    rank_ttm = finance["dv_ttm"].groupby(level="Date").rank(pct=True)
+    with np.errstate(invalid="ignore"):
+        rank_ratio = finance["dv_ratio"].groupby(level="Date").rank(pct=True)
+        rank_ttm = finance["dv_ttm"].groupby(level="Date").rank(pct=True)
     composite = (rank_ratio + rank_ttm) / 2.0
     return composite.rename("dv_composite")

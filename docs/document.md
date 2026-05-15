@@ -57,7 +57,7 @@ curl -H "apiKey: your_api_key" https://data.diemeng.chat/api/stock/list
 | | 获取资产负债表数据 | POST | `/api/stock/balancesheet` | 从 stock_balancesheet 表获取资产负债表数据 |
 | | 获取现金流量表数据 | POST | `/api/stock/cashflow` | 从 stock_cashflow 表获取现金流量表数据 |
 | | 获取大小单资金金流向 | POST | `/api/stock/main_fund_flow` | 获取大小单资金金流向数据 |
-| | 获取主力资金流向总览 | POST | `/api/stock/main_fund_flow_overview` | 获取主力资金流向总览数据 |
+
 | | 获取筹码峰分布 | POST | `/api/stock/cyq_chips` | 获取股票筹码峰分布数据 |
 | | 获取涨停数据 | POST | `/api/stock/limit_up` | 获取涨停明细数据 |
 | | 获取涨跌停数据 | POST | `/api/stock/limit_list` | 获取涨跌停数据 |
@@ -739,40 +739,7 @@ curl -H "apiKey: your_api_key" https://data.diemeng.chat/api/stock/list
 | `net_mf_vol` | float | 净流入量（手） |
 | `net_mf_amount` | float | 净流入额（万元） |
 
-#### 3.5.2.2 获取主力资金流向总览
-- **Method**: POST
-- **Path**: `/api/stock/main_fund_flow_overview`
-- **Description**: 获取主力资金流向总览数据。分档口径：小单 `<5万`，中单 `5万~20万`，大单 `20万~100万`，特大单 `>=100万`。查询条件支持仅传 `stock_code`、仅传 `start_time+end_time` 或两者同时传。时间区间为闭区间，`start_time = end_time` 时可查询当天数据。
-
-**请求参数**
-| 参数名 | 类型 | 必选 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `start_time` | string | 否 | 开始日期 (YYYY-MM-DD)，与 end_time 配套 |
-| `end_time` | string | 否 | 结束日期 (YYYY-MM-DD)，与 start_time 配套；闭区间，start_time=end_time 可查当天 |
-| `stock_code` | string\|array | 否 | 股票代码，例如 `600000.SH` |
-| `page` | integer | 否 | 页码，从0开始 (默认0) |
-| `page_size` | integer | 否 | 每页数量 (默认10000，最大10000) |
-
-**响应参数**
-| 字段名 | 类型 | 说明 |
-| :--- | :--- | :--- |
-| `trade_date` | string | 交易日期 |
-| `stock_code` | string | 股票代码 |
-| `name` | string | 股票名称 |
-| `close` | float | 收盘价 |
-| `pct_change` | float | 涨跌幅 |
-| `net_amount` | float | 主力净流入额 |
-| `net_amount_rate` | float | 主力净流入率 |
-| `buy_elg_amount` | float | 超大单净流入额 |
-| `buy_elg_amount_rate` | float | 超大单净流入率 |
-| `buy_lg_amount` | float | 大单净流入额 |
-| `buy_lg_amount_rate` | float | 大单净流入率 |
-| `buy_md_amount` | float | 中单净流入额 |
-| `buy_md_amount_rate` | float | 中单净流入率 |
-| `buy_sm_amount` | float | 小单净流入额 |
-| `buy_sm_amount_rate` | float | 小单净流入率 |
-
-#### 3.5.2.3 获取筹码峰分布
+#### 3.5.2.2 获取筹码峰分布
 - **Method**: POST
 - **Path**: `/api/stock/cyq_chips`
 - **Description**: 获取筹码峰分布数据。查询条件支持仅传 `stock_code`、仅传 `start_time+end_time` 或两者同时传。时间区间为闭区间，`start_time = end_time` 时可查询当天数据。

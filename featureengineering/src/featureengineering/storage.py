@@ -9,6 +9,53 @@ import pandas as pd
 from .registry import FactorSpec
 from .settings import ProjectPaths, configure_paths
 
+INCR_SUFFIX = "_incr"
+
+
+def factor_base_path(spec_or_name: FactorSpec | str, paths: ProjectPaths | None = None) -> Path:
+    """Return the base (historical) factor file path: {name}.fea."""
+    paths = paths or configure_paths()
+    name = spec_or_name if isinstance(spec_or_name, str) else spec_or_name.name
+    return paths.factor_output_dir / f"{name}.fea"
+
+
+def factor_incr_path(spec_or_name: FactorSpec | str, paths: ProjectPaths | None = None) -> Path:
+    """Return the incremental factor file path: {name}_incr.fea."""
+    paths = paths or configure_paths()
+    name = spec_or_name if isinstance(spec_or_name, str) else spec_or_name.name
+    return paths.factor_output_dir / f"{name}{INCR_SUFFIX}.fea"
+
+
+def load_factor(name: str, paths: ProjectPaths | None = None) -> pd.DataFrame:
+    """Load a factor by merging base ({name}.fea) and incremental ({name}_incr.fea) files.
+
+    The base file stores historical data and is never modified after full build.
+    The incremental file stores only the latest dates from daily updates.
+    Duplicates are resolved by keeping the incremental version (keep='last').
+    """
+    paths = paths or configure_paths()
+    base_path = factor_base_path(name, paths)
+    incr_path = factor_incr_path(name, paths)
+
+    frames: list[pd.DataFrame] = []
+    if base_path.exists():
+        frames.append(pd.read_feather(base_path))
+    if incr_path.exists():
+        frames.append(pd.read_feather(incr_path))
+
+    if not frames:
+        raise FileNotFoundError(
+            f"No factor files found for '{name}' in {paths.factor_output_dir}"
+        )
+
+    if len(frames) == 1:
+        return frames[0]
+
+    merged = pd.concat(frames)
+    merged = merged[~merged.index.duplicated(keep="last")]
+    merged = merged.sort_index(level=["Date", "Code"])
+    return merged
+
 
 def ensure_single_factor_frame(data: pd.Series | pd.DataFrame, factor_name: str) -> pd.DataFrame:
     if isinstance(data, pd.Series):
@@ -51,10 +98,20 @@ def write_factor(
     paths.factor_output_dir.mkdir(parents=True, exist_ok=True)
     paths.manifest_output_dir.mkdir(parents=True, exist_ok=True)
 
-    factor_path = paths.factor_output_dir / f"{spec.name}.fea"
+    factor_path = factor_base_path(spec, paths)
     manifest_path = paths.manifest_output_dir / f"{spec.name}.json"
 
+    # Purge stale incremental file — base file now contains full data.
+    incr_path = factor_incr_path(spec, paths)
+    if incr_path.exists():
+        incr_path.unlink()
+
     factor_frame.to_feather(factor_path)
+
+    # Last date and stock count
+    dates = factor_frame.index.get_level_values("Date")
+    last_date = str(dates.max())
+    last_day_stock_count = int((dates == last_date).sum())
 
     manifest = {
         "name": spec.name,
@@ -67,6 +124,8 @@ def write_factor(
         "coverage_ratio": float(factor_frame[spec.name].notna().mean()) if len(factor_frame) else 0.0,
         "index_names": list(factor_frame.index.names),
         "column": spec.name,
+        "last_date": last_date,
+        "last_day_stock_count": last_day_stock_count,
         "built_at": datetime.now().isoformat(timespec="seconds"),
     }
     manifest_path.write_text(
@@ -81,18 +140,19 @@ def write_factor_incremental(
     *,
     paths: ProjectPaths | None = None,
 ) -> tuple[Path, Path]:
-    """Merge new incremental factor data into the existing .fea file.
+    """Write incremental factor data to {name}_incr.fea.
 
-    Reads the existing file, concatenates with *new_frame*,
-    drops exact duplicates (keep last), sorts, and writes back.
+    Merges with existing incremental data (if any) so the incr file
+    accumulates new dates across multiple daily updates.  The base
+    {name}.fea file is never touched.
     """
     paths = paths or configure_paths()
-    factor_path = paths.factor_output_dir / f"{spec.name}.fea"
+    incr_path = factor_incr_path(spec, paths)
     manifest_path = paths.manifest_output_dir / f"{spec.name}.json"
 
-    if factor_path.exists():
+    if incr_path.exists():
         try:
-            existing = pd.read_feather(factor_path)
+            existing = pd.read_feather(incr_path)
         except Exception:
             existing = pd.DataFrame()
     else:
@@ -106,28 +166,49 @@ def write_factor_incremental(
         merged = merged.sort_index(level=["Date", "Code"])
 
     # Atomic write
-    tmp = factor_path.with_suffix(".fea.tmp")
+    tmp = incr_path.with_suffix(".fea.tmp")
     merged.to_feather(tmp)
-    tmp.replace(factor_path)
+    tmp.replace(incr_path)
 
-    # Update manifest
+    # Update manifest: reflect the full combined (base + incr) state
+    base_path = factor_base_path(spec, paths)
+    base_rows = 0
+    base_nn = 0
+    if base_path.exists():
+        try:
+            base_df = pd.read_feather(base_path)
+            base_rows = len(base_df)
+            base_nn = int(base_df[spec.name].notna().sum())
+        except Exception:
+            pass
+
+    total_rows = base_rows + len(merged)
+    total_nn = base_nn + int(merged[spec.name].notna().sum())
+
+    # Last date and stock count come from the incremental data (newest)
+    dates = merged.index.get_level_values("Date")
+    last_date = str(dates.max())
+    last_day_stock_count = int((dates == last_date).sum())
+
     manifest = {
         "name": spec.name,
         "description": spec.description,
         "category": spec.category,
         "thesis": spec.thesis,
         "dependencies": list(spec.dependencies),
-        "rows": int(len(merged)),
-        "non_null_rows": int(merged[spec.name].notna().sum()),
-        "coverage_ratio": float(merged[spec.name].notna().mean()) if len(merged) else 0.0,
+        "rows": total_rows,
+        "non_null_rows": total_nn,
+        "coverage_ratio": float(total_nn / total_rows) if total_rows else 0.0,
         "index_names": list(merged.index.names),
         "column": spec.name,
+        "last_date": last_date,
+        "last_day_stock_count": last_day_stock_count,
         "built_at": datetime.now().isoformat(timespec="seconds"),
     }
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return factor_path, manifest_path
+    return incr_path, manifest_path
 
 
 def write_target(
@@ -145,6 +226,10 @@ def write_target(
 
     target_frame.to_feather(target_path)
 
+    dates = target_frame.index.get_level_values("Date")
+    last_date = str(dates.max())
+    last_day_stock_count = int((dates == last_date).sum())
+
     manifest = {
         "name": spec.name,
         "description": spec.description,
@@ -156,6 +241,8 @@ def write_target(
         "coverage_ratio": float(target_frame[spec.name].notna().mean()) if len(target_frame) else 0.0,
         "index_names": list(target_frame.index.names),
         "column": spec.name,
+        "last_date": last_date,
+        "last_day_stock_count": last_day_stock_count,
         "built_at": datetime.now().isoformat(timespec="seconds"),
     }
     manifest_path.write_text(

@@ -54,9 +54,11 @@ def compute_ic(
         "rank" (Spearman) 或 "pearson" (Pearson)
     paths : ProjectPaths | None
     """
+    from .storage import load_factor
+
     paths = paths or configure_paths()
 
-    factor = pd.read_feather(paths.factor_output_dir / f"{factor_name}.fea")
+    factor = load_factor(factor_name, paths)
     target = pd.read_feather(paths.target_output_dir / f"{target_name}.fea")
 
     # Align on (Date, Code)
@@ -133,9 +135,11 @@ def get_ic_series(
     paths: ProjectPaths | None = None,
 ) -> pd.Series:
     """返回按日期的 IC 时间序列，用于画图或进一步分析。"""
+    from .storage import load_factor
+
     paths = paths or configure_paths()
 
-    factor = pd.read_feather(paths.factor_output_dir / f"{factor_name}.fea")
+    factor = load_factor(factor_name, paths)
     target = pd.read_feather(paths.target_output_dir / f"{target_name}.fea")
 
     factor_col = factor_name

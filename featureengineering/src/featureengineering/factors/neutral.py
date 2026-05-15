@@ -22,7 +22,8 @@ def _industry_neutral_rank(signal: pd.Series, context: FactorContext) -> pd.Seri
         index=signal.index,
     )
     df = df.dropna(subset=["industry"])
-    df["rank"] = df.groupby(["Date", "industry"])["signal"].rank(pct=True)
+    with np.errstate(invalid="ignore"):
+        df["rank"] = df.groupby(["Date", "industry"])["signal"].rank(pct=True)
     return df["rank"]
 
 

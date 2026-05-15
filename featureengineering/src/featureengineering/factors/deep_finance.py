@@ -17,7 +17,7 @@ from ..utils import cross_sectional_rank
     dependencies=("balancesheet.parquet", "calendar.parquet"),
 )
 def factor_goodwill_risk(context: FactorContext):
-    bs = context.repo.load_financial_panel(
+    bs = context.load_financial(
         "balancesheet.parquet",
         value_cols=["goodwill", "total_hldr_eqy_exc_min_int"],
     )
@@ -33,7 +33,7 @@ def factor_goodwill_risk(context: FactorContext):
     dependencies=("balancesheet.parquet", "calendar.parquet"),
 )
 def factor_inventory_pressure(context: FactorContext):
-    bs = context.repo.load_financial_panel(
+    bs = context.load_financial(
         "balancesheet.parquet",
         value_cols=["inventories", "total_assets"],
     )
@@ -49,7 +49,7 @@ def factor_inventory_pressure(context: FactorContext):
     dependencies=("balancesheet.parquet", "calendar.parquet"),
 )
 def factor_receivable_pressure(context: FactorContext):
-    bs = context.repo.load_financial_panel(
+    bs = context.load_financial(
         "balancesheet.parquet",
         value_cols=["accounts_receiv", "total_assets"],
     )
@@ -65,7 +65,7 @@ def factor_receivable_pressure(context: FactorContext):
     dependencies=("balancesheet.parquet", "calendar.parquet"),
 )
 def factor_fix_asset_ratio(context: FactorContext):
-    bs = context.repo.load_financial_panel(
+    bs = context.load_financial(
         "balancesheet.parquet",
         value_cols=["fix_assets", "total_assets"],
     )
@@ -83,7 +83,7 @@ def factor_fix_asset_ratio(context: FactorContext):
     dependencies=("income.parquet", "calendar.parquet"),
 )
 def factor_operating_profit_purity(context: FactorContext):
-    inc = context.repo.load_financial_panel(
+    inc = context.load_financial(
         "income.parquet",
         value_cols=["operate_profit", "total_profit"],
     )
@@ -101,7 +101,7 @@ def factor_operating_profit_purity(context: FactorContext):
     dependencies=("income.parquet", "calendar.parquet"),
 )
 def factor_rd_intensity(context: FactorContext):
-    inc = context.repo.load_financial_panel(
+    inc = context.load_financial(
         "income.parquet",
         value_cols=["rd_exp", "revenue"],
     )
@@ -117,7 +117,7 @@ def factor_rd_intensity(context: FactorContext):
     dependencies=("income.parquet", "calendar.parquet"),
 )
 def factor_expense_control(context: FactorContext):
-    inc = context.repo.load_financial_panel(
+    inc = context.load_financial(
         "income.parquet",
         value_cols=["sell_exp", "admin_exp", "fin_exp", "revenue"],
     )
@@ -134,7 +134,7 @@ def factor_expense_control(context: FactorContext):
     dependencies=("income.parquet", "calendar.parquet"),
 )
 def factor_invest_income_reliance(context: FactorContext):
-    inc = context.repo.load_financial_panel(
+    inc = context.load_financial(
         "income.parquet",
         value_cols=["invest_income", "operate_profit"],
     )
@@ -153,16 +153,14 @@ def factor_invest_income_reliance(context: FactorContext):
     dependencies=("cashflow.parquet", "finance.parquet", "calendar.parquet"),
 )
 def factor_fcf_yield(context: FactorContext):
-    cf = context.repo.load_financial_panel(
+    cf = context.load_financial(
         "cashflow.parquet",
         value_cols=["free_cashflow"],
     )
     finance = context.load("finance.parquet")
-    # Align on index
     fcf = cf["free_cashflow"]
     mkt_cap = finance["total_mv"]
-    common = fcf.index.intersection(mkt_cap.index)
-    fcf_y = fcf.loc[common] / mkt_cap.loc[common].replace(0, np.nan)
+    fcf_y = fcf / mkt_cap.replace(0, np.nan)
     return cross_sectional_rank(fcf_y)
 
 
@@ -174,7 +172,7 @@ def factor_fcf_yield(context: FactorContext):
     dependencies=("cashflow.parquet", "calendar.parquet"),
 )
 def factor_ncf_act_to_revenue(context: FactorContext):
-    cf = context.repo.load_financial_panel(
+    cf = context.load_financial(
         "cashflow.parquet",
         value_cols=["n_cashflow_act", "c_inf_fr_operate_a"],
     )
@@ -190,7 +188,7 @@ def factor_ncf_act_to_revenue(context: FactorContext):
     dependencies=("cashflow.parquet", "calendar.parquet"),
 )
 def factor_financing_dependency(context: FactorContext):
-    cf = context.repo.load_financial_panel(
+    cf = context.load_financial(
         "cashflow.parquet",
         value_cols=["n_cash_flows_fnc_act", "n_cashflow_act"],
     )
@@ -209,7 +207,7 @@ def factor_financing_dependency(context: FactorContext):
     dependencies=("holder_number.parquet", "calendar.parquet"),
 )
 def factor_holder_num_change(context: FactorContext):
-    hn = context.repo.load_financial_panel(
+    hn = context.load_financial(
         "holder_number.parquet",
         value_cols=["holder_num"],
     )
@@ -228,7 +226,7 @@ def factor_holder_num_change(context: FactorContext):
     dependencies=("pledge_stat.parquet", "calendar.parquet"),
 )
 def factor_pledge_ratio(context: FactorContext):
-    ps = context.repo.load_financial_panel(
+    ps = context.load_financial(
         "pledge_stat.parquet",
         value_cols=["pledge_ratio"],
         date_col="end_date",
@@ -246,15 +244,15 @@ def factor_pledge_ratio(context: FactorContext):
     dependencies=("financial_indicator.parquet", "balancesheet.parquet", "income.parquet", "calendar.parquet"),
 )
 def factor_cash_conversion_cycle(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet",
         value_cols=["invturn_days", "arturn_days"],
     )
-    bs = context.repo.load_financial_panel(
+    bs = context.load_financial(
         "balancesheet.parquet",
         value_cols=["acct_payable"],
     )
-    inc = context.repo.load_financial_panel(
+    inc = context.load_financial(
         "income.parquet",
         value_cols=["oper_cost"],
     )
@@ -267,9 +265,7 @@ def factor_cash_conversion_cycle(context: FactorContext):
     # AP turnover days = AP / (oper_cost / 365)
     apturn_days = ap / (oper_cost / 365).replace(0, np.nan)
 
-    # Align on common index
-    common = inv_days.index.intersection(ar_days.index).intersection(apturn_days.index)
-    ccc = inv_days.loc[common] + ar_days.loc[common] - apturn_days.loc[common]
+    ccc = inv_days + ar_days - apturn_days
     ccc = ccc.clip(-1000, 1000)
     return cross_sectional_rank(-ccc)
 
@@ -284,7 +280,7 @@ def factor_cash_conversion_cycle(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_gross_margin_stability_8q(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet",
         value_cols=["q_gsprofit_margin"],
     )

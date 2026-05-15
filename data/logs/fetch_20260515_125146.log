@@ -1,0 +1,30 @@
+[2026-05-15 12:51:46] [incremental] DRY-RUN: 1 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-15 12:51:46] [incremental] Datasets: ['margin_detail']
+[2026-05-15 12:51:46] 
+============================================================
+[2026-05-15 12:51:46] [margin_detail] Starting incremental update
+[2026-05-15 12:51:47] [margin_detail] Up to date (max=2026-05-15)
+[2026-05-15 12:51:47] 
+============================================================
+[2026-05-15 12:51:47] [incremental] DRY-RUN Summary:
+[2026-05-15 12:51:47]   [uptodate] margin_detail: max=2026-05-15
+[2026-05-15 12:51:47] [incremental] Done: 0 updated, 1 uptodate, 0 skipped, 0 errors
+[2026-05-15 12:51:47] [incremental] Total API calls: 0
+[2026-05-15 12:51:47] 
+[incremental] PENDING (server behind, will re-fetch with extended overlap next run):
+[2026-05-15 12:51:47]   [pending] balancesheet                 last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:51:47]   [pending] cashflow                     last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:51:47]   [pending] financial_indicator          last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:51:47]   [pending] income                       last_data=2026-03-31  since=2026-05-14
+[2026-05-15 12:51:47]   [pending] pledge_stat                  last_data=2026-04-30  since=2026-05-14
+[2026-05-15 12:51:47] 
+============================================================
+[2026-05-15 12:51:47] [timing] Per-dataset timing report
+[2026-05-15 12:51:47] Dataset                      Phase                    Elapsed  Details
+[2026-05-15 12:51:47] -------------------------------------------------------------------------------------
+[2026-05-15 12:51:47]   margin_detail              total                      0.4s  
+[2026-05-15 12:51:47] -------------------------------------------------------------------------------------
+[2026-05-15 12:51:47]   TOTAL                                                 0.4s
+[2026-05-15 12:51:47] 
+[timing] Top 5 slowest datasets:
+[2026-05-15 12:51:47]   margin_detail                  0.4s (100.0%) ####################

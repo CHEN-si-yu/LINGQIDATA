@@ -92,25 +92,31 @@ def factor_return_stability_60(context: FactorContext):
 # ── Price-volume coordination ───────────────────────────────────────────
 
 def _rolling_corr_series(daily_ret: pd.Series, vol_chg: pd.Series) -> pd.Series:
-    """Compute per-code rolling 20d correlation, returning a Series with the original index."""
-    combined = daily_ret.to_frame("ret").join(vol_chg.to_frame("vol_chg"))
-    results = []
-    for code, g in combined.groupby(level="Code"):
-        ret_arr = g["ret"].values
-        vol_arr = g["vol_chg"].values
-        n = len(g)
-        out = np.full(n, np.nan)
-        for i in range(19, n):
-            w_ret = ret_arr[i - 19 : i + 1]
-            w_vol = vol_arr[i - 19 : i + 1]
-            mask = ~np.isnan(w_ret) & ~np.isnan(w_vol)
-            if mask.sum() >= 10:
-                out[i] = np.corrcoef(w_ret[mask], w_vol[mask])[0, 1]
-        results.append(pd.Series(out, index=g.index, name=code))
-    corr = pd.concat(results)
-    corr.index = corr.index.reorder_levels(["Date", "Code"])
-    corr = corr.sort_index()
-    return corr
+    """Compute per-code rolling 20d correlation, returning a Series with the original index.
+
+    Uses covariance decomposition:
+        corr(a,b) = (E[ab] - E[a]E[b]) / (std(a) * std(b))
+    All components are C-level vectorized rolling ops — no per-window Python loop.
+    """
+    WINDOW = 20
+    MIN_PERIODS = 10
+
+    product = daily_ret * vol_chg
+    gp = daily_ret.groupby(level="Code")
+    gv = vol_chg.groupby(level="Code")
+
+    mean_ret = gp.transform(lambda s: s.rolling(WINDOW, min_periods=MIN_PERIODS).mean())
+    mean_vol = gv.transform(lambda s: s.rolling(WINDOW, min_periods=MIN_PERIODS).mean())
+    mean_prod = product.groupby(level="Code").transform(
+        lambda s: s.rolling(WINDOW, min_periods=MIN_PERIODS).mean()
+    )
+    std_ret = gp.transform(lambda s: s.rolling(WINDOW, min_periods=MIN_PERIODS).std())
+    std_vol = gv.transform(lambda s: s.rolling(WINDOW, min_periods=MIN_PERIODS).std())
+
+    cov = mean_prod - mean_ret * mean_vol
+    denom = std_ret * std_vol
+    corr = cov / denom.replace(0, np.nan)
+    return corr.clip(-1, 1)
 
 
 @register_factor(

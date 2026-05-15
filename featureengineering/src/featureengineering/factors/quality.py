@@ -16,7 +16,7 @@ from ..utils import cross_sectional_rank
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_roe(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["roe"]
     )
     return cross_sectional_rank(fin["roe"])
@@ -30,7 +30,7 @@ def factor_roe(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_roa(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["roa"]
     )
     return cross_sectional_rank(fin["roa"])
@@ -44,7 +44,7 @@ def factor_roa(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_roic(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["roic"]
     )
     return cross_sectional_rank(fin["roic"])
@@ -58,7 +58,7 @@ def factor_roic(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_roe_waa(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["roe_waa"]
     )
     return cross_sectional_rank(fin["roe_waa"])
@@ -72,7 +72,7 @@ def factor_roe_waa(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_roe_dt(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["roe_dt"]
     )
     return cross_sectional_rank(fin["roe_dt"])
@@ -88,7 +88,7 @@ def factor_roe_dt(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_gross_margin(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["gross_margin"]
     )
     return cross_sectional_rank(fin["gross_margin"])
@@ -102,7 +102,7 @@ def factor_gross_margin(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_netprofit_margin(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["netprofit_margin"]
     )
     return cross_sectional_rank(fin["netprofit_margin"])
@@ -118,7 +118,7 @@ def factor_netprofit_margin(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_debt_to_assets(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["debt_to_assets"]
     )
     return cross_sectional_rank(-fin["debt_to_assets"])
@@ -132,7 +132,7 @@ def factor_debt_to_assets(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_current_ratio(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["current_ratio"]
     )
     return cross_sectional_rank(fin["current_ratio"])
@@ -146,7 +146,7 @@ def factor_current_ratio(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_quick_ratio(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["quick_ratio"]
     )
     return cross_sectional_rank(fin["quick_ratio"])
@@ -160,7 +160,7 @@ def factor_quick_ratio(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_cash_ratio(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["cash_ratio"]
     )
     return cross_sectional_rank(fin["cash_ratio"])
@@ -176,7 +176,7 @@ def factor_cash_ratio(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_ocf_to_profit(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["ocf_to_profit"]
     )
     return cross_sectional_rank(fin["ocf_to_profit"])
@@ -190,7 +190,7 @@ def factor_ocf_to_profit(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_salescash_to_or(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["salescash_to_or"]
     )
     return cross_sectional_rank(fin["salescash_to_or"])
@@ -206,7 +206,7 @@ def factor_salescash_to_or(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_assets_turn(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["assets_turn"]
     )
     return cross_sectional_rank(fin["assets_turn"])
@@ -222,7 +222,7 @@ def factor_assets_turn(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_or_yoy(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["or_yoy"]
     )
     return cross_sectional_rank(fin["or_yoy"])
@@ -236,7 +236,7 @@ def factor_or_yoy(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_netprofit_yoy(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["netprofit_yoy"]
     )
     return cross_sectional_rank(fin["netprofit_yoy"])
@@ -250,7 +250,7 @@ def factor_netprofit_yoy(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_equity_yoy(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["equity_yoy"]
     )
     return cross_sectional_rank(fin["equity_yoy"])
@@ -264,7 +264,7 @@ def factor_equity_yoy(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_assets_yoy(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet", value_cols=["assets_yoy"]
     )
     return cross_sectional_rank(fin["assets_yoy"])
@@ -280,13 +280,14 @@ def factor_assets_yoy(context: FactorContext):
     dependencies=("financial_indicator.parquet", "calendar.parquet"),
 )
 def factor_quality_composite(context: FactorContext):
-    fin = context.repo.load_financial_panel(
+    fin = context.load_financial(
         "financial_indicator.parquet",
         value_cols=["roe", "roa", "gross_margin", "ocf_to_profit"],
     )
-    rank_roe = fin["roe"].groupby(level="Date").rank(pct=True)
-    rank_roa = fin["roa"].groupby(level="Date").rank(pct=True)
-    rank_gm = fin["gross_margin"].groupby(level="Date").rank(pct=True)
-    rank_ocf = fin["ocf_to_profit"].groupby(level="Date").rank(pct=True)
+    with np.errstate(invalid="ignore"):
+        rank_roe = fin["roe"].groupby(level="Date").rank(pct=True)
+        rank_roa = fin["roa"].groupby(level="Date").rank(pct=True)
+        rank_gm = fin["gross_margin"].groupby(level="Date").rank(pct=True)
+        rank_ocf = fin["ocf_to_profit"].groupby(level="Date").rank(pct=True)
     composite = (rank_roe + rank_roa + rank_gm + rank_ocf) / 4.0
     return composite.rename("quality_composite")
