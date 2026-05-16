@@ -215,29 +215,38 @@ def main():
     print(f"[INFO] Model dir: {model_dir}")
     print(f"[INFO] Found {len(folds)} fold(s): {[os.path.basename(f) for f in folds]}")
 
-    # Output root: {model_dir}/model_pred
-    output_root = os.path.join(model_dir, 'model_pred')
+    # Output root: under V2/model_pred/{basic_name}/{season}/
+    output_root = os.path.join(root_path, 'model_pred', basic_name, args.season)
+    os.makedirs(output_root, exist_ok=True)
     print(f"[INFO] Output: {output_root}")
 
-    # Predict with each fold's best checkpoint
+    # Load best model from each fold
+    models = {}
     for fold_dir in folds:
         fold_name = os.path.basename(fold_dir)
         best_ckpt, best_val = find_best_checkpoint(fold_dir)
-        print(f"\n[{fold_name}] Best ckpt: {os.path.relpath(best_ckpt, model_dir)}  (val_wei={best_val:.4f})")
+        print(f"[{fold_name}] Best ckpt: {os.path.relpath(best_ckpt, model_dir)}  (val_wei={best_val:.4f})")
+        models[fold_name] = load_model(best_ckpt, input_dim)
 
-        model = load_model(best_ckpt, input_dim)
+    # Predict each date: ensemble (average) across all folds
+    for date in dates:
+        if date not in all_data.index:
+            print(f"[WARN] Date {date} not in factor data, skip")
+            continue
 
-        fold_output_dir = os.path.join(output_root, fold_name)
-        os.makedirs(fold_output_dir, exist_ok=True)
-
-        for date in dates:
-            if date not in all_data.index:
-                print(f"[{fold_name}] [WARN] Date {date} not in factor data, skip")
-                continue
+        fold_preds = []
+        for fold_name, model in models.items():
             result = predict_date(model, date, all_data, factor_list)
-            output_file = os.path.join(fold_output_dir, f'{date}.pkl')
-            result.to_pickle(output_file)
-            print(f"[{fold_name}] [OK] {date} -> {os.path.relpath(output_file, root_path)}  (stocks: {len(result)})")
+            fold_preds.append(result)
+
+        # Average across folds, aligned by Code index
+        ensemble = pd.concat(fold_preds, axis=1).mean(axis=1)
+        ensemble = ensemble.to_frame('value')
+        ensemble.index.name = 'Code'
+
+        output_file = os.path.join(output_root, f'{date}.pkl')
+        ensemble.to_pickle(output_file)
+        print(f"[OK] {date} -> {os.path.relpath(output_file, root_path)}  (stocks: {len(ensemble)}, folds: {len(fold_preds)})")
 
     print("\n[DONE]")
 

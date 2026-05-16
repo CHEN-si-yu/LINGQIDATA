@@ -76,11 +76,11 @@ args = parse_args()
 # V2 paths (Linux)
 # ============================================================
 root_path = r'/root/shared-nvme/lingqiData/Model/V2'
-fac_path = r'/root/shared-nvme/lingqiData/trainingdata/v2/'
-fac_name = r'fac20260515'
-label_path = r'/root/shared-nvme/lingqiData/trainingdata/v2/'
+fac_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
+fac_name = r'fac20260516'
+label_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
 label_name = r'label'
-liquid_path = r'/root/shared-nvme/lingqiData/trainingdata/v2/'
+liquid_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
 liquid_name = r'trade_amt'
 
 

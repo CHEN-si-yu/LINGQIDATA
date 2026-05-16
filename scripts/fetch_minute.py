@@ -308,14 +308,14 @@ def _run(endpoint, level, start_date, end_date, output, resume, workers,
 # ── Public entry points ─────────────────────────────────────────────────
 
 def fetch_history(start_date="2019-01-01", end_date=None, output=None,
-                  resume=True, workers=3, cleanup=True, level="30min"):
+                  resume=True, workers=3, cleanup=True, level="5min"):
     """Fetch raw minute K-line (/api/stock/history)."""
     return _run("stock/history", level, start_date, end_date, output,
                 resume, workers, cleanup, tag=f"history_{level}")
 
 
 def fetch_min_adj(start_date="2019-01-01", end_date=None, output=None,
-                  resume=True, workers=3, cleanup=True, level="30min"):
+                  resume=True, workers=3, cleanup=True, level="5min"):
     """Fetch adjusted minute K-line (/api/stock/min_adj)."""
     return _run("stock/min_adj", level, start_date, end_date, output,
                 resume, workers, cleanup,

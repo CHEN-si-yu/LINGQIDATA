@@ -112,7 +112,7 @@ def main():
     factor_dir = src / "factors"
     target_dir = src / "targets"
 
-    out = Path(args.output_root) if args.output_root else Path("/root/lingqiData/trainingdata/v1")
+    out = Path(args.output_root) if args.output_root else Path("/root/shared-nvme/lingqiData/trainingdata/v1")
     out.mkdir(parents=True, exist_ok=True)
 
     # ── Stock pool ─────────────────────────────────────────────────────
