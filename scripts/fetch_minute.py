@@ -27,8 +27,12 @@ _LEVELS = ["60min", "30min", "15min", "5min", "1min"]
 # Actual fetching uses adaptive range splitting — no fixed chunks.
 _BARS_PER_DAY = {"1min": 240, "5min": 48, "15min": 16, "30min": 8, "60min": 4}
 
-_EXCLUDE_PREFIXES = ("688", "300", "301", "8", "4")
-_ST_PATTERN = r"ST|PT|\*ST"
+CODE_NUM_FILE = Path(DATA_DIR).parent / "Code_num.txt"
+
+
+def _add_exchange_suffix(code):
+    """Add .SZ or .SH suffix to a 6-digit stock code."""
+    return code + (".SH" if code.startswith("60") else ".SZ")
 
 # ── Concurrency gate ────────────────────────────────────────────────────
 # The global RateLimiter controls long-term throughput (280 req/min).
@@ -44,16 +48,14 @@ _api_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
 
 
 def _filter_stocks():
-    sl_path = Path(DATA_DIR) / "stock_list.parquet"
-    if not sl_path.exists():
-        log_print("[minute] stock_list.parquet not found")
+    """Return list of stock codes from Code_num.txt with exchange suffixes."""
+    if not CODE_NUM_FILE.exists():
+        log_print(f"[minute] {CODE_NUM_FILE} not found, no filtering")
         return None
-    df = pd.read_parquet(sl_path)
-    code_num = df["stock_code"].str.extract(r"^(\d+)").iloc[:, 0]
-    mask = ~code_num.str.startswith(_EXCLUDE_PREFIXES)
-    mask &= ~df["name"].str.contains(_ST_PATTERN, na=False)
-    mask &= df["list_status"] == "L"
-    return df.loc[mask, "stock_code"].tolist()
+    with open(CODE_NUM_FILE) as f:
+        codes = [_add_exchange_suffix(line.strip()) for line in f if line.strip()]
+    log_print(f"[minute] {len(codes)} stocks loaded from Code_num.txt")
+    return codes
 
 
 # ── API helpers ─────────────────────────────────────────────────────────

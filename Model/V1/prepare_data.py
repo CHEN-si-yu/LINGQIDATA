@@ -8,7 +8,7 @@ published T's value yet, the factor value is forward-filled from T-1.
 Usage:
     python prepare_data.py
     python prepare_data.py --target label_ret_1d
-    python prepare_data.py --target label_ret_10d --stock-pool main_board_pre2020.txt
+    python prepare_data.py --target label_ret_10d --stock-pool Code_num.txt
 """
 
 from __future__ import annotations

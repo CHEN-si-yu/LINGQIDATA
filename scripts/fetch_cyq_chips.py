@@ -10,27 +10,22 @@ from config import load_api_key, BASE_URL, DATA_DIR, rate_limiter, log_print
 
 ENDPOINT = "stock/cyq_chips"
 
-# Stock codes to exclude: 科创板 688xxx, 创业板 300/301xxx, 北交所 8xxxxx
-_EXCLUDE_PREFIXES = ("688", "300", "301", "8", "4")
-_ST_PATTERN = r"ST|PT|\*ST"
+CODE_NUM_FILE = Path(DATA_DIR).parent / "Code_num.txt"
+
+
+def _add_exchange_suffix(code):
+    """Add .SZ or .SH suffix to a 6-digit stock code."""
+    return code + (".SH" if code.startswith("60") else ".SZ")
 
 
 def _filter_stocks():
-    """Return list of main-board non-ST stock codes."""
-    sl_path = Path(DATA_DIR) / "stock_list.parquet"
-    if not sl_path.exists():
-        log_print("[cyq_chips] WARNING: stock_list.parquet not found, no filtering")
+    """Return list of stock codes from Code_num.txt with exchange suffixes."""
+    if not CODE_NUM_FILE.exists():
+        log_print(f"[cyq_chips] WARNING: {CODE_NUM_FILE} not found, no filtering")
         return None
-    df = pd.read_parquet(sl_path)
-    # Exclude by code prefix
-    code_num = df["stock_code"].str.extract(r"^(\d+)").iloc[:, 0]
-    mask = ~code_num.str.startswith(_EXCLUDE_PREFIXES)
-    # Exclude ST/PT
-    mask &= ~df["name"].str.contains(_ST_PATTERN, na=False)
-    # Only listed
-    mask &= df["list_status"] == "L"
-    codes = df.loc[mask, "stock_code"].tolist()
-    log_print(f"[cyq_chips] {len(codes)} stocks after filter (excl 科创/创业/北交/ST)")
+    with open(CODE_NUM_FILE) as f:
+        codes = [_add_exchange_suffix(line.strip()) for line in f if line.strip()]
+    log_print(f"[cyq_chips] {len(codes)} stocks loaded from Code_num.txt")
     return codes
 
 

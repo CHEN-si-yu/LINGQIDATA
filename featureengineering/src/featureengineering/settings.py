@@ -30,7 +30,7 @@ class ProjectPaths:
             factor_output_dir=project_root / "data" / "factors",
             manifest_output_dir=project_root / "data" / "manifests",
             target_output_dir=project_root / "data" / "targets",
-            stock_pool_file=project_root / "data" / "main_board_pre2020.txt",
+            stock_pool_file=project_root.parent / "Code_num.txt",
         )
 
 
@@ -51,6 +51,6 @@ def configure_paths(
         factor_output_dir=resolved_project_root / "data" / "factors",
         manifest_output_dir=resolved_project_root / "data" / "manifests",
         target_output_dir=resolved_project_root / "data" / "targets",
-        stock_pool_file=resolved_project_root / "data" / "main_board_pre2020.txt",
+        stock_pool_file=resolved_project_root.parent / "Code_num.txt",
     )
     return PATHS
