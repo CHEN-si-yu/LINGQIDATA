@@ -36,8 +36,8 @@ class BuildResult:
 
 
 CATEGORY_ORDER = [
-    "price", "valuation", "quality", "event", "fund_flow",
-    "financial", "index", "target", "other",
+    "price", "timeseries", "valuation", "quality", "event", "fund_flow",
+    "financial", "sector", "neutral", "index", "target", "other",
 ]
 
 
@@ -139,17 +139,22 @@ def _read_single_file_max_date(filepath: Path) -> str | None:
             return None
     if df.empty:
         return None
-    idx = df.columns[0] if not df.index.names or df.index.names[0] is None else None
-    if idx is not None and ("Date" in df.columns or "date" in df.columns):
-        date_col = "Date" if "Date" in df.columns else "date"
-        max_val = df[date_col].max()
-        return _normalize_date(str(max_val)) if max_val is not None else None
+    # Wide format: Date index (single-level)
+    if df.index.name is not None and df.index.name.lower() == "date":
+        max_val = df.index.max()
+        return _normalize_date(str(max_val))
+    # Legacy MultiIndex format (Date, Code) or (Code, Date)
     if isinstance(df.index, pd.MultiIndex):
         for name in df.index.names:
             if name and name.lower() == "date":
                 vals = df.index.get_level_values(name)
                 max_val = vals.max()
                 return _normalize_date(str(max_val)) if max_val is not None else None
+    # Legacy flat format: Date in columns
+    if "Date" in df.columns or "date" in df.columns:
+        date_col = "Date" if "Date" in df.columns else "date"
+        max_val = df[date_col].max()
+        return _normalize_date(str(max_val)) if max_val is not None else None
     return None
 
 
@@ -356,8 +361,7 @@ def build_factor(
 
         # If incremental, slice to only new dates
         if factor_start_date:
-            date_level = factor_frame.index.get_level_values("Date")
-            factor_frame = factor_frame.loc[date_level > factor_start_date]
+            factor_frame = factor_frame.loc[factor_frame.index > factor_start_date]
 
         if spec.category == "target":
             factor_path, manifest_path = write_target(spec, factor_frame, paths=repo.paths)
@@ -622,8 +626,7 @@ def _build_factor_worker(
         factor_frame = ensure_single_factor_frame(raw_output, spec.name)
 
         if action == "incremental" and reason:
-            date_level = factor_frame.index.get_level_values("Date")
-            factor_frame = factor_frame.loc[date_level > reason]
+            factor_frame = factor_frame.loc[factor_frame.index > reason]
 
         _set_stage("writing")
         if spec.category == "target":
@@ -642,7 +645,7 @@ def _build_factor_worker(
 
     elapsed = time.perf_counter() - t0
     rows = len(factor_frame) if factor_frame is not None else 0
-    nn_rows = int(factor_frame[spec.name].notna().sum()) if factor_frame is not None else 0
+    nn_rows = int(factor_frame.notna().sum().sum()) if factor_frame is not None else 0
 
     if shared_progress_state is not None:
         try:

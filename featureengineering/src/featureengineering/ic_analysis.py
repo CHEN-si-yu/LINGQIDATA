@@ -61,14 +61,11 @@ def compute_ic(
     factor = load_factor(factor_name, paths)
     target = pd.read_feather(paths.target_output_dir / f"{target_name}.fea")
 
-    # Align on (Date, Code)
-    factor_col = factor_name
-    target_col = target_name
+    # Align on common Codes and Dates (wide format: Date index, Code columns)
+    common_codes = factor.columns.intersection(target.columns).sort_values()
+    common_dates = factor.index.intersection(target.index).sort_values()
 
-    merged = factor[[factor_col]].join(target[[target_col]], how="inner")
-    merged = merged.dropna()
-
-    if merged.empty:
+    if len(common_codes) == 0 or len(common_dates) == 0:
         return ICResult(
             factor_name=factor_name, target_name=target_name, method=method,
             n_dates=0, ic_mean=float("nan"), ic_std=float("nan"),
@@ -76,15 +73,24 @@ def compute_ic(
             ic_tstat=float("nan"),
         )
 
-    def _ic_for_date(group: pd.DataFrame) -> float:
-        if len(group) < 10:
-            return float("nan")
-        if method == "rank":
-            return group[factor_col].corr(group[target_col], method="spearman")
-        else:
-            return group[factor_col].corr(group[target_col], method="pearson")
+    f = factor.loc[common_dates, common_codes]
+    t = target.loc[common_dates, common_codes]
 
-    ic_series = merged.groupby(level="Date").apply(_ic_for_date).dropna()
+    # Per-date cross-sectional IC
+    ic_values: dict[str, float] = {}
+    for date in common_dates:
+        f_row = f.loc[date]
+        t_row = t.loc[date]
+        mask = f_row.notna() & t_row.notna()
+        if mask.sum() < 10:
+            continue
+        if method == "rank":
+            ic = f_row[mask].corr(t_row[mask], method="spearman")
+        else:
+            ic = f_row[mask].corr(t_row[mask], method="pearson")
+        ic_values[str(date)] = float(ic)
+
+    ic_series = pd.Series(ic_values).dropna()
 
     if len(ic_series) == 0:
         return ICResult(
@@ -142,17 +148,26 @@ def get_ic_series(
     factor = load_factor(factor_name, paths)
     target = pd.read_feather(paths.target_output_dir / f"{target_name}.fea")
 
-    factor_col = factor_name
-    target_col = target_name
+    common_codes = factor.columns.intersection(target.columns).sort_values()
+    common_dates = factor.index.intersection(target.index).sort_values()
 
-    merged = factor[[factor_col]].join(target[[target_col]], how="inner").dropna()
+    if len(common_codes) == 0 or len(common_dates) == 0:
+        return pd.Series(dtype=float)
 
-    def _ic_for_date(group: pd.DataFrame) -> float:
-        if len(group) < 10:
-            return float("nan")
+    f = factor.loc[common_dates, common_codes]
+    t = target.loc[common_dates, common_codes]
+
+    ic_values: dict[str, float] = {}
+    for date in common_dates:
+        f_row = f.loc[date]
+        t_row = t.loc[date]
+        mask = f_row.notna() & t_row.notna()
+        if mask.sum() < 10:
+            continue
         if method == "rank":
-            return group[factor_col].corr(group[target_col], method="spearman")
+            ic = f_row[mask].corr(t_row[mask], method="spearman")
         else:
-            return group[factor_col].corr(group[target_col], method="pearson")
+            ic = f_row[mask].corr(t_row[mask], method="pearson")
+        ic_values[str(date)] = float(ic)
 
-    return merged.groupby(level="Date").apply(_ic_for_date).dropna()
+    return pd.Series(ic_values).dropna()

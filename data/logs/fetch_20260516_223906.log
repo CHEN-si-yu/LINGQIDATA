@@ -1,0 +1,20 @@
+[2026-05-16 22:39:07] [incremental] 7 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-16 22:39:07] [incremental] Datasets: ['cyq_chips', 'history_15min', 'history_30min', 'history_60min', 'min_adj_15min', 'min_adj_30min', 'min_adj_60min']
+[2026-05-16 22:39:07] 
+============================================================
+[2026-05-16 22:39:07] [cyq_chips] Starting incremental update
+[2026-05-16 22:39:09] [cyq_chips] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:39:09] [cyq_chips] UNEXPECTED ERROR: name 'new_batch' is not defined
+[2026-05-16 22:39:09] 
+============================================================
+[2026-05-16 22:39:09] [history_15min] Starting incremental update
+[2026-05-16 22:39:10] [history_15min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:39:10] [history_15min] UNEXPECTED ERROR: name 'new_batch' is not defined
+[2026-05-16 22:39:10] 
+============================================================
+[2026-05-16 22:39:10] [history_30min] Starting incremental update
+[2026-05-16 22:39:12] [history_30min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:39:12] [history_30min] UNEXPECTED ERROR: name 'new_batch' is not defined
+[2026-05-16 22:39:12] 
+============================================================
+[2026-05-16 22:39:12] [history_60min] Starting incremental update

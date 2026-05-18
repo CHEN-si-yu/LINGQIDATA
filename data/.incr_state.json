@@ -1,12 +1,13 @@
 {
   "daily": {
-    "last_run": "2026-05-15",
-    "last_fetch_max": "2026-05-14",
-    "pending": false
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "balancesheet": {
     "last_fetch_max": "2026-03-31",
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "pending": true,
     "pending_since": "2026-05-14"
   },
@@ -17,97 +18,158 @@
   },
   "cashflow": {
     "last_fetch_max": "2026-03-31",
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "pending": true,
     "pending_since": "2026-05-14"
   },
   "daily_adj": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "dragon_tiger": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "finance": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "financial_indicator": {
     "last_fetch_max": "2026-03-31",
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "pending": true,
     "pending_since": "2026-05-14"
   },
   "holder_number": {
     "last_fetch_max": "2026-05-15",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "income": {
     "last_fetch_max": "2026-03-31",
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "pending": true,
     "pending_since": "2026-05-14"
   },
   "kline_adj_monthly": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "kline_adj_weekly": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "kline_monthly": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "kline_weekly": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "limit_list": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "limit_up": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "main_fund_flow": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "margin_detail": {
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "last_fetch_max": "2026-05-12",
     "pending": true,
     "pending_since": "2026-05-14"
   },
   "pledge_stat": {
     "last_fetch_max": "2026-04-30",
-    "last_run": "2026-05-15",
+    "last_run": "2026-05-16",
     "pending": true,
     "pending_since": "2026-05-14"
   },
   "top_list": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
   },
   "cyq_chips": {
-    "last_fetch_max": "2026-05-14",
-    "last_run": "2026-05-15",
-    "pending": false
+    "last_fetch_max": "2026-05-15",
+    "last_run": "2026-05-16",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "ths_daily": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "index_weight": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-04-01",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "history_15min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "history_30min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "history_60min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "min_adj_15min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "min_adj_30min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
+  },
+  "min_adj_60min": {
+    "last_run": "2026-05-16",
+    "last_fetch_max": "2026-05-15",
+    "pending": true,
+    "pending_since": "2026-05-16"
   }
 }

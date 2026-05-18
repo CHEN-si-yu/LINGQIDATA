@@ -23,6 +23,9 @@ def cross_sectional_rank(
     to [*lower*, *upper*] quantiles per date to limit the influence of
     extreme outliers on the rank distribution.
     """
+    # Clean up non-finite values before ranking
+    series = series.replace([np.inf, -np.inf], np.nan)
+
     if winsorize:
         def _clip(grp: pd.Series) -> pd.Series:
             with np.errstate(invalid="ignore"):
@@ -60,31 +63,3 @@ def rolling_group_max(series: pd.Series, window: int) -> pd.Series:
 
 def rolling_group_min(series: pd.Series, window: int) -> pd.Series:
     return series.groupby(level="Code").transform(lambda s: s.rolling(window, min_periods=1).min())
-
-
-def rolling_group_skew(series: pd.Series, window: int) -> pd.Series:
-    return series.groupby(level="Code").transform(
-        lambda s: s.rolling(window, min_periods=max(1, window // 2)).skew()
-    )
-
-
-def rolling_group_kurt(series: pd.Series, window: int) -> pd.Series:
-    return series.groupby(level="Code").transform(
-        lambda s: s.rolling(window, min_periods=max(1, window // 2)).kurt()
-    )
-
-
-def rolling_group_apply(series: pd.Series, window: int, func, min_periods: int | None = None) -> pd.Series:
-    return series.groupby(level="Code").transform(
-        lambda s: s.rolling(window, min_periods=min_periods or max(1, window // 2)).apply(func)
-    )
-
-
-def rolling_corr_by_group(a: pd.Series, b: pd.Series, window: int) -> pd.Series:
-    df = pd.DataFrame({"a": a.values, "b": b.values}, index=a.index)
-    return (
-        df.groupby(level="Code")
-        .apply(lambda g: g["a"].rolling(window, min_periods=window).corr(g["b"]))
-        .droplevel(0)
-        .reindex(a.index)
-    )

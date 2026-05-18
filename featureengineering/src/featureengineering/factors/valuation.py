@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std
+from ..utils import cross_sectional_rank
 
 
 # ── Value ───────────────────────────────────────────────────────────────
@@ -182,3 +182,18 @@ def factor_dv_composite(context: FactorContext):
         rank_ttm = finance["dv_ttm"].groupby(level="Date").rank(pct=True)
     composite = (rank_ratio + rank_ttm) / 2.0
     return composite.rename("dv_composite")
+
+
+# ── PE TTM: finance 扩展 ─────────────────────────────────────────────────
+
+@register_factor(
+    name="pe_ttm",
+    description="滚动市盈率因子截面排名（低PE排前=价值股偏好）。",
+    category="valuation",
+    thesis="低PE是价值投资最经典的指标之一，低估值股票长期具有更高的预期收益率。与现有pe_ttm_percentile（历史分位）互补：一个看绝对值、一个看相对自身历史位置。",
+    dependencies=("finance.parquet",),
+)
+def factor_pe_ttm(context: FactorContext):
+    finance = context.load("finance.parquet")
+    pe = finance["pe_ttm"].where(finance["pe_ttm"] > 0, np.nan)
+    return cross_sectional_rank(-pe)

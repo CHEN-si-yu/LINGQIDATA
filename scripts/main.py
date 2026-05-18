@@ -47,7 +47,7 @@ TASKS = [
     {
         "name": "calendar",
         "fn": fetch_calendar,
-        "start": "2020-01-01",
+        "start": "2019-01-01",
         "output": f"{DATA_DIR}/calendar.parquet",
     },
     {

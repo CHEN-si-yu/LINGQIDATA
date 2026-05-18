@@ -39,6 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force rebuild all factors (ignore date-based skip/incremental logic).",
     )
     parser.add_argument(
+        "--factor-output-dir", type=Path, default=None,
+        help="Override output directory for factor .fea files.",
+    )
+    parser.add_argument(
+        "--manifest-output-dir", type=Path, default=None,
+        help="Override output directory for factor .json manifest files.",
+    )
+    parser.add_argument(
         "--check-dates", action="store_true",
         help="Scan all factor files and report their last date.",
     )
@@ -48,7 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_paths(project_root=args.project_root, source_root=args.source_root)
+    configure_paths(
+        project_root=args.project_root,
+        source_root=args.source_root,
+        factor_output_dir=args.factor_output_dir,
+        manifest_output_dir=args.manifest_output_dir,
+    )
     ensure_builtin_factors_loaded()
 
     if args.check_dates:

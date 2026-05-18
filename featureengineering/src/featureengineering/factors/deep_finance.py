@@ -290,3 +290,162 @@ def factor_gross_margin_stability_8q(context: FactorContext):
         lambda s: s.rolling(504, min_periods=126).std()
     )
     return cross_sectional_rank(-gm_std)
+
+
+# ── Asset structure: balancesheet 扩展 ───────────────────────────────────
+
+@register_factor(
+    name="contract_liab_ratio",
+    description="合同负债/营收因子（预收款质量）截面排名。",
+    category="financial",
+    thesis="合同负债代表客户预付款，高占比意味着对下游议价能力强、收入可预见性高，是A股'茅台指标'——预收款充沛的公司盈利质量和确定性更优。",
+    dependencies=("balancesheet.parquet", "income.parquet", "calendar.parquet"),
+)
+def factor_contract_liab_ratio(context: FactorContext):
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["contract_liab"]
+    )
+    inc = context.load_financial(
+        "income.parquet", value_cols=["revenue"]
+    )
+    ratio = bs["contract_liab"] / inc["revenue"].replace(0, np.nan)
+    return cross_sectional_rank(ratio)
+
+
+@register_factor(
+    name="cash_to_assets",
+    description="货币资金/总资产因子（现金充裕度）截面排名。",
+    category="financial",
+    thesis="货币资金占比高的公司财务弹性强，在经济下行期具有更强的抗风险能力和逆势扩张能力，同时现金充沛也是分红回购的潜在信号。",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_cash_to_assets(context: FactorContext):
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["money_cap", "total_assets"]
+    )
+    ratio = bs["money_cap"] / bs["total_assets"].replace(0, np.nan)
+    return cross_sectional_rank(ratio)
+
+
+@register_factor(
+    name="short_term_debt_ratio",
+    description="短期借款/总资产因子截面排名（高短期负债占比排后）。",
+    category="financial",
+    thesis="短期借款占比过高意味着企业依赖短期融资，面临再融资滚动压力和利率波动风险，债务期限结构越短、财务脆弱性越高。",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_short_term_debt_ratio(context: FactorContext):
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["st_borr", "total_assets"]
+    )
+    ratio = bs["st_borr"] / bs["total_assets"].replace(0, np.nan)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="intan_assets_ratio",
+    description="无形资产/总资产因子截面排名。",
+    category="financial",
+    thesis="无形资产（含专利权、商标权、软件著作权等）占比高代表知识资产密集，在科技和消费品牌领域是护城河的重要组成部分，但也需关注无形资产的质量和减值风险。",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_intan_assets_ratio(context: FactorContext):
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["intan_assets", "total_assets"]
+    )
+    ratio = bs["intan_assets"] / bs["total_assets"].replace(0, np.nan)
+    return cross_sectional_rank(ratio)
+
+
+# ── Profit quality: income 扩展 ──────────────────────────────────────────
+
+@register_factor(
+    name="non_oper_profit_ratio",
+    description="非经常性损益占比因子，非经常性损益/利润总额截面排名（高占比排后）。",
+    category="financial",
+    thesis="非经常性损益占比高说明利润主要来自一次性收益而非主营业务，盈利的可持续性和质量较差，是识别'注水利润'的重要指标。",
+    dependencies=("income.parquet", "calendar.parquet"),
+)
+def factor_non_oper_profit_ratio(context: FactorContext):
+    inc = context.load_financial(
+        "income.parquet",
+        value_cols=["non_oper_income", "non_oper_exp", "total_profit"],
+    )
+    non_oper = inc["non_oper_income"].fillna(0) + inc["non_oper_exp"].fillna(0)
+    ratio = non_oper.abs() / inc["total_profit"].abs().replace(0, np.nan)
+    ratio = ratio.clip(0, 2)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="credit_impair_risk",
+    description="信用减值损失/营业利润因子截面排名（高减值占比排后）。",
+    category="financial",
+    thesis="信用减值损失高意味着应收账款或贷款面临较大坏账风险，是资产质量的负面信号，尤其在经济下行期需要重点关注。",
+    dependencies=("income.parquet", "calendar.parquet"),
+)
+def factor_credit_impair_risk(context: FactorContext):
+    inc = context.load_financial(
+        "income.parquet",
+        value_cols=["credit_impair_loss", "operate_profit"],
+    )
+    ratio = inc["credit_impair_loss"].abs() / inc["operate_profit"].abs().replace(0, np.nan)
+    ratio = ratio.clip(0, 1)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="assets_impair_risk",
+    description="资产减值损失/营业利润因子截面排名（高减值占比排后）。",
+    category="financial",
+    thesis="资产减值损失高意味着固定资产、存货、商誉等面临减值压力，是资产质量的负面信号，尤其商誉减值集中在年报期需要警惕。",
+    dependencies=("income.parquet", "calendar.parquet"),
+)
+def factor_assets_impair_risk(context: FactorContext):
+    inc = context.load_financial(
+        "income.parquet",
+        value_cols=["assets_impair_loss", "operate_profit"],
+    )
+    ratio = inc["assets_impair_loss"].abs() / inc["operate_profit"].abs().replace(0, np.nan)
+    ratio = ratio.clip(0, 1)
+    return cross_sectional_rank(-ratio)
+
+
+# ── Cashflow depth: cashflow 扩展 ────────────────────────────────────────
+
+@register_factor(
+    name="investment_intensity",
+    description="投资活动现金流净额/总资产因子截面排名。",
+    category="financial",
+    thesis="投资活动现金流净额反映企业资本开支和对外投资力度，适度投资是成长的基础，但过度投资（大额净流出）可能意味着盲目扩张和未来减值风险。",
+    dependencies=("cashflow.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_investment_intensity(context: FactorContext):
+    cf = context.load_financial(
+        "cashflow.parquet", value_cols=["n_cashflow_inv_act"]
+    )
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["total_assets"]
+    )
+    ratio = cf["n_cashflow_inv_act"] / bs["total_assets"].replace(0, np.nan)
+    return cross_sectional_rank(ratio)
+
+
+@register_factor(
+    name="depr_amort_to_revenue",
+    description="折旧摊销/营收因子截面排名（高占比排后）。",
+    category="financial",
+    thesis="折旧摊销占营收比重反映企业的资本密集度，高占比意味着维持现有业务需要大量资本支出，是'重资产'的量化指标，轻资产模式长期表现更优。",
+    dependencies=("cashflow.parquet", "income.parquet", "calendar.parquet"),
+)
+def factor_depr_amort_to_revenue(context: FactorContext):
+    cf = context.load_financial(
+        "cashflow.parquet",
+        value_cols=["depr_fa_coga_dpba", "amort_intang_assets"],
+    )
+    inc = context.load_financial(
+        "income.parquet", value_cols=["revenue"]
+    )
+    depr_amort = cf["depr_fa_coga_dpba"].fillna(0) + cf["amort_intang_assets"].fillna(0)
+    ratio = depr_amort / inc["revenue"].replace(0, np.nan)
+    return cross_sectional_rank(-ratio)

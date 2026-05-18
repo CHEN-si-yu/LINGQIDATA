@@ -1,0 +1,263 @@
+[2026-05-16 22:42:47] [incremental] 7 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-16 22:42:47] [incremental] Datasets: ['cyq_chips', 'history_15min', 'history_30min', 'history_60min', 'min_adj_15min', 'min_adj_30min', 'min_adj_60min']
+[2026-05-16 22:42:47] 
+============================================================
+[2026-05-16 22:42:47] [cyq_chips] Starting incremental update
+[2026-05-16 22:42:49] [cyq_chips] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:42:49] [cyq_chips] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:42:57] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 41142 rows, 5 pages, 8.5s
+[2026-05-16 22:42:58] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 48954 rows, 5 pages, 9.3s
+[2026-05-16 22:42:58] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 53728 rows, 6 pages, 9.4s
+[2026-05-16 22:42:58] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 48194 rows, 5 pages, 9.6s
+[2026-05-16 22:43:00] [cyq_chips] [incr] 1/26 | 100 stocks, 41142 rows, +0 new | elapsed=11s ETA=280s | tokens=27.6
+[2026-05-16 22:43:01] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 50282 rows, 6 pages, 12.3s
+[2026-05-16 22:43:02] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 54075 rows, 6 pages, 13.0s
+[2026-05-16 22:43:03] [cyq_chips] [incr] 2/26 | 100 stocks, 48954 rows, +0 new | elapsed=14s ETA=166s | tokens=31.0
+[2026-05-16 22:43:05] [cyq_chips] [incr] 3/26 | 100 stocks, 53728 rows, +0 new | elapsed=17s ETA=127s | tokens=34.9
+[2026-05-16 22:43:08] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 43027 rows, 5 pages, 10.5s
+[2026-05-16 22:43:08] [cyq_chips] [incr] 4/26 | 100 stocks, 48194 rows, +0 new | elapsed=19s ETA=106s | tokens=40.3
+[2026-05-16 22:43:08] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 43012 rows, 5 pages, 10.1s
+[2026-05-16 22:43:09] [cyq_chips] [incr] 2026-05-10 ~ 2026-05-16: 43892 rows, 5 pages, 10.6s
+[2026-05-16 22:43:10] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 46695 rows, 5 pages, 11.8s
+[2026-05-16 22:43:11] [cyq_chips] [incr] 5/26 | 100 stocks, 50282 rows, +0 new | elapsed=22s ETA=94s | tokens=47.6
+[2026-05-16 22:43:11] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 47581 rows, 5 pages, 10.4s
+[2026-05-16 22:43:14] [cyq_chips] [incr] 6/26 | 100 stocks, 54075 rows, +0 new | elapsed=25s ETA=84s | tokens=55.5
+[2026-05-16 22:43:16] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 54043 rows, 6 pages, 14.5s
+[2026-05-16 22:43:17] [cyq_chips] [incr] 7/26 | 100 stocks, 43027 rows, +0 new | elapsed=28s ETA=76s | tokens=59.1
+[2026-05-16 22:43:21] [cyq_chips] [incr] 8/26 | 100 stocks, 43012 rows, +-17182615 new | elapsed=32s ETA=73s | tokens=70.9
+[2026-05-16 22:43:22] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 54121 rows, 6 pages, 14.0s
+[2026-05-16 22:43:23] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 54554 rows, 6 pages, 14.5s
+[2026-05-16 22:43:25] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 50222 rows, 6 pages, 16.3s
+[2026-05-16 22:43:25] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 54553 rows, 6 pages, 15.2s
+[2026-05-16 22:43:25] [cyq_chips] [incr] 9/26 | 100 stocks, 43892 rows, +-17165158 new | elapsed=37s ETA=69s | tokens=78.5
+[2026-05-16 22:43:26] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 55661 rows, 6 pages, 14.6s
+[2026-05-16 22:43:29] [cyq_chips] [incr] 10/26 | 100 stocks, 46695 rows, +-12652866 new | elapsed=41s ETA=65s | tokens=85.6
+[2026-05-16 22:43:29] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 51111 rows, 6 pages, 13.1s
+[2026-05-16 22:43:34] [cyq_chips] [incr] 11/26 | 100 stocks, 47581 rows, +-14741424 new | elapsed=45s ETA=61s | tokens=94.2
+[2026-05-16 22:43:34] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 53555 rows, 6 pages, 12.3s
+[2026-05-16 22:43:35] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 52669 rows, 6 pages, 11.8s
+[2026-05-16 22:43:36] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 53281 rows, 6 pages, 11.3s
+[2026-05-16 22:43:36] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 52529 rows, 6 pages, 10.9s
+[2026-05-16 22:43:38] [cyq_chips] [incr] 12/26 | 100 stocks, 54043 rows, +-15476524 new | elapsed=49s ETA=57s | tokens=102.2
+[2026-05-16 22:43:39] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 59079 rows, 6 pages, 9.2s
+[2026-05-16 22:43:39] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 23444 rows, 3 pages, 3.8s
+[2026-05-16 22:43:42] [cyq_chips] [incr] 13/26 | 100 stocks, 54121 rows, +-18626236 new | elapsed=54s ETA=54s | tokens=116.5
+[2026-05-16 22:43:43] [cyq_chips] [incr] 2026-05-11 ~ 2026-05-16: 53493 rows, 6 pages, 8.5s
+[2026-05-16 22:43:46] [cyq_chips] [incr] 2026-05-05 ~ 2026-05-16: 86636 rows, 9 pages, 20.3s
+[2026-05-16 22:43:47] [cyq_chips] [incr] 14/26 | 100 stocks, 54554 rows, +-19573309 new | elapsed=58s ETA=50s | tokens=135.1
+[2026-05-16 22:43:51] [cyq_chips] [incr] 15/26 | 100 stocks, 50222 rows, +-18612544 new | elapsed=63s ETA=46s | tokens=155.7
+[2026-05-16 22:43:56] [cyq_chips] [incr] 16/26 | 100 stocks, 54553 rows, +-20341350 new | elapsed=67s ETA=42s | tokens=177.7
+[2026-05-16 22:44:01] [cyq_chips] [incr] 17/26 | 100 stocks, 55661 rows, +-20525909 new | elapsed=72s ETA=38s | tokens=199.4
+[2026-05-16 22:44:05] [cyq_chips] [incr] 18/26 | 100 stocks, 51111 rows, +-19358039 new | elapsed=77s ETA=34s | tokens=221.2
+[2026-05-16 22:44:10] [cyq_chips] [incr] 19/26 | 100 stocks, 53555 rows, +-19628487 new | elapsed=81s ETA=30s | tokens=242.2
+[2026-05-16 22:44:14] [cyq_chips] [incr] 20/26 | 100 stocks, 52669 rows, +-17908257 new | elapsed=86s ETA=26s | tokens=262.4
+[2026-05-16 22:44:19] [cyq_chips] [incr] 21/26 | 100 stocks, 53281 rows, +-17951643 new | elapsed=90s ETA=21s | tokens=280.0
+[2026-05-16 22:44:23] [cyq_chips] [incr] 22/26 | 100 stocks, 52529 rows, +-15612382 new | elapsed=94s ETA=17s | tokens=280.0
+[2026-05-16 22:44:28] [cyq_chips] [incr] 23/26 | 100 stocks, 59079 rows, +-17187628 new | elapsed=99s ETA=13s | tokens=280.0
+[2026-05-16 22:44:29] [cyq_chips] [incr] 24/26 | 42 stocks, 23444 rows, +-6528829 new | elapsed=101s ETA=8s | tokens=280.0
+[2026-05-16 22:44:34] [cyq_chips] [incr] 25/26 | 100 stocks, 53493 rows, +-16820729 new | elapsed=105s ETA=4s | tokens=280.0
+[2026-05-16 22:44:38] [cyq_chips] [incr] 26/26 | 100 stocks, 86636 rows, +-16792049 new | elapsed=110s ETA=0s | tokens=280.0
+[2026-05-16 22:44:38] [cyq_chips] Done: 2542 stocks processed, -322685978 new rows total
+[2026-05-16 22:44:40] 
+============================================================
+[2026-05-16 22:44:40] [history_15min] Starting incremental update
+[2026-05-16 22:44:41] [history_15min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:44:41] [history_15min] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:44:45] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.7s
+[2026-05-16 22:44:45] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.7s
+[2026-05-16 22:44:45] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.7s
+[2026-05-16 22:44:48] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 6.3s
+[2026-05-16 22:44:50] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 8.9s
+[2026-05-16 22:44:50] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 8.9s
+[2026-05-16 22:44:51] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 5.9s
+[2026-05-16 22:44:52] [history_15min] [incr] 1/26 | 100 stocks, 6400 rows, +0 new | elapsed=11s ETA=271s | tokens=280.0
+[2026-05-16 22:44:53] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 8.1s
+[2026-05-16 22:44:56] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 10.8s
+[2026-05-16 22:44:57] [history_15min] [incr] 2026-05-10 ~ 2026-05-16: 7968 rows, 1 pages, 9.0s
+[2026-05-16 22:44:57] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 6.8s
+[2026-05-16 22:44:58] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6384 rows, 1 pages, 7.6s
+[2026-05-16 22:44:58] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 7.5s
+[2026-05-16 22:44:59] [history_15min] [incr] 2/26 | 100 stocks, 6400 rows, +0 new | elapsed=17s ETA=210s | tokens=280.0
+[2026-05-16 22:44:59] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 6.0s
+[2026-05-16 22:45:00] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.7s
+[2026-05-16 22:45:00] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.2s
+[2026-05-16 22:45:01] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 4.0s
+[2026-05-16 22:45:02] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 3.8s
+[2026-05-16 22:45:04] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 5.4s
+[2026-05-16 22:45:04] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 4.8s
+[2026-05-16 22:45:04] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 4.8s
+[2026-05-16 22:45:06] [history_15min] [incr] 3/26 | 100 stocks, 6400 rows, +0 new | elapsed=24s ETA=186s | tokens=280.0
+[2026-05-16 22:45:08] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 6.1s
+[2026-05-16 22:45:08] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6400 rows, 1 pages, 8.3s
+[2026-05-16 22:45:11] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 2688 rows, 1 pages, 7.2s
+[2026-05-16 22:45:11] [history_15min] [incr] 2026-05-05 ~ 2026-05-16: 12720 rows, 2 pages, 10.2s
+[2026-05-16 22:45:12] [history_15min] [incr] 2026-05-12 ~ 2026-05-16: 6384 rows, 1 pages, 8.1s
+[2026-05-16 22:45:12] [history_15min] [incr] 4/26 | 100 stocks, 6400 rows, +0 new | elapsed=31s ETA=171s | tokens=280.0
+[2026-05-16 22:45:19] [history_15min] [incr] 5/26 | 100 stocks, 6400 rows, +0 new | elapsed=38s ETA=159s | tokens=280.0
+[2026-05-16 22:45:26] [history_15min] [incr] 6/26 | 100 stocks, 6400 rows, +0 new | elapsed=45s ETA=150s | tokens=280.0
+[2026-05-16 22:45:34] [history_15min] [incr] 7/26 | 100 stocks, 6400 rows, +0 new | elapsed=52s ETA=142s | tokens=280.0
+[2026-05-16 22:45:41] [history_15min] [incr] 8/26 | 100 stocks, 6400 rows, +0 new | elapsed=59s ETA=133s | tokens=280.0
+[2026-05-16 22:45:47] [history_15min] [incr] 9/26 | 100 stocks, 6400 rows, +0 new | elapsed=66s ETA=125s | tokens=280.0
+[2026-05-16 22:45:54] [history_15min] [incr] 10/26 | 100 stocks, 7968 rows, +0 new | elapsed=73s ETA=117s | tokens=280.0
+[2026-05-16 22:46:01] [history_15min] [incr] 11/26 | 100 stocks, 6400 rows, +0 new | elapsed=80s ETA=109s | tokens=280.0
+[2026-05-16 22:46:08] [history_15min] [incr] 12/26 | 100 stocks, 6384 rows, +0 new | elapsed=87s ETA=102s | tokens=280.0
+[2026-05-16 22:46:16] [history_15min] [incr] 13/26 | 100 stocks, 6400 rows, +0 new | elapsed=95s ETA=95s | tokens=280.0
+[2026-05-16 22:46:23] [history_15min] [incr] 14/26 | 100 stocks, 6400 rows, +0 new | elapsed=101s ETA=87s | tokens=280.0
+[2026-05-16 22:46:30] [history_15min] [incr] 15/26 | 100 stocks, 6400 rows, +0 new | elapsed=109s ETA=80s | tokens=280.0
+[2026-05-16 22:46:37] [history_15min] [incr] 16/26 | 100 stocks, 6400 rows, +0 new | elapsed=116s ETA=72s | tokens=280.0
+[2026-05-16 22:46:44] [history_15min] [incr] 17/26 | 100 stocks, 6400 rows, +0 new | elapsed=123s ETA=65s | tokens=280.0
+[2026-05-16 22:46:51] [history_15min] [incr] 18/26 | 100 stocks, 6400 rows, +0 new | elapsed=130s ETA=58s | tokens=280.0
+[2026-05-16 22:46:59] [history_15min] [incr] 19/26 | 100 stocks, 6400 rows, +0 new | elapsed=137s ETA=51s | tokens=280.0
+[2026-05-16 22:47:06] [history_15min] [incr] 20/26 | 100 stocks, 6400 rows, +0 new | elapsed=145s ETA=43s | tokens=280.0
+[2026-05-16 22:47:13] [history_15min] [incr] 21/26 | 100 stocks, 6400 rows, +0 new | elapsed=152s ETA=36s | tokens=280.0
+[2026-05-16 22:47:21] [history_15min] [incr] 22/26 | 100 stocks, 6400 rows, +0 new | elapsed=160s ETA=29s | tokens=280.0
+[2026-05-16 22:47:28] [history_15min] [incr] 23/26 | 100 stocks, 6400 rows, +0 new | elapsed=167s ETA=22s | tokens=280.0
+[2026-05-16 22:47:32] [history_15min] [incr] 24/26 | 42 stocks, 2688 rows, +0 new | elapsed=170s ETA=14s | tokens=280.0
+[2026-05-16 22:47:39] [history_15min] [incr] 25/26 | 100 stocks, 12720 rows, +0 new | elapsed=178s ETA=7s | tokens=280.0
+[2026-05-16 22:47:47] [history_15min] [incr] 26/26 | 100 stocks, 6384 rows, +0 new | elapsed=185s ETA=0s | tokens=280.0
+[2026-05-16 22:47:47] [history_15min] Done: 2542 stocks processed, 0 new rows total
+[2026-05-16 22:47:50] 
+============================================================
+[2026-05-16 22:47:50] [history_30min] Starting incremental update
+[2026-05-16 22:47:51] [history_30min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:47:51] [history_30min] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:47:53] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.4s
+[2026-05-16 22:47:53] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.9s
+[2026-05-16 22:47:53] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.9s
+[2026-05-16 22:47:54] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.3s
+[2026-05-16 22:47:54] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.8s
+[2026-05-16 22:47:54] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 3.0s
+[2026-05-16 22:47:55] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.8s
+[2026-05-16 22:47:55] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.7s
+[2026-05-16 22:47:55] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.0s
+[2026-05-16 22:47:56] [history_30min] [incr] 2026-05-10 ~ 2026-05-16: 3984 rows, 1 pages, 2.4s
+[2026-05-16 22:47:56] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.3s
+[2026-05-16 22:47:56] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3192 rows, 1 pages, 2.1s
+[2026-05-16 22:47:57] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.4s
+[2026-05-16 22:47:58] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.8s
+[2026-05-16 22:47:58] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.8s
+[2026-05-16 22:47:58] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.6s
+[2026-05-16 22:47:58] [history_30min] [incr] 1/26 | 100 stocks, 3200 rows, +0 new | elapsed=7s ETA=164s | tokens=277.6
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.1s
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.8s
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 2.4s
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.4s
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.6s
+[2026-05-16 22:47:59] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.5s
+[2026-05-16 22:48:00] [history_30min] [incr] 2026-05-05 ~ 2026-05-16: 6360 rows, 1 pages, 1.6s
+[2026-05-16 22:48:00] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3200 rows, 1 pages, 1.6s
+[2026-05-16 22:48:00] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 3192 rows, 1 pages, 1.5s
+[2026-05-16 22:48:01] [history_30min] [incr] 2026-05-12 ~ 2026-05-16: 1344 rows, 1 pages, 1.9s
+[2026-05-16 22:48:03] [history_30min] [incr] 2/26 | 100 stocks, 3200 rows, +0 new | elapsed=12s ETA=141s | tokens=280.0
+[2026-05-16 22:48:08] [history_30min] [incr] 3/26 | 100 stocks, 3200 rows, +0 new | elapsed=17s ETA=130s | tokens=280.0
+[2026-05-16 22:48:13] [history_30min] [incr] 4/26 | 100 stocks, 3200 rows, +0 new | elapsed=22s ETA=122s | tokens=280.0
+[2026-05-16 22:48:19] [history_30min] [incr] 5/26 | 100 stocks, 3200 rows, +0 new | elapsed=27s ETA=115s | tokens=280.0
+[2026-05-16 22:48:24] [history_30min] [incr] 6/26 | 100 stocks, 3200 rows, +0 new | elapsed=33s ETA=110s | tokens=280.0
+[2026-05-16 22:48:30] [history_30min] [incr] 7/26 | 100 stocks, 3200 rows, +0 new | elapsed=38s ETA=104s | tokens=280.0
+[2026-05-16 22:48:35] [history_30min] [incr] 8/26 | 100 stocks, 3200 rows, +0 new | elapsed=44s ETA=99s | tokens=280.0
+[2026-05-16 22:48:41] [history_30min] [incr] 9/26 | 100 stocks, 3200 rows, +0 new | elapsed=50s ETA=94s | tokens=280.0
+[2026-05-16 22:48:46] [history_30min] [incr] 10/26 | 100 stocks, 3984 rows, +0 new | elapsed=55s ETA=88s | tokens=280.0
+[2026-05-16 22:48:52] [history_30min] [incr] 11/26 | 100 stocks, 3200 rows, +0 new | elapsed=60s ETA=82s | tokens=280.0
+[2026-05-16 22:48:57] [history_30min] [incr] 12/26 | 100 stocks, 3192 rows, +0 new | elapsed=66s ETA=77s | tokens=280.0
+[2026-05-16 22:49:03] [history_30min] [incr] 13/26 | 100 stocks, 3200 rows, +0 new | elapsed=71s ETA=71s | tokens=280.0
+[2026-05-16 22:49:08] [history_30min] [incr] 14/26 | 100 stocks, 3200 rows, +0 new | elapsed=77s ETA=66s | tokens=280.0
+[2026-05-16 22:49:14] [history_30min] [incr] 15/26 | 100 stocks, 3200 rows, +0 new | elapsed=82s ETA=60s | tokens=280.0
+[2026-05-16 22:49:19] [history_30min] [incr] 16/26 | 100 stocks, 3200 rows, +0 new | elapsed=88s ETA=55s | tokens=280.0
+[2026-05-16 22:49:25] [history_30min] [incr] 17/26 | 100 stocks, 3200 rows, +0 new | elapsed=93s ETA=49s | tokens=280.0
+[2026-05-16 22:49:30] [history_30min] [incr] 18/26 | 100 stocks, 3200 rows, +0 new | elapsed=99s ETA=44s | tokens=280.0
+[2026-05-16 22:49:36] [history_30min] [incr] 19/26 | 100 stocks, 3200 rows, +0 new | elapsed=104s ETA=38s | tokens=280.0
+[2026-05-16 22:49:42] [history_30min] [incr] 20/26 | 100 stocks, 3200 rows, +0 new | elapsed=110s ETA=33s | tokens=280.0
+[2026-05-16 22:49:47] [history_30min] [incr] 21/26 | 100 stocks, 3200 rows, +0 new | elapsed=116s ETA=28s | tokens=280.0
+[2026-05-16 22:49:53] [history_30min] [incr] 22/26 | 100 stocks, 3200 rows, +0 new | elapsed=121s ETA=22s | tokens=280.0
+[2026-05-16 22:49:58] [history_30min] [incr] 23/26 | 100 stocks, 6360 rows, +0 new | elapsed=127s ETA=17s | tokens=280.0
+[2026-05-16 22:50:04] [history_30min] [incr] 24/26 | 100 stocks, 3200 rows, +0 new | elapsed=132s ETA=11s | tokens=280.0
+[2026-05-16 22:50:09] [history_30min] [incr] 25/26 | 100 stocks, 3192 rows, +0 new | elapsed=138s ETA=6s | tokens=280.0
+[2026-05-16 22:50:11] [history_30min] [incr] 26/26 | 42 stocks, 1344 rows, +0 new | elapsed=140s ETA=0s | tokens=280.0
+[2026-05-16 22:50:12] [history_30min] Done: 2542 stocks processed, 0 new rows total
+[2026-05-16 22:50:14] 
+============================================================
+[2026-05-16 22:50:14] [history_60min] Starting incremental update
+[2026-05-16 22:50:15] [history_60min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:50:15] [history_60min] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:50:17] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 1.4s
+[2026-05-16 22:50:17] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 1.5s
+[2026-05-16 22:50:17] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 1.6s
+[2026-05-16 22:50:18] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 3.1s
+[2026-05-16 22:50:18] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 3.2s
+[2026-05-16 22:50:19] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 3.3s
+[2026-05-16 22:50:19] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.7s
+[2026-05-16 22:50:19] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.6s
+[2026-05-16 22:50:19] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.6s
+[2026-05-16 22:50:20] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1596 rows, 1 pages, 1.7s
+[2026-05-16 22:50:20] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.0s
+[2026-05-16 22:50:20] [history_60min] [incr] 2026-05-10 ~ 2026-05-16: 1992 rows, 1 pages, 2.2s
+[2026-05-16 22:50:21] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 1.7s
+[2026-05-16 22:50:21] [history_60min] [incr] 1/26 | 100 stocks, 1600 rows, +400 new | elapsed=6s ETA=148s | tokens=279.1
+[2026-05-16 22:50:21] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.1s
+[2026-05-16 22:50:22] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.2s
+[2026-05-16 22:50:23] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.4s
+[2026-05-16 22:50:23] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.4s
+[2026-05-16 22:50:23] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.4s
+[2026-05-16 22:50:24] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.7s
+[2026-05-16 22:50:24] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.7s
+[2026-05-16 22:50:25] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 3.4s
+[2026-05-16 22:50:25] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 2.9s
+[2026-05-16 22:50:26] [history_60min] [incr] 2/26 | 100 stocks, 1600 rows, +400 new | elapsed=10s ETA=123s | tokens=280.0
+[2026-05-16 22:50:26] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1600 rows, 1 pages, 3.6s
+[2026-05-16 22:50:27] [history_60min] [incr] 2026-05-05 ~ 2026-05-16: 3180 rows, 1 pages, 4.5s
+[2026-05-16 22:50:28] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 672 rows, 1 pages, 3.3s
+[2026-05-16 22:50:28] [history_60min] [incr] 2026-05-12 ~ 2026-05-16: 1596 rows, 1 pages, 4.6s
+[2026-05-16 22:50:30] [history_60min] [incr] 3/26 | 100 stocks, 1600 rows, +400 new | elapsed=15s ETA=112s | tokens=280.0
+[2026-05-16 22:50:34] [history_60min] [incr] 4/26 | 100 stocks, 1600 rows, +400 new | elapsed=19s ETA=105s | tokens=280.0
+[2026-05-16 22:50:39] [history_60min] [incr] 5/26 | 100 stocks, 1600 rows, +400 new | elapsed=24s ETA=100s | tokens=280.0
+[2026-05-16 22:50:44] [history_60min] [incr] 6/26 | 100 stocks, 1600 rows, +400 new | elapsed=29s ETA=96s | tokens=280.0
+[2026-05-16 22:50:49] [history_60min] [incr] 7/26 | 100 stocks, 1600 rows, +400 new | elapsed=34s ETA=91s | tokens=280.0
+[2026-05-16 22:50:54] [history_60min] [incr] 8/26 | 100 stocks, 1600 rows, +400 new | elapsed=39s ETA=87s | tokens=280.0
+[2026-05-16 22:50:59] [history_60min] [incr] 9/26 | 100 stocks, 1600 rows, +400 new | elapsed=43s ETA=82s | tokens=280.0
+[2026-05-16 22:51:04] [history_60min] [incr] 10/26 | 100 stocks, 1596 rows, +400 new | elapsed=49s ETA=78s | tokens=280.0
+[2026-05-16 22:51:09] [history_60min] [incr] 11/26 | 100 stocks, 1600 rows, +400 new | elapsed=54s ETA=74s | tokens=280.0
+[2026-05-16 22:51:14] [history_60min] [incr] 12/26 | 100 stocks, 1992 rows, +396 new | elapsed=59s ETA=68s | tokens=280.0
+[2026-05-16 22:51:19] [history_60min] [incr] 13/26 | 100 stocks, 1600 rows, +400 new | elapsed=63s ETA=63s | tokens=280.0
+[2026-05-16 22:51:23] [history_60min] [incr] 14/26 | 100 stocks, 1600 rows, +400 new | elapsed=68s ETA=58s | tokens=280.0
+[2026-05-16 22:51:28] [history_60min] [incr] 15/26 | 100 stocks, 1600 rows, +400 new | elapsed=73s ETA=53s | tokens=280.0
+[2026-05-16 22:51:33] [history_60min] [incr] 16/26 | 100 stocks, 1600 rows, +400 new | elapsed=77s ETA=48s | tokens=280.0
+[2026-05-16 22:51:38] [history_60min] [incr] 17/26 | 100 stocks, 1600 rows, +400 new | elapsed=82s ETA=44s | tokens=280.0
+[2026-05-16 22:51:43] [history_60min] [incr] 18/26 | 100 stocks, 1600 rows, +400 new | elapsed=87s ETA=39s | tokens=280.0
+[2026-05-16 22:51:48] [history_60min] [incr] 19/26 | 100 stocks, 1600 rows, +400 new | elapsed=93s ETA=34s | tokens=280.0
+[2026-05-16 22:51:53] [history_60min] [incr] 20/26 | 100 stocks, 1600 rows, +400 new | elapsed=97s ETA=29s | tokens=280.0
+[2026-05-16 22:51:57] [history_60min] [incr] 21/26 | 100 stocks, 1600 rows, +400 new | elapsed=102s ETA=24s | tokens=280.0
+[2026-05-16 22:52:02] [history_60min] [incr] 22/26 | 100 stocks, 1600 rows, +400 new | elapsed=107s ETA=19s | tokens=280.0
+[2026-05-16 22:52:07] [history_60min] [incr] 23/26 | 100 stocks, 1600 rows, +400 new | elapsed=111s ETA=15s | tokens=280.0
+[2026-05-16 22:52:11] [history_60min] [incr] 24/26 | 100 stocks, 3180 rows, +396 new | elapsed=116s ETA=10s | tokens=280.0
+[2026-05-16 22:52:14] [history_60min] [incr] 25/26 | 42 stocks, 672 rows, +168 new | elapsed=118s ETA=5s | tokens=280.0
+[2026-05-16 22:52:18] [history_60min] [incr] 26/26 | 100 stocks, 1596 rows, +400 new | elapsed=123s ETA=0s | tokens=280.0
+[2026-05-16 22:52:18] [history_60min] Done: 2542 stocks processed, 10160 new rows total
+[2026-05-16 22:52:20] 
+============================================================
+[2026-05-16 22:52:20] [min_adj_15min] Starting incremental update
+[2026-05-16 22:52:21] [min_adj_15min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:52:21] [min_adj_15min] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:52:25] [min_adj_15min] [incr] 1/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:25] [min_adj_15min] [incr] 2/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:25] [min_adj_15min] [incr] 3/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:29] [min_adj_15min] [incr] 4/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:29] [min_adj_15min] [incr] 5/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:29] [min_adj_15min] [incr] 6/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:33] [min_adj_15min] [incr] 7/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:33] [min_adj_15min] [incr] 8/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:33] [min_adj_15min] [incr] 9/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:37] [min_adj_15min] [incr] 10/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:37] [min_adj_15min] [incr] 11/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:37] [min_adj_15min] [incr] 12/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:40] [min_adj_15min] [incr] 13/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:40] [min_adj_15min] [incr] 14/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:41] [min_adj_15min] [incr] 15/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:44] [min_adj_15min] [incr] 16/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:45] [min_adj_15min] [incr] 17/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:45] [min_adj_15min] [incr] 18/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:48] [min_adj_15min] [incr] 19/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:48] [min_adj_15min] [incr] 20/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:49] [min_adj_15min] [incr] 21/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:52] [min_adj_15min] [incr] 22/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:52] [min_adj_15min] [incr] 23/26 | 42 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string
+[2026-05-16 22:52:53] [min_adj_15min] [incr] 24/26 | 100 stocks FAILED: API Error: code=422, msg=请求参数校验失败：股票代码: Input should be a valid string

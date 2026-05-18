@@ -208,11 +208,11 @@ def predict_missing_dates(model_score, fac_path=None, model_train_base=None,
     or None if no missing dates are found.
     """
     if fac_path is None:
-        fac_path = rf'{fac_path_default}/fac20260516.fea'
+        fac_path = rf'{fac_path_default}/fac20260517.fea'
     if model_train_base is None:
         model_train_base = rf'{root_path}/model_train'
     if basic_name is None:
-        basic_name = get_basic_name('fac20260516', 'label', True, 0.2)
+        basic_name = get_basic_name('fac20260517', 'label', True, 0.2)
 
     last_date = str(model_score.index.max())
     all_data = pd.read_feather(fac_path)
@@ -273,7 +273,7 @@ def parse_args():
                         help='Season, e.g. "2026q2"')
     parser.add_argument('--dates', type=str, required=True,
                         help='Comma-separated dates, e.g. "20250513,20250514"')
-    parser.add_argument('--fac_name', type=str, default=r'fac20260516',
+    parser.add_argument('--fac_name', type=str, default=r'fac20260517',
                         help='Factor data file name (without .fea extension)')
     parser.add_argument('--label_name', type=str, default=r'label',
                         help='Label name used in model directory naming')

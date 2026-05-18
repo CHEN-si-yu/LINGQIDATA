@@ -14,9 +14,10 @@ name = get_basic_name()
 args = parse_args()
 
 # ===== 10 quarters for cross-sectional training =====
-SEASONS = ["2024q1", "2024q2", "2024q3", "2024q4",
-           "2025q1", "2025q2", "2025q3", "2025q4",
-           "2026q1", "2026q2"]
+# SEASONS = ["2024q1", "2024q2", "2024q3", "2024q4",
+#            "2025q1", "2025q2", "2025q3", "2025q4",
+#            "2026q1", "2026q2"]
+SEASONS = ["2026q2", "2024q1"]
 MARKET = "ALL"
 
 if __name__ == "__main__":

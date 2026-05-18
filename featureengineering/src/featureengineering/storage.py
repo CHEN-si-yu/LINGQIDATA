@@ -53,7 +53,7 @@ def load_factor(name: str, paths: ProjectPaths | None = None) -> pd.DataFrame:
 
     merged = pd.concat(frames)
     merged = merged[~merged.index.duplicated(keep="last")]
-    merged = merged.sort_index(level=["Date", "Code"])
+    merged = merged.sort_index()
     return merged
 
 
@@ -80,12 +80,18 @@ def ensure_single_factor_frame(data: pd.Series | pd.DataFrame, factor_name: str)
 
     if lowered == ["date", "code"]:
         frame.index = frame.index.set_names(["Date", "Code"])
-        frame = frame.reorder_levels(["Code", "Date"])
     else:
         frame.index = frame.index.set_names(["Code", "Date"])
+        frame = frame.reorder_levels(["Date", "Code"])
 
-    frame = frame.sort_index(level=["Date", "Code"])
-    return frame
+    frame = frame.sort_index()
+
+    # Pivot to Date (rows) x Code (columns) wide format
+    wide = frame.reset_index().pivot(index="Date", columns="Code", values=factor_name)
+    wide = wide.sort_index()
+    wide.columns.name = "Code"
+    wide.index.name = "Date"
+    return wide
 
 
 def write_factor(
@@ -108,10 +114,13 @@ def write_factor(
 
     factor_frame.to_feather(factor_path)
 
-    # Last date and stock count
-    dates = factor_frame.index.get_level_values("Date")
+    # Last date and stock count (wide format: Date index, Code columns)
+    dates = factor_frame.index
     last_date = str(dates.max())
-    last_day_stock_count = int((dates == last_date).sum())
+    last_day_stock_count = int(factor_frame.loc[last_date].notna().sum())
+
+    total_cells = len(factor_frame) * len(factor_frame.columns)
+    non_null_cells = int(factor_frame.notna().sum().sum())
 
     manifest = {
         "name": spec.name,
@@ -120,8 +129,9 @@ def write_factor(
         "thesis": spec.thesis,
         "dependencies": list(spec.dependencies),
         "rows": int(len(factor_frame)),
-        "non_null_rows": int(factor_frame[spec.name].notna().sum()),
-        "coverage_ratio": float(factor_frame[spec.name].notna().mean()) if len(factor_frame) else 0.0,
+        "cols": int(len(factor_frame.columns)),
+        "non_null_cells": non_null_cells,
+        "coverage_ratio": float(non_null_cells / total_cells) if total_cells else 0.0,
         "index_names": list(factor_frame.index.names),
         "column": spec.name,
         "last_date": last_date,
@@ -163,7 +173,7 @@ def write_factor_incremental(
     else:
         merged = pd.concat([existing, new_frame], ignore_index=False)
         merged = merged[~merged.index.duplicated(keep="last")]
-        merged = merged.sort_index(level=["Date", "Code"])
+        merged = merged.sort_index()
 
     # Atomic write
     tmp = incr_path.with_suffix(".fea.tmp")
@@ -172,23 +182,25 @@ def write_factor_incremental(
 
     # Update manifest: reflect the full combined (base + incr) state
     base_path = factor_base_path(spec, paths)
-    base_rows = 0
+    base_cells = 0
     base_nn = 0
     if base_path.exists():
         try:
             base_df = pd.read_feather(base_path)
-            base_rows = len(base_df)
-            base_nn = int(base_df[spec.name].notna().sum())
+            base_cells = len(base_df) * len(base_df.columns)
+            base_nn = int(base_df.notna().sum().sum())
         except Exception:
             pass
 
-    total_rows = base_rows + len(merged)
-    total_nn = base_nn + int(merged[spec.name].notna().sum())
+    incr_cells = len(merged) * len(merged.columns)
+    incr_nn = int(merged.notna().sum().sum())
+    total_cells = base_cells + incr_cells
+    total_nn = base_nn + incr_nn
 
     # Last date and stock count come from the incremental data (newest)
-    dates = merged.index.get_level_values("Date")
+    dates = merged.index
     last_date = str(dates.max())
-    last_day_stock_count = int((dates == last_date).sum())
+    last_day_stock_count = int(merged.loc[last_date].notna().sum())
 
     manifest = {
         "name": spec.name,
@@ -197,8 +209,9 @@ def write_factor_incremental(
         "thesis": spec.thesis,
         "dependencies": list(spec.dependencies),
         "rows": total_rows,
-        "non_null_rows": total_nn,
-        "coverage_ratio": float(total_nn / total_rows) if total_rows else 0.0,
+        "cols": int(len(merged.columns)),
+        "non_null_cells": total_nn,
+        "coverage_ratio": float(total_nn / total_cells) if total_cells else 0.0,
         "index_names": list(merged.index.names),
         "column": spec.name,
         "last_date": last_date,
@@ -226,9 +239,12 @@ def write_target(
 
     target_frame.to_feather(target_path)
 
-    dates = target_frame.index.get_level_values("Date")
+    dates = target_frame.index
     last_date = str(dates.max())
-    last_day_stock_count = int((dates == last_date).sum())
+    last_day_stock_count = int(target_frame.loc[last_date].notna().sum())
+
+    total_cells = len(target_frame) * len(target_frame.columns)
+    non_null_cells = int(target_frame.notna().sum().sum())
 
     manifest = {
         "name": spec.name,
@@ -237,8 +253,9 @@ def write_target(
         "thesis": spec.thesis,
         "dependencies": list(spec.dependencies),
         "rows": int(len(target_frame)),
-        "non_null_rows": int(target_frame[spec.name].notna().sum()),
-        "coverage_ratio": float(target_frame[spec.name].notna().mean()) if len(target_frame) else 0.0,
+        "cols": int(len(target_frame.columns)),
+        "non_null_cells": non_null_cells,
+        "coverage_ratio": float(non_null_cells / total_cells) if total_cells else 0.0,
         "index_names": list(target_frame.index.names),
         "column": spec.name,
         "last_date": last_date,

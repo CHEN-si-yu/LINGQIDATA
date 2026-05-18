@@ -1,0 +1,121 @@
+[2026-05-16 22:41:46] [incremental] DRY-RUN: 7 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-16 22:41:46] [incremental] Datasets: ['cyq_chips', 'history_15min', 'history_30min', 'history_60min', 'min_adj_15min', 'min_adj_30min', 'min_adj_60min']
+[2026-05-16 22:41:46] 
+============================================================
+[2026-05-16 22:41:46] [cyq_chips] Starting incremental update
+[2026-05-16 22:41:47] [cyq_chips] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:47] [cyq_chips] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:47]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:47]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:47]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:47]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:47] 
+============================================================
+[2026-05-16 22:41:47] [history_15min] Starting incremental update
+[2026-05-16 22:41:49] [history_15min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:49] [history_15min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:49]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:49]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:49]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:49]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:49] 
+============================================================
+[2026-05-16 22:41:49] [history_30min] Starting incremental update
+[2026-05-16 22:41:50] [history_30min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:50] [history_30min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:50]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:50]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:50]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:50]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:50] 
+============================================================
+[2026-05-16 22:41:50] [history_60min] Starting incremental update
+[2026-05-16 22:41:52] [history_60min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:52] [history_60min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:52]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:52]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:52]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:52]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:52] 
+============================================================
+[2026-05-16 22:41:52] [min_adj_15min] Starting incremental update
+[2026-05-16 22:41:53] [min_adj_15min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:53] [min_adj_15min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:53]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:53]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:53]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:53]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:53] 
+============================================================
+[2026-05-16 22:41:53] [min_adj_30min] Starting incremental update
+[2026-05-16 22:41:55] [min_adj_30min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:55] [min_adj_30min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:55]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:55]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:55]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:55]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:55] 
+============================================================
+[2026-05-16 22:41:55] [min_adj_60min] Starting incremental update
+[2026-05-16 22:41:56] [min_adj_60min] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:41:56] [min_adj_60min] DRY-RUN: would fetch 2542 incremental stocks
+[2026-05-16 22:41:56]   incr: 000001.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:56]   incr: 000002.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:56]   incr: 000006.SZ: 2026-05-11 ~ 2026-05-16
+[2026-05-16 22:41:56]   ... 2542 stocks in 26 batches
+[2026-05-16 22:41:56] 
+============================================================
+[2026-05-16 22:41:56] [incremental] DRY-RUN Summary:
+[2026-05-16 22:41:56]   [dry-run] cyq_chips: 
+[2026-05-16 22:41:56]   [dry-run] history_15min: 
+[2026-05-16 22:41:56]   [dry-run] history_30min: 
+[2026-05-16 22:41:56]   [dry-run] history_60min: 
+[2026-05-16 22:41:56]   [dry-run] min_adj_15min: 
+[2026-05-16 22:41:56]   [dry-run] min_adj_30min: 
+[2026-05-16 22:41:56]   [dry-run] min_adj_60min: 
+[2026-05-16 22:41:56] [incremental] Done: 0 updated, 0 uptodate, 0 skipped, 0 errors
+[2026-05-16 22:41:56] [incremental] Total API calls: 0
+[2026-05-16 22:41:56] 
+[incremental] PENDING (server behind, will re-fetch with extended overlap next run):
+[2026-05-16 22:41:56]   [pending] balancesheet                 last_data=2026-03-31  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] cashflow                     last_data=2026-03-31  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] daily                        last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] daily_adj                    last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] dragon_tiger                 last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] finance                      last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] financial_indicator          last_data=2026-03-31  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] holder_number                last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] income                       last_data=2026-03-31  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] index_weight                 last_data=2026-04-01  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] kline_adj_monthly            last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] kline_adj_weekly             last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] kline_monthly                last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] kline_weekly                 last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] limit_list                   last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] limit_up                     last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] main_fund_flow               last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] margin_detail                last_data=2026-05-12  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] pledge_stat                  last_data=2026-04-30  since=2026-05-14
+[2026-05-16 22:41:56]   [pending] ths_daily                    last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:56]   [pending] top_list                     last_data=2026-05-15  since=2026-05-16
+[2026-05-16 22:41:57] 
+============================================================
+[2026-05-16 22:41:57] [timing] Per-dataset timing report
+[2026-05-16 22:41:57] Dataset                      Phase                    Elapsed  Details
+[2026-05-16 22:41:57] -------------------------------------------------------------------------------------
+[2026-05-16 22:41:57]   cyq_chips                  total                      1.3s  
+[2026-05-16 22:41:57]   history_15min              total                      1.5s  
+[2026-05-16 22:41:57]   history_30min              total                      1.6s  
+[2026-05-16 22:41:57]   history_60min              total                      1.5s  
+[2026-05-16 22:41:57]   min_adj_15min              total                      1.5s  
+[2026-05-16 22:41:57]   min_adj_30min              total                      1.5s  
+[2026-05-16 22:41:57]   min_adj_60min              total                      1.5s  
+[2026-05-16 22:41:57] -------------------------------------------------------------------------------------
+[2026-05-16 22:41:57]   TOTAL                                                10.4s
+[2026-05-16 22:41:57] 
+[timing] Top 5 slowest datasets:
+[2026-05-16 22:41:57]   history_30min                  1.6s ( 14.9%) ##
+[2026-05-16 22:41:57]   history_60min                  1.5s ( 14.8%) ##
+[2026-05-16 22:41:57]   min_adj_60min                  1.5s ( 14.7%) ##
+[2026-05-16 22:41:57]   min_adj_15min                  1.5s ( 14.5%) ##
+[2026-05-16 22:41:57]   history_15min                  1.5s ( 14.4%) ##

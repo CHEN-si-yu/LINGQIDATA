@@ -6,6 +6,16 @@ from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
 
+def _total_amount(ff):
+    """Return total turnover amount from main fund flow, zero replaced with NaN."""
+    return (
+        ff["buy_sm_amount"] + ff["sell_sm_amount"]
+        + ff["buy_md_amount"] + ff["sell_md_amount"]
+        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
+        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
+    ).replace(0, np.nan)
+
+
 # ── Main Fund Net Inflow ────────────────────────────────────────────────
 
 @register_factor(
@@ -17,13 +27,7 @@ from ..utils import cross_sectional_rank
 )
 def factor_mf_net_inflow_ratio(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
-    total_amount = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    ).replace(0, np.nan)
-    ratio = ff["net_mf_amount"] / total_amount
+    ratio = ff["net_mf_amount"] / _total_amount(ff)
     return cross_sectional_rank(ratio)
 
 
@@ -36,13 +40,7 @@ def factor_mf_net_inflow_ratio(context: FactorContext):
 )
 def factor_mf_net_inflow_5d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
-    total_amount = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
-    daily_ratio = ff["net_mf_amount"] / total_amount.replace(0, np.nan)
+    daily_ratio = ff["net_mf_amount"] / _total_amount(ff)
     cum_ratio = daily_ratio.groupby(level="Code").transform(
         lambda s: s.rolling(5, min_periods=3).sum()
     )
@@ -64,13 +62,7 @@ def factor_mf_big_order_ratio(context: FactorContext):
         ff["buy_lg_amount"] - ff["sell_lg_amount"]
         + ff["buy_elg_amount"] - ff["sell_elg_amount"]
     )
-    total = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
-    ratio = big_net / total.replace(0, np.nan)
+    ratio = big_net / _total_amount(ff)
     return cross_sectional_rank(ratio)
 
 
@@ -84,13 +76,7 @@ def factor_mf_big_order_ratio(context: FactorContext):
 def factor_mf_small_order_ratio(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
     small_net = ff["buy_sm_amount"] - ff["sell_sm_amount"]
-    total = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
-    ratio = small_net / total.replace(0, np.nan)
+    ratio = small_net / _total_amount(ff)
     return cross_sectional_rank(-ratio)
 
 
@@ -108,13 +94,7 @@ def factor_mf_big_small_divergence(context: FactorContext):
         + ff["buy_elg_amount"] - ff["sell_elg_amount"]
     )
     small_net = ff["buy_sm_amount"] - ff["sell_sm_amount"]
-    total = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
-    divergence = (big_net - small_net) / total.replace(0, np.nan)
+    divergence = (big_net - small_net) / _total_amount(ff)
     return cross_sectional_rank(divergence)
 
 
@@ -174,13 +154,7 @@ def factor_margin_short_pressure(context: FactorContext):
 )
 def factor_mf_net_inflow_trend_5d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
-    total_amount = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
-    daily_ratio = ff["net_mf_amount"] / total_amount.replace(0, np.nan)
+    daily_ratio = ff["net_mf_amount"] / _total_amount(ff)
 
     def _trend_slope(y):
         y = y[~np.isnan(y)]
@@ -213,17 +187,11 @@ def factor_big_order_divergence(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
     daily_adj = context.load("daily_adj.parquet")
 
-    total_amount = (
-        ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
-        + ff["buy_lg_amount"] + ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] + ff["sell_elg_amount"]
-    )
     big_net = (
         ff["buy_lg_amount"] - ff["sell_lg_amount"]
         + ff["buy_elg_amount"] - ff["sell_elg_amount"]
     )
-    big_net_rate = big_net / total_amount.replace(0, np.nan)
+    big_net_rate = big_net / _total_amount(ff)
 
     with np.errstate(invalid="ignore"):
         rank_big = big_net_rate.groupby(level="Date").rank(pct=True)

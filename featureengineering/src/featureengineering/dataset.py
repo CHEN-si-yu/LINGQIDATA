@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -8,6 +9,9 @@ import numpy as np
 import pandas as pd
 
 from .settings import ProjectPaths, configure_paths
+
+
+_MAX_CACHE_SIZE = 16
 
 
 # ── allowed stock pool ──────────────────────────────────────────────────────
@@ -137,28 +141,26 @@ def _build_daily_financial(
     df = df.sort_values(["stock_code", "ann_date"])
     df = df.drop_duplicates(subset=["stock_code", "ann_date"], keep="last")
 
-    n_cols = len(value_cols)
+    if not value_cols:
+        return pd.DataFrame()
 
-    _report("ffill", 0, n_cols)
+    _report("ffill", 0, 1)
 
-    panels = []
-    for i, col in enumerate(value_cols):
-        # Pivot to wide: rows=ann_date, cols=stock_code
-        pivot = df.pivot_table(
-            index="ann_date", columns="stock_code", values=col, aggfunc="last"
-        )
-        # Reindex to full calendar → forward-fill → stack back to long
-        pivot = pivot.reindex(calendar_dates).ffill()
-        stacked = pivot.stack().rename(col)
-        panels.append(stacked)
-        _report("ffill", i + 1, n_cols)
+    # Pivot all value columns in a single pass (was: per-column loop)
+    pivot = df.pivot_table(
+        index="ann_date", columns="stock_code", values=value_cols, aggfunc="last"
+    )
+    pivot = pivot.reindex(calendar_dates).ffill()
 
-    if not panels:
-        return pd.DataFrame(columns=value_cols)
+    # Stack stock_code level back to rows.
+    # After pivot_table with a list of values, columns is always a MultiIndex
+    # with (value_col, stock_code) levels; stack the stock_code level.
+    if isinstance(pivot.columns, pd.MultiIndex):
+        result = pivot.stack(level=1, future_stack=True)
+    else:
+        result = pivot.stack(future_stack=True).to_frame(value_cols[0])
 
-    _report("concat", 0, 1)
-    result = pd.concat(panels, axis=1)
-    _report("concat", 1, 1)
+    _report("ffill", 1, 1)
 
     _report("index", 0, 1)
     result.index = result.index.set_names(["date", "code"])
@@ -176,6 +178,7 @@ def _build_daily_financial(
 class DataRepository:
     paths: ProjectPaths | None = None
     _cache: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _cache_order: deque[str] = field(default_factory=deque)
     on_progress: Callable[[str, int, int], None] | None = None
 
     def __post_init__(self) -> None:
@@ -202,6 +205,23 @@ class DataRepository:
         mask = codes.isin(allowed)
         return df.loc[mask]
 
+    def _cache_put(self, key: str, value: pd.DataFrame) -> None:
+        """Store in cache with LRU eviction when the cache exceeds _MAX_CACHE_SIZE."""
+        if len(self._cache) >= _MAX_CACHE_SIZE:
+            oldest = self._cache_order.popleft()
+            del self._cache[oldest]
+        self._cache[key] = value
+        self._cache_order.append(key)
+
+    def _cache_get(self, key: str) -> pd.DataFrame | None:
+        """Retrieve from cache and bump the key to MRU position."""
+        if key not in self._cache:
+            return None
+        # Move key to end (MRU)
+        self._cache_order.remove(key)
+        self._cache_order.append(key)
+        return self._cache[key]
+
     # ── daily panel loading ───────────────────────────────────────────
 
     def load_panel(
@@ -218,16 +238,18 @@ class DataRepository:
         subtracted from *min_date* to provide context for rolling windows).
         """
         cache_key = relative_path
-        if cache_key not in self._cache:
+        cached = self._cache_get(cache_key)
+        if cached is None:
             if self.on_progress:
                 self.on_progress("load", 0, 1)
             raw = self._read_parquet(self.paths.source_root / relative_path)
             normalized = _normalize_index_frame(raw)
-            self._cache[relative_path] = self._filter_by_allowed(normalized)
+            self._cache_put(cache_key, self._filter_by_allowed(normalized))
             if self.on_progress:
                 self.on_progress("load", 1, 1)
-
-        full = self._cache[relative_path]
+            full = self._cache[cache_key]
+        else:
+            full = cached
         return _filter_by_date_range(full, min_date, max_date, lookback_days)
 
     # ── report-frequency financial loading ────────────────────────────
@@ -260,24 +282,27 @@ class DataRepository:
         """
         cols_tag = "" if value_cols is None else f"_{'_'.join(sorted(value_cols))}"
         cache_key = f"__financial__{relative_path}{cols_tag}_{date_col}"
-        if cache_key not in self._cache:
-            # Read only needed columns (parquet is columnar)
+        cached = self._cache_get(cache_key)
+        if cached is None:
             if value_cols is not None:
                 needed = list(value_cols) + ["stock_code", date_col]
                 raw = self._read_parquet_columns(self.paths.source_root / relative_path, needed)
             else:
                 raw = self._read_parquet(self.paths.source_root / relative_path)
-            calendar = self._read_parquet(self.paths.source_root / "calendar.parquet")
+            calendar = self._cache_get("__calendar__")
+            if calendar is None:
+                calendar = self._read_parquet(self.paths.source_root / "calendar.parquet")
+                self._cache_put("__calendar__", calendar)
             if value_cols is None:
                 exclude = {"stock_code", "ann_date", "f_ann_date", "end_date",
                            "report_type", "comp_type", "end_type", "update_time",
                            "name", "stock_name"}
                 value_cols = [c for c in raw.columns if c not in exclude]
-            self._cache[cache_key] = self._filter_by_allowed(
+            self._cache_put(cache_key, self._filter_by_allowed(
                 _build_daily_financial(raw, calendar, value_cols,
                                        on_progress=self.on_progress,
                                        date_col=date_col)
-            )
+            ))
 
         full = self._cache[cache_key]
         return _filter_by_date_range(full, min_date, max_date, lookback_days)
@@ -287,17 +312,20 @@ class DataRepository:
     def load_stock_pool(self) -> pd.DataFrame:
         """Return listed stocks filtered to the allowed pool."""
         cache_key = "__stock_pool__"
-        if cache_key not in self._cache:
-            raw = self._read_parquet(self.paths.source_root / "stock_list.parquet")
-            pool = raw[raw["list_status"] == "L"].copy()
-            pool["code"] = pool["stock_code"].apply(_pad_code)
-            pool = pool[["code", "industry", "area"]].reset_index(drop=True)
-            pool = pool.rename(columns={"code": "Code"})
-            allowed = self.allowed_codes
-            if allowed:
-                pool = pool[pool["Code"].isin(allowed)]
-            self._cache[cache_key] = pool.sort_values("Code").reset_index(drop=True)
-        return self._cache[cache_key]
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+        raw = self._read_parquet(self.paths.source_root / "stock_list.parquet")
+        pool = raw[raw["list_status"] == "L"].copy()
+        pool["code"] = pool["stock_code"].apply(_pad_code)
+        pool = pool[["code", "industry", "area"]].reset_index(drop=True)
+        pool = pool.rename(columns={"code": "Code"})
+        allowed = self.allowed_codes
+        if allowed:
+            pool = pool[pool["Code"].isin(allowed)]
+        result = pool.sort_values("Code").reset_index(drop=True)
+        self._cache_put(cache_key, result)
+        return result
 
     def available_codes(self) -> pd.Index:
         return pd.Index(self.load_stock_pool()["Code"], name="Code")

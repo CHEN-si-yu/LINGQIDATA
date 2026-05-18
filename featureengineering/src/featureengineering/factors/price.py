@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, rolling_group_skew, rolling_group_kurt
+from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std
 from ..utils import rolling_group_max, rolling_group_min
 
 
@@ -543,18 +544,11 @@ def factor_atr_20(context: FactorContext):
     pre_close = daily["pre_close"]
 
     # True Range = max(high-low, |high-prev_close|, |low-prev_close|)
-    def _tr(grp):
-        return pd.DataFrame({
-            "hl": grp["high"] - grp["low"],
-            "hpc": (grp["high"] - grp["pre_close"]).abs(),
-            "lpc": (grp["low"] - grp["pre_close"]).abs(),
-        }).max(axis=1)
-
-    df = pd.DataFrame({"high": high, "low": low, "pre_close": pre_close})
-    tr = df.groupby(level="Code").apply(_tr)
-    if isinstance(tr.index, pd.MultiIndex):
-        tr = tr.droplevel(0)
-    tr = tr.sort_index()
+    # Row-wise operation — no per-stock groupby needed
+    tr = np.maximum(
+        high - low,
+        np.maximum((high - pre_close).abs(), (low - pre_close).abs()),
+    )
 
     atr = tr.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).mean()
@@ -578,3 +572,82 @@ def factor_pct_chg_vol_20(context: FactorContext):
         lambda s: s.rolling(20, min_periods=10).std()
     )
     return cross_sectional_rank(-vol)
+
+
+# ── Timeseries factors ───────────────────────────────────────────────────
+
+@register_factor(
+    name="ts_mom_accel_20",
+    description="20日动量加速度因子，当前动量与20日前动量的差值截面排名。",
+    category="timeseries",
+    thesis="动量加速度捕捉趋势的加速/减速信号。动量上升加速中的股票趋势强度增强，动量减速甚至转为下降的股票趋势衰竭，加速度因子可以提前识别趋势拐点。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_ts_mom_accel_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+
+    mom_20 = close.groupby(level="Code").transform(
+        lambda s: s.pct_change(20)
+    )
+    mom_20_ago = mom_20.groupby(level="Code").transform(lambda s: s.shift(20))
+
+    accel = mom_20 - mom_20_ago
+    return cross_sectional_rank(accel)
+
+
+@register_factor(
+    name="ts_vol_regime_60",
+    description="波动率历史分位因子，当前20日波动率在自身252日历史中的分位数截面排名。",
+    category="timeseries",
+    thesis="波动率具有聚集效应，当前波动率相对自身历史的位置（波动率体制）比绝对波动率更具预测力。高体制（波动率处于历史高位）往往对应恐慌/不确定性，低体制对应平稳期，不同体制下因子表现可能截然不同。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_ts_vol_regime_60(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+
+    ret_1d = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    vol_20 = rolling_group_std(ret_1d, 20)
+
+    def _expanding_pct_rank(s: pd.Series) -> pd.Series:
+        return s.expanding(min_periods=60).rank(pct=True)
+
+    regime = vol_20.groupby(level="Code").transform(_expanding_pct_rank)
+    return cross_sectional_rank(regime)
+
+
+@register_factor(
+    name="ts_price_self_rank_60",
+    description="价格自身60日位置因子，收盘价在自身60日高低区间的相对位置截面排名。",
+    category="timeseries",
+    thesis="现有price_position_60是截面对比，ts_price_self_rank_60是个股价格在自身60日范围内的位置，捕捉个股自身的超买超卖状态，与截面因子互补。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_ts_price_self_rank_60(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+
+    high_60 = rolling_group_max(close, 60)
+    low_60 = rolling_group_min(close, 60)
+
+    position = (close - low_60) / (high_60 - low_60).replace(0, np.nan)
+    return cross_sectional_rank(position)
+
+
+@register_factor(
+    name="ts_volume_zscore_20",
+    description="成交量20日Z-score因子，当日成交量偏离20日均值的标准差数截面排名（高放量排后）。",
+    category="timeseries",
+    thesis="成交量异常放大（高Z-score）往往伴随信息冲击、主力进出或市场过度关注，后续可能面临反转压力。低Z-score（缩量）则可能处于蓄势阶段。Z-score标准化使不同股票的成交量更具可比性。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_ts_volume_zscore_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    vol = daily_adj["vol"]
+
+    mean_20 = rolling_group_mean(vol, 20)
+    std_20 = rolling_group_std(vol, 20)
+
+    zscore = (vol - mean_20) / std_20.replace(0, np.nan)
+    return cross_sectional_rank(-zscore)

@@ -1,0 +1,14 @@
+[2026-05-16 22:59:32] [incremental] 7 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-16 22:59:32] [incremental] Datasets: ['cyq_chips', 'history_15min', 'history_30min', 'history_60min', 'min_adj_15min', 'min_adj_30min', 'min_adj_60min']
+[2026-05-16 22:59:32] 
+============================================================
+[2026-05-16 22:59:32] [cyq_chips] Starting incremental update
+[2026-05-16 22:59:33] [cyq_chips] 2542 stocks | 2542 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:59:33] [cyq_chips] [incr] 2542 stocks in 26 batches (batch_size=100)
+[2026-05-16 22:59:45] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 32917 rows, 4 pages, 11.7s
+[2026-05-16 22:59:45] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 39151 rows, 4 pages, 12.0s
+[2026-05-16 22:59:47] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 38441 rows, 4 pages, 13.2s
+[2026-05-16 22:59:48] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 42987 rows, 5 pages, 14.5s
+[2026-05-16 22:59:48] [cyq_chips] [incr] 1/26 | 100 stocks, 32917 rows, +0 new | elapsed=15s ETA=376s | tokens=48.6
+[2026-05-16 22:59:49] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 43237 rows, 5 pages, 15.4s
+[2026-05-16 22:59:50] [cyq_chips] [incr] 2026-05-12 ~ 2026-05-16: 40255 rows, 5 pages, 16.4s

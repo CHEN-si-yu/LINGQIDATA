@@ -1,0 +1,345 @@
+[2026-05-16 22:24:17] [incremental] 7 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-16 22:24:17] [incremental] Datasets: ['cyq_chips', 'history_15min', 'history_30min', 'history_60min', 'min_adj_15min', 'min_adj_30min', 'min_adj_60min']
+[2026-05-16 22:24:17] 
+============================================================
+[2026-05-16 22:24:17] [cyq_chips] Starting incremental update
+[2026-05-16 22:24:17] [cyq_chips] 100 stocks without files, running full backfill via fetch_cyq_chips...
+[2026-05-16 22:24:17] [cyq_chips] 2730 stocks loaded from Code_num.txt
+[2026-05-16 22:24:17] [cyq_chips] 2730 stocks | 2019-01-01 ~ 2026-05-16 | workers=6
+[2026-05-16 22:24:50] [cyq_chips] 100 stocks to fetch
+[2026-05-16 22:24:50]   [cyq_chips] 000004.SZ starting
+[2026-05-16 22:24:50]   [cyq_chips] 000430.SZ starting
+[2026-05-16 22:24:50]   [cyq_chips] 000488.SZ starting
+[2026-05-16 22:24:50]   [cyq_chips] 000504.SZ starting
+[2026-05-16 22:24:50]   [cyq_chips] 000518.SZ starting
+[2026-05-16 22:24:50]   [cyq_chips] 000595.SZ starting
+[2026-05-16 22:25:10]   [cyq_chips] 000004.SZ -> 111079 rows
+[2026-05-16 22:25:10]   [cyq_chips] 000608.SZ starting
+[2026-05-16 22:25:10] [cyq_chips] [1/100] 000004.SZ done (111079 rows) | tokens=159.0
+[2026-05-16 22:25:13]   [cyq_chips] 000518.SZ -> 176517 rows
+[2026-05-16 22:25:13]   [cyq_chips] 000609.SZ starting
+[2026-05-16 22:25:13] [cyq_chips] [2/100] 000518.SZ done (176517 rows) | tokens=154.5
+[2026-05-16 22:25:14]   [cyq_chips] 000595.SZ -> 177758 rows
+[2026-05-16 22:25:14]   [cyq_chips] 000615.SZ starting
+[2026-05-16 22:25:14] [cyq_chips] [3/100] 000595.SZ done (177758 rows) | tokens=149.7
+[2026-05-16 22:25:15]   [cyq_chips] 000488.SZ -> 194014 rows
+[2026-05-16 22:25:15]   [cyq_chips] 000638.SZ starting
+[2026-05-16 22:25:15] [cyq_chips] [4/100] 000488.SZ done (194014 rows) | tokens=146.7
+[2026-05-16 22:25:19]   [cyq_chips] 000430.SZ -> 221451 rows
+[2026-05-16 22:25:19]   [cyq_chips] 000656.SZ starting
+[2026-05-16 22:25:19] [cyq_chips] [5/100] 000430.SZ done (221451 rows) | tokens=146.5
+[2026-05-16 22:25:25]   [cyq_chips] 000609.SZ -> 108479 rows
+[2026-05-16 22:25:25]   [cyq_chips] 000668.SZ starting
+[2026-05-16 22:25:25] [cyq_chips] [6/100] 000609.SZ done (108479 rows) | tokens=136.9
+[2026-05-16 22:25:30]   [cyq_chips] 000615.SZ -> 136993 rows
+[2026-05-16 22:25:30]   [cyq_chips] 000669.SZ starting
+[2026-05-16 22:25:30] [cyq_chips] [7/100] 000615.SZ done (136993 rows) | tokens=132.6
+[2026-05-16 22:25:31]   [cyq_chips] 000504.SZ -> 293700 rows
+[2026-05-16 22:25:31]   [cyq_chips] 000691.SZ starting
+[2026-05-16 22:25:31] [cyq_chips] [8/100] 000504.SZ done (293700 rows) | tokens=133.8
+[2026-05-16 22:25:34]   [cyq_chips] 000656.SZ -> 116628 rows
+[2026-05-16 22:25:34]   [cyq_chips] 000698.SZ starting
+[2026-05-16 22:25:34] [cyq_chips] [9/100] 000656.SZ done (116628 rows) | tokens=134.6
+[2026-05-16 22:25:38]   [cyq_chips] 000638.SZ -> 176944 rows
+[2026-05-16 22:25:38]   [cyq_chips] 000711.SZ starting
+[2026-05-16 22:25:38] [cyq_chips] [10/100] 000638.SZ done (176944 rows) | tokens=127.8
+[2026-05-16 22:25:39]   [cyq_chips] 000669.SZ -> 86478 rows
+[2026-05-16 22:25:39]   [cyq_chips] 000736.SZ starting
+[2026-05-16 22:25:39] [cyq_chips] [11/100] 000669.SZ done (86478 rows) | tokens=126.3
+[2026-05-16 22:25:41]   [cyq_chips] 000608.SZ -> 239355 rows
+[2026-05-16 22:25:41]   [cyq_chips] 000752.SZ starting
+[2026-05-16 22:25:41] [cyq_chips] [12/100] 000608.SZ done (239355 rows) | tokens=126.3
+[2026-05-16 22:25:49]   [cyq_chips] 000711.SZ -> 95514 rows
+[2026-05-16 22:25:49]   [cyq_chips] 000793.SZ starting
+[2026-05-16 22:25:49] [cyq_chips] [13/100] 000711.SZ done (95514 rows) | tokens=122.2
+[2026-05-16 22:25:56]   [cyq_chips] 000752.SZ -> 117500 rows
+[2026-05-16 22:25:56]   [cyq_chips] 000820.SZ starting
+[2026-05-16 22:25:56] [cyq_chips] [14/100] 000752.SZ done (117500 rows) | tokens=119.5
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:11]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:26:12]   [cyq_chips] 000698.SZ -> 178442 rows
+[2026-05-16 22:26:12]   [cyq_chips] 000821.SZ starting
+[2026-05-16 22:26:12] [cyq_chips] [15/100] 000698.SZ done (178442 rows) | tokens=184.1
+[2026-05-16 22:26:13]   [cyq_chips] 000691.SZ -> 198707 rows
+[2026-05-16 22:26:13]   [cyq_chips] 000903.SZ starting
+[2026-05-16 22:26:13]   [cyq_chips] 000793.SZ -> 64111 rows
+[2026-05-16 22:26:13] [cyq_chips] [16/100] 000691.SZ done (198707 rows) | tokens=182.5
+[2026-05-16 22:26:13]   [cyq_chips] 000908.SZ starting
+[2026-05-16 22:26:13] [cyq_chips] [17/100] 000793.SZ done (64111 rows) | tokens=181.5
+[2026-05-16 22:26:14]   [cyq_chips] 000668.SZ -> 253623 rows
+[2026-05-16 22:26:14]   [cyq_chips] 000909.SZ starting
+[2026-05-16 22:26:14] [cyq_chips] [18/100] 000668.SZ done (253623 rows) | tokens=177.5
+[2026-05-16 22:26:16]   [cyq_chips] 000820.SZ -> 53688 rows
+[2026-05-16 22:26:16]   [cyq_chips] 000929.SZ starting
+[2026-05-16 22:26:16] [cyq_chips] [19/100] 000820.SZ done (53688 rows) | tokens=173.0
+[2026-05-16 22:26:17]   [cyq_chips] 000736.SZ -> 190503 rows
+[2026-05-16 22:26:17]   [cyq_chips] 000972.SZ starting
+[2026-05-16 22:26:17] [cyq_chips] [20/100] 000736.SZ done (190503 rows) | tokens=166.0
+[2026-05-16 22:26:19]   [cyq_chips] 000908.SZ -> 77368 rows
+[2026-05-16 22:26:19]   [cyq_chips] 002005.SZ starting
+[2026-05-16 22:26:19] [cyq_chips] [21/100] 000908.SZ done (77368 rows) | tokens=159.7
+[2026-05-16 22:26:21]   [cyq_chips] 000903.SZ -> 93794 rows
+[2026-05-16 22:26:21]   [cyq_chips] 002024.SZ starting
+[2026-05-16 22:26:21] [cyq_chips] [22/100] 000903.SZ done (93794 rows) | tokens=157.9
+[2026-05-16 22:26:25]   [cyq_chips] 000929.SZ -> 112500 rows
+[2026-05-16 22:26:25]   [cyq_chips] 002047.SZ starting
+[2026-05-16 22:26:25] [cyq_chips] [23/100] 000929.SZ done (112500 rows) | tokens=138.9
+[2026-05-16 22:26:28]   [cyq_chips] 000909.SZ -> 155115 rows
+[2026-05-16 22:26:28]   [cyq_chips] 002055.SZ starting
+[2026-05-16 22:26:28] [cyq_chips] [24/100] 000909.SZ done (155115 rows) | tokens=127.2
+[2026-05-16 22:26:30]   [cyq_chips] 000821.SZ -> 204760 rows
+[2026-05-16 22:26:30]   [cyq_chips] 002058.SZ starting
+[2026-05-16 22:26:30] [cyq_chips] [25/100] 000821.SZ done (204760 rows) | tokens=123.6
+[2026-05-16 22:26:40]   [cyq_chips] 002047.SZ -> 106933 rows
+[2026-05-16 22:26:40]   [cyq_chips] 002076.SZ starting
+[2026-05-16 22:26:40] [cyq_chips] [26/100] 002047.SZ done (106933 rows) | tokens=132.1
+[2026-05-16 22:26:48]   [cyq_chips] 002076.SZ -> 40247 rows
+[2026-05-16 22:26:48]   [cyq_chips] 002122.SZ starting
+[2026-05-16 22:26:48] [cyq_chips] [27/100] 002076.SZ done (40247 rows) | tokens=135.7
+[2026-05-16 22:26:48]   [cyq_chips] 002024.SZ -> 201438 rows
+[2026-05-16 22:26:48]   [cyq_chips] 002168.SZ starting
+[2026-05-16 22:26:48] [cyq_chips] [28/100] 002024.SZ done (201438 rows) | tokens=136.7
+[2026-05-16 22:26:54]   [cyq_chips] 000972.SZ -> 306414 rows
+[2026-05-16 22:26:54]   [cyq_chips] 002199.SZ starting
+[2026-05-16 22:26:54] [cyq_chips] [29/100] 000972.SZ done (306414 rows) | tokens=130.7
+[2026-05-16 22:26:57]   [cyq_chips] 002168.SZ -> 70268 rows
+[2026-05-16 22:26:57]   [cyq_chips] 002200.SZ starting
+[2026-05-16 22:26:57] [cyq_chips] [30/100] 002168.SZ done (70268 rows) | tokens=128.9
+[2026-05-16 22:26:58]   [cyq_chips] 002005.SZ -> 315414 rows
+[2026-05-16 22:26:58]   [cyq_chips] 002211.SZ starting
+[2026-05-16 22:26:58] [cyq_chips] [31/100] 002005.SZ done (315414 rows) | tokens=131.8
+[2026-05-16 22:27:07]   [cyq_chips] 002122.SZ -> 178262 rows
+[2026-05-16 22:27:07]   [cyq_chips] 002214.SZ starting
+[2026-05-16 22:27:07] [cyq_chips] [32/100] 002122.SZ done (178262 rows) | tokens=104.1
+[2026-05-16 22:27:08]   [cyq_chips] 002058.SZ -> 285368 rows
+[2026-05-16 22:27:08]   [cyq_chips] 002253.SZ starting
+[2026-05-16 22:27:08] [cyq_chips] [33/100] 002058.SZ done (285368 rows) | tokens=103.4
+[2026-05-16 22:27:08]   [cyq_chips] 002055.SZ -> 276780 rows
+[2026-05-16 22:27:08]   [cyq_chips] 002289.SZ starting
+[2026-05-16 22:27:08] [cyq_chips] [34/100] 002055.SZ done (276780 rows) | tokens=102.6
+[2026-05-16 22:27:09]   [cyq_chips] 002200.SZ -> 117774 rows
+[2026-05-16 22:27:09]   [cyq_chips] 002305.SZ starting
+[2026-05-16 22:27:09] [cyq_chips] [35/100] 002200.SZ done (117774 rows) | tokens=102.0
+[2026-05-16 22:27:13]   [cyq_chips] 002199.SZ -> 188074 rows
+[2026-05-16 22:27:13]   [cyq_chips] 002306.SZ starting
+[2026-05-16 22:27:13] [cyq_chips] [36/100] 002199.SZ done (188074 rows) | tokens=88.2
+[2026-05-16 22:27:15]   [cyq_chips] 002253.SZ -> 94778 rows
+[2026-05-16 22:27:15]   [cyq_chips] 002424.SZ starting
+[2026-05-16 22:27:15] [cyq_chips] [37/100] 002253.SZ done (94778 rows) | tokens=78.6
+[2026-05-16 22:27:18]   [cyq_chips] 002305.SZ -> 105712 rows
+[2026-05-16 22:27:18]   [cyq_chips] 002485.SZ starting
+[2026-05-16 22:27:18] [cyq_chips] [38/100] 002305.SZ done (105712 rows) | tokens=71.4
+[2026-05-16 22:27:19]   [cyq_chips] 002211.SZ -> 215863 rows
+[2026-05-16 22:27:19]   [cyq_chips] 002496.SZ starting
+[2026-05-16 22:27:19] [cyq_chips] [39/100] 002211.SZ done (215863 rows) | tokens=68.5
+[2026-05-16 22:27:24]   [cyq_chips] 002306.SZ -> 111859 rows
+[2026-05-16 22:27:24]   [cyq_chips] 002512.SZ starting
+[2026-05-16 22:27:24] [cyq_chips] [40/100] 002306.SZ done (111859 rows) | tokens=71.9
+[2026-05-16 22:27:27]   [cyq_chips] 002214.SZ -> 191465 rows
+[2026-05-16 22:27:27]   [cyq_chips] 002528.SZ starting
+[2026-05-16 22:27:27] [cyq_chips] [41/100] 002214.SZ done (191465 rows) | tokens=66.3
+[2026-05-16 22:27:27]   [cyq_chips] 002496.SZ -> 67080 rows
+[2026-05-16 22:27:27]   [cyq_chips] 002529.SZ starting
+[2026-05-16 22:27:27] [cyq_chips] [42/100] 002496.SZ done (67080 rows) | tokens=64.4
+[2026-05-16 22:27:29]   [cyq_chips] 002289.SZ -> 204195 rows
+[2026-05-16 22:27:29]   [cyq_chips] 002538.SZ starting
+[2026-05-16 22:27:29] [cyq_chips] [43/100] 002289.SZ done (204195 rows) | tokens=60.4
+[2026-05-16 22:27:35]   [cyq_chips] 002424.SZ -> 163296 rows
+[2026-05-16 22:27:35]   [cyq_chips] 002569.SZ starting
+[2026-05-16 22:27:35] [cyq_chips] [44/100] 002424.SZ done (163296 rows) | tokens=57.4
+[2026-05-16 22:27:37]   [cyq_chips] 002512.SZ -> 103887 rows
+[2026-05-16 22:27:37]   [cyq_chips] 002581.SZ starting
+[2026-05-16 22:27:37] [cyq_chips] [45/100] 002512.SZ done (103887 rows) | tokens=50.1
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:00]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:28:01]   [cyq_chips] 002581.SZ -> 80591 rows
+[2026-05-16 22:28:01]   [cyq_chips] 002586.SZ starting
+[2026-05-16 22:28:01] [cyq_chips] [46/100] 002581.SZ done (80591 rows) | tokens=109.0
+[2026-05-16 22:28:05]   [cyq_chips] 002529.SZ -> 188043 rows
+[2026-05-16 22:28:05]   [cyq_chips] 002592.SZ starting
+[2026-05-16 22:28:05] [cyq_chips] [47/100] 002529.SZ done (188043 rows) | tokens=104.3
+[2026-05-16 22:28:05]   [cyq_chips] 002528.SZ -> 180247 rows
+[2026-05-16 22:28:05]   [cyq_chips] 002598.SZ starting
+[2026-05-16 22:28:05] [cyq_chips] [48/100] 002528.SZ done (180247 rows) | tokens=104.2
+[2026-05-16 22:28:06]   [cyq_chips] 002485.SZ -> 266719 rows
+[2026-05-16 22:28:06]   [cyq_chips] 002620.SZ starting
+[2026-05-16 22:28:06] [cyq_chips] [49/100] 002485.SZ done (266719 rows) | tokens=101.0
+[2026-05-16 22:28:11]   [cyq_chips] 002538.SZ -> 235356 rows
+[2026-05-16 22:28:11]   [cyq_chips] 002630.SZ starting
+[2026-05-16 22:28:11] [cyq_chips] [50/100] 002538.SZ done (235356 rows) | tokens=97.7
+[2026-05-16 22:28:15]   [cyq_chips] 002630.SZ -> 39982 rows
+[2026-05-16 22:28:15]   [cyq_chips] 002650.SZ starting
+[2026-05-16 22:28:15] [cyq_chips] [51/100] 002630.SZ done (39982 rows) | tokens=90.0
+[2026-05-16 22:28:17]   [cyq_chips] 002569.SZ -> 235909 rows
+[2026-05-16 22:28:17]   [cyq_chips] 002656.SZ starting
+[2026-05-16 22:28:17] [cyq_chips] [52/100] 002569.SZ done (235909 rows) | tokens=89.6
+[2026-05-16 22:28:20]   [cyq_chips] 002586.SZ -> 164126 rows
+[2026-05-16 22:28:20]   [cyq_chips] 002689.SZ starting
+[2026-05-16 22:28:20] [cyq_chips] [53/100] 002586.SZ done (164126 rows) | tokens=84.7
+[2026-05-16 22:28:20]   [cyq_chips] 002620.SZ -> 117062 rows
+[2026-05-16 22:28:20]   [cyq_chips] 002693.SZ starting
+[2026-05-16 22:28:20] [cyq_chips] [54/100] 002620.SZ done (117062 rows) | tokens=84.6
+[2026-05-16 22:28:24]   [cyq_chips] 002598.SZ -> 152817 rows
+[2026-05-16 22:28:24]   [cyq_chips] 002713.SZ starting
+[2026-05-16 22:28:24] [cyq_chips] [55/100] 002598.SZ done (152817 rows) | tokens=84.5
+[2026-05-16 22:28:24]   [cyq_chips] 002592.SZ -> 184142 rows
+[2026-05-16 22:28:25]   [cyq_chips] 002717.SZ starting
+[2026-05-16 22:28:25] [cyq_chips] [56/100] 002592.SZ done (184142 rows) | tokens=83.3
+[2026-05-16 22:28:27]   [cyq_chips] 002656.SZ -> 83251 rows
+[2026-05-16 22:28:27]   [cyq_chips] 002731.SZ starting
+[2026-05-16 22:28:27] [cyq_chips] [57/100] 002656.SZ done (83251 rows) | tokens=78.8
+[2026-05-16 22:28:33]   [cyq_chips] 002650.SZ -> 137511 rows
+[2026-05-16 22:28:33]   [cyq_chips] 002762.SZ starting
+[2026-05-16 22:28:33] [cyq_chips] [58/100] 002650.SZ done (137511 rows) | tokens=71.2
+[2026-05-16 22:28:36]   [cyq_chips] 002717.SZ -> 101822 rows
+[2026-05-16 22:28:36]   [cyq_chips] 002789.SZ starting
+[2026-05-16 22:28:36] [cyq_chips] [59/100] 002717.SZ done (101822 rows) | tokens=64.6
+[2026-05-16 22:28:40]   [cyq_chips] 002713.SZ -> 157959 rows
+[2026-05-16 22:28:40]   [cyq_chips] 002808.SZ starting
+[2026-05-16 22:28:40] [cyq_chips] [60/100] 002713.SZ done (157959 rows) | tokens=59.3
+[2026-05-16 22:28:41]   [cyq_chips] 002762.SZ -> 75494 rows
+[2026-05-16 22:28:41]   [cyq_chips] 002816.SZ starting
+[2026-05-16 22:28:41] [cyq_chips] [61/100] 002762.SZ done (75494 rows) | tokens=58.5
+[2026-05-16 22:28:44]   [cyq_chips] 002693.SZ -> 208963 rows
+[2026-05-16 22:28:44]   [cyq_chips] 002822.SZ starting
+[2026-05-16 22:28:44] [cyq_chips] [62/100] 002693.SZ done (208963 rows) | tokens=54.3
+[2026-05-16 22:28:44]   [cyq_chips] 002731.SZ -> 140498 rows
+[2026-05-16 22:28:44]   [cyq_chips] 002848.SZ starting
+[2026-05-16 22:28:44] [cyq_chips] [63/100] 002731.SZ done (140498 rows) | tokens=52.2
+[2026-05-16 22:28:45]   [cyq_chips] 002689.SZ -> 196006 rows
+[2026-05-16 22:28:45]   [cyq_chips] 002872.SZ starting
+[2026-05-16 22:28:45] [cyq_chips] [64/100] 002689.SZ done (196006 rows) | tokens=50.0
+[2026-05-16 22:28:48]   [cyq_chips] 002808.SZ -> 89559 rows
+[2026-05-16 22:28:48]   [cyq_chips] 002816.SZ -> 82906 rows
+[2026-05-16 22:28:48]   [cyq_chips] 002898.SZ starting
+[2026-05-16 22:28:48] [cyq_chips] [65/100] 002808.SZ done (89559 rows) | tokens=41.3
+[2026-05-16 22:28:48]   [cyq_chips] 600079.SH starting
+[2026-05-16 22:28:48] [cyq_chips] [66/100] 002816.SZ done (82906 rows) | tokens=40.4
+[2026-05-16 22:28:48]   [cyq_chips] 002848.SZ -> 48597 rows
+[2026-05-16 22:28:49]   [cyq_chips] 600107.SH starting
+[2026-05-16 22:28:49] [cyq_chips] [67/100] 002848.SZ done (48597 rows) | tokens=40.2
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:05]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:29:09]   [cyq_chips] 002822.SZ -> 110691 rows
+[2026-05-16 22:29:09]   [cyq_chips] 600136.SH starting
+[2026-05-16 22:29:09] [cyq_chips] [68/100] 002822.SZ done (110691 rows) | tokens=98.1
+[2026-05-16 22:29:12]   [cyq_chips] 002789.SZ -> 161278 rows
+[2026-05-16 22:29:12]   [cyq_chips] 600165.SH starting
+[2026-05-16 22:29:12] [cyq_chips] [69/100] 002789.SZ done (161278 rows) | tokens=94.3
+[2026-05-16 22:29:13]   [cyq_chips] 002898.SZ -> 87359 rows
+[2026-05-16 22:29:13]   [cyq_chips] 600169.SH starting
+[2026-05-16 22:29:13] [cyq_chips] [70/100] 002898.SZ done (87359 rows) | tokens=96.6
+[2026-05-16 22:29:15]   [cyq_chips] 600107.SH -> 108481 rows
+[2026-05-16 22:29:15]   [cyq_chips] 600193.SH starting
+[2026-05-16 22:29:15] [cyq_chips] [71/100] 600107.SH done (108481 rows) | tokens=95.4
+[2026-05-16 22:29:21]   [cyq_chips] 600165.SH -> 70677 rows
+[2026-05-16 22:29:21]   [cyq_chips] 600228.SH starting
+[2026-05-16 22:29:21] [cyq_chips] [72/100] 600165.SH done (70677 rows) | tokens=83.6
+[2026-05-16 22:29:36]   [cyq_chips] 600228.SH -> 116196 rows
+[2026-05-16 22:29:36]   [cyq_chips] 600238.SH starting
+[2026-05-16 22:29:36] [cyq_chips] [73/100] 600228.SH done (116196 rows) | tokens=76.3
+[2026-05-16 22:29:38]   [cyq_chips] 002872.SZ -> 273812 rows
+[2026-05-16 22:29:38]   [cyq_chips] 600243.SH starting
+[2026-05-16 22:29:38] [cyq_chips] [74/100] 002872.SZ done (273812 rows) | tokens=74.2
+[2026-05-16 22:29:40]   [cyq_chips] 600193.SH -> 225505 rows
+[2026-05-16 22:29:40]   [cyq_chips] 600265.SH starting
+[2026-05-16 22:29:40] [cyq_chips] [75/100] 600193.SH done (225505 rows) | tokens=68.4
+[2026-05-16 22:29:42]   [cyq_chips] 600169.SH -> 240705 rows
+[2026-05-16 22:29:42]   [cyq_chips] 600289.SH starting
+[2026-05-16 22:29:42] [cyq_chips] [76/100] 600169.SH done (240705 rows) | tokens=67.9
+[2026-05-16 22:29:43]   [cyq_chips] 600079.SH -> 294706 rows
+[2026-05-16 22:29:43]   [cyq_chips] 600355.SH starting
+[2026-05-16 22:29:43] [cyq_chips] [77/100] 600079.SH done (294706 rows) | tokens=65.9
+[2026-05-16 22:29:44]   [cyq_chips] 600136.SH -> 313311 rows
+[2026-05-16 22:29:44]   [cyq_chips] 600360.SH starting
+[2026-05-16 22:29:44] [cyq_chips] [78/100] 600136.SH done (313311 rows) | tokens=63.0
+[2026-05-16 22:29:50]   [cyq_chips] 600243.SH -> 104999 rows
+[2026-05-16 22:29:50]   [cyq_chips] 600365.SH starting
+[2026-05-16 22:29:50] [cyq_chips] [79/100] 600243.SH done (104999 rows) | tokens=58.2
+[2026-05-16 22:29:51]   [cyq_chips] 600355.SH -> 66259 rows
+[2026-05-16 22:29:51]   [cyq_chips] 600381.SH starting
+[2026-05-16 22:29:51] [cyq_chips] [80/100] 600355.SH done (66259 rows) | tokens=56.2
+[2026-05-16 22:29:53]   [cyq_chips] 600238.SH -> 157175 rows
+[2026-05-16 22:29:53]   [cyq_chips] 600421.SH starting
+[2026-05-16 22:29:53] [cyq_chips] [81/100] 600238.SH done (157175 rows) | tokens=52.5
+[2026-05-16 22:29:57]   [cyq_chips] 600360.SH -> 118435 rows
+[2026-05-16 22:29:57]   [cyq_chips] 600525.SH starting
+[2026-05-16 22:29:57] [cyq_chips] [82/100] 600360.SH done (118435 rows) | tokens=47.8
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:12]   [retry 1/3] API Error: code=429, msg=请求过于频繁
+[2026-05-16 22:30:15]   [cyq_chips] 600381.SH -> 76246 rows
+[2026-05-16 22:30:15]   [cyq_chips] 600568.SH starting
+[2026-05-16 22:30:15] [cyq_chips] [83/100] 600381.SH done (76246 rows) | tokens=106.5
+[2026-05-16 22:30:26]   [cyq_chips] 600265.SH -> 293370 rows
+[2026-05-16 22:30:27]   [cyq_chips] 600581.SH starting
+[2026-05-16 22:30:27] [cyq_chips] [84/100] 600265.SH done (293370 rows) | tokens=81.6
+[2026-05-16 22:30:27]   [cyq_chips] 600289.SH -> 270297 rows
+[2026-05-16 22:30:27]   [cyq_chips] 600599.SH starting
+[2026-05-16 22:30:27] [cyq_chips] [85/100] 600289.SH done (270297 rows) | tokens=82.0
+[2026-05-16 22:30:33]   [cyq_chips] 600568.SH -> 163291 rows
+[2026-05-16 22:30:33]   [cyq_chips] 600608.SH starting
+[2026-05-16 22:30:33] [cyq_chips] [86/100] 600568.SH done (163291 rows) | tokens=80.3
+[2026-05-16 22:30:38]   [cyq_chips] 600421.SH -> 247819 rows
+[2026-05-16 22:30:38]   [cyq_chips] 600624.SH starting
+[2026-05-16 22:30:38] [cyq_chips] [87/100] 600421.SH done (247819 rows) | tokens=74.3
+[2026-05-16 22:30:40]   [cyq_chips] 600365.SH -> 324228 rows
+[2026-05-16 22:30:41]   [cyq_chips] 600636.SH starting
+[2026-05-16 22:30:41]   [cyq_chips] 600599.SH -> 112322 rows
+[2026-05-16 22:30:41] [cyq_chips] [88/100] 600365.SH done (324228 rows) | tokens=67.2
+[2026-05-16 22:30:41]   [cyq_chips] 600696.SH starting
+[2026-05-16 22:30:41] [cyq_chips] [89/100] 600599.SH done (112322 rows) | tokens=66.4
+[2026-05-16 22:30:45]   [cyq_chips] 600525.SH -> 247837 rows
+[2026-05-16 22:30:45]   [cyq_chips] 600735.SH starting
+[2026-05-16 22:30:45] [cyq_chips] [90/100] 600525.SH done (247837 rows) | tokens=68.1
+[2026-05-16 22:30:48]   [cyq_chips] 600581.SH -> 174576 rows
+[2026-05-16 22:30:48]   [cyq_chips] 600753.SH starting
+[2026-05-16 22:30:48] [cyq_chips] [91/100] 600581.SH done (174576 rows) | tokens=64.6
+[2026-05-16 22:30:55]   [cyq_chips] 600624.SH -> 144727 rows
+[2026-05-16 22:30:55]   [cyq_chips] 600777.SH starting
+[2026-05-16 22:30:55] [cyq_chips] [92/100] 600624.SH done (144727 rows) | tokens=59.8
+[2026-05-16 22:30:58]   [cyq_chips] 600608.SH -> 189818 rows
+[2026-05-16 22:30:58]   [cyq_chips] 600892.SH starting
+[2026-05-16 22:30:58] [cyq_chips] [93/100] 600608.SH done (189818 rows) | tokens=58.6
+[2026-05-16 22:30:58]   [cyq_chips] 600696.SH -> 141043 rows
+[2026-05-16 22:30:58]   [cyq_chips] 603021.SH starting
+[2026-05-16 22:30:58] [cyq_chips] [94/100] 600696.SH done (141043 rows) | tokens=58.0
+[2026-05-16 22:30:59]   [cyq_chips] 600735.SH -> 110429 rows
+[2026-05-16 22:30:59] [cyq_chips] [95/100] 600735.SH done (110429 rows) | tokens=57.9
+[2026-05-16 22:31:06]   [cyq_chips] 600777.SH -> 94007 rows
+[2026-05-16 22:31:06] [cyq_chips] [96/100] 600777.SH done (94007 rows) | tokens=56.3
+[2026-05-16 22:31:07]   [cyq_chips] 600636.SH -> 203714 rows
+[2026-05-16 22:31:08] [cyq_chips] [97/100] 600636.SH done (203714 rows) | tokens=56.8
+[2026-05-16 22:31:09]   [cyq_chips] 600753.SH -> 156518 rows
+[2026-05-16 22:31:09] [cyq_chips] [98/100] 600753.SH done (156518 rows) | tokens=58.7
+[2026-05-16 22:31:13]   [cyq_chips] 603021.SH -> 121342 rows
+[2026-05-16 22:31:13] [cyq_chips] [99/100] 603021.SH done (121342 rows) | tokens=70.8
+[2026-05-16 22:31:16]   [cyq_chips] 600892.SH -> 150550 rows
+[2026-05-16 22:31:16] [cyq_chips] [100/100] 600892.SH done (150550 rows) | tokens=83.6
+[2026-05-16 22:31:16] [cyq_chips] Fetched 16019411 total rows from 100 stocks
+[2026-05-16 22:31:16] [cyq_chips] Done marker -> /root/shared-nvme/lingqiData/data/cyq_chips/.done
+[2026-05-16 22:31:20] [cyq_chips] 2730 stocks | 2730 incremental | 0 skipped (no file) | 0 up-to-date
+[2026-05-16 22:31:20] [cyq_chips] UNEXPECTED ERROR: name 'new_batch' is not defined
+[2026-05-16 22:31:20] 
+============================================================
+[2026-05-16 22:31:20] [history_15min] Starting incremental update
+[2026-05-16 22:31:21] [history_15min] 188 stocks without files, running full backfill via fetch_history...
+[2026-05-16 22:31:21] [minute] 2730 stocks loaded from Code_num.txt
+[2026-05-16 22:31:21] [history_15min] 2730 stocks | level=15min | 2019-01-01 ~ 2026-05-16
+[2026-05-16 22:31:21] [history_15min] Concurrency: 3 in-flight max | rate-limit: 280/min
+[2026-05-16 22:31:21] [history_15min] ~5460 API calls (adaptive) | ~20 min est | ~16 bars/day

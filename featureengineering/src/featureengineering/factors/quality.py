@@ -291,3 +291,163 @@ def factor_quality_composite(context: FactorContext):
         rank_ocf = fin["ocf_to_profit"].groupby(level="Date").rank(pct=True)
     composite = (rank_roe + rank_roa + rank_gm + rank_ocf) / 4.0
     return composite.rename("quality_composite")
+
+
+# ── Solvency depth: financial_indicator 扩展 ──────────────────────────────
+
+@register_factor(
+    name="ebit_to_interest",
+    description="利息保障倍数因子，EBIT/利息支出截面排名。",
+    category="quality",
+    thesis="利息保障倍数衡量企业利润覆盖利息支出的能力，高倍数代表低财务风险，是学术验证最强的信用质量指标之一，与现有资产负债率互补（前者看利润表覆盖，后者看资产负债表杠杆）。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebit_to_interest(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebit_to_interest"]
+    )
+    return cross_sectional_rank(fin["ebit_to_interest"])
+
+
+# ── Operational efficiency: financial_indicator 扩展 ─────────────────────
+
+@register_factor(
+    name="inv_turn",
+    description="存货周转率因子截面排名。",
+    category="quality",
+    thesis="存货周转率反映企业销售效率和库存管理能力，高周转代表产品畅销、资金占用少，低周转可能意味着产品滞销或存货积压风险。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_inv_turn(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["inv_turn"]
+    )
+    return cross_sectional_rank(fin["inv_turn"])
+
+
+@register_factor(
+    name="ar_turn",
+    description="应收账款周转率因子截面排名。",
+    category="quality",
+    thesis="应收账款周转率反映企业回款效率和对下游的议价能力，高周转代表回款快、坏账风险低、利润含金量高。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ar_turn(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ar_turn"]
+    )
+    return cross_sectional_rank(fin["ar_turn"])
+
+
+# ── Single-quarter financial indicator 扩展 ──────────────────────────────
+
+@register_factor(
+    name="q_roe",
+    description="单季度ROE因子，季度净资产收益率截面排名。",
+    category="quality",
+    thesis="单季度ROE比TTM ROE更敏感，能更早捕捉企业盈利能力的边际变化。季度数据避免了TTM的平滑效应，对盈利拐点的识别更及时。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_roe(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_roe"]
+    )
+    return cross_sectional_rank(fin["q_roe"])
+
+
+@register_factor(
+    name="q_gsprofit_margin",
+    description="单季度毛利率因子，季度毛利率截面排名。",
+    category="quality",
+    thesis="单季度毛利率变化是定价权和成本控制能力的及时信号，毛利率的季度波动对竞争格局变化和原材料价格冲击的反映比TTM版本更灵敏。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_gsprofit_margin(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_gsprofit_margin"]
+    )
+    return cross_sectional_rank(fin["q_gsprofit_margin"])
+
+
+@register_factor(
+    name="q_netprofit_margin",
+    description="单季度净利率因子，季度净利率截面排名。",
+    category="quality",
+    thesis="净利率的季度变化反映费用控制和经营效率的短期波动，单季度数据能更早暴露利润率拐点。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_netprofit_margin(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_netprofit_margin"]
+    )
+    return cross_sectional_rank(fin["q_netprofit_margin"])
+
+
+@register_factor(
+    name="q_sales_yoy",
+    description="单季度营收同比增速因子截面排名。",
+    category="quality",
+    thesis="单季度营收同比增速消除了季节性因素，同时比TTM同比更及时反映增长趋势的变化。高增速意味着产品需求旺盛、市场份额提升。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_sales_yoy(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_sales_yoy"]
+    )
+    return cross_sectional_rank(fin["q_sales_yoy"])
+
+
+@register_factor(
+    name="q_netprofit_yoy",
+    description="单季度净利润同比增速因子截面排名。",
+    category="quality",
+    thesis="净利润单季度同比增速是盈利增长最直接的度量，剔除了季节性但保留了季度敏感度，对盈利拐点的信号比TTM增速领先1-2个季度。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_netprofit_yoy(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_netprofit_yoy"]
+    )
+    return cross_sectional_rank(fin["q_netprofit_yoy"])
+
+
+@register_factor(
+    name="q_profit_yoy",
+    description="单季度利润总额同比增速因子截面排名。",
+    category="quality",
+    thesis="利润总额同比增速比净利润更少受非经常性损益干扰，反映主营业务的真实增长动能。单季度版本对经营拐点的敏感度优于TTM版本。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_profit_yoy(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_profit_yoy"]
+    )
+    return cross_sectional_rank(fin["q_profit_yoy"])
+
+
+@register_factor(
+    name="q_ocf_to_sales",
+    description="单季度经营现金流/营收因子截面排名。",
+    category="quality",
+    thesis="经营现金流/营收比反映了单季度收入转化为现金的能力，高比率意味着收入含金量高、应收账款可控。季度版本能更及时暴露现金流质量问题。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_ocf_to_sales(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_ocf_to_sales"]
+    )
+    return cross_sectional_rank(fin["q_ocf_to_sales"])
+
+
+@register_factor(
+    name="q_eps",
+    description="单季度每股收益因子截面排名。",
+    category="quality",
+    thesis="单季度EPS是每股层面盈利能力的最基本度量，剔除股本变动影响后的季度EPS反映了每股价值创造的速度。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_q_eps(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["q_eps"]
+    )
+    return cross_sectional_rank(fin["q_eps"])
