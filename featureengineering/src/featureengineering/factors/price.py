@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std
-from ..utils import rolling_group_max, rolling_group_min
+from ..utils import cross_sectional_rank
+from ..utils import rolling_group_max, rolling_group_min, rolling_group_mean, rolling_group_std
 
 
 @register_factor(
@@ -444,68 +444,6 @@ def factor_ma_convergence_20_60(context: FactorContext):
     )
     convergence = ma_20 / ma_60.replace(0, np.nan) - 1.0
     return cross_sectional_rank(convergence)
-
-
-# ── Weekly / Monthly momentum ───────────────────────────────────────────
-
-@register_factor(
-    name="mom_4w",
-    description="4周动量因子，基于周线复权收盘价的4周收益率截面排名。",
-    category="price",
-    thesis="周频动量比日频动量噪声更低，4周（约20日）动量信号更稳定。",
-    dependencies=("kline_adj_weekly.parquet",),
-)
-def factor_mom_4w(context: FactorContext):
-    weekly = context.load("kline_adj_weekly.parquet")
-    ret = weekly.groupby(level="Code")["close"].transform(
-        lambda s: s.pct_change(4)
-    )
-    return cross_sectional_rank(ret)
-
-
-@register_factor(
-    name="mom_12w",
-    description="12周动量因子，基于周线的12周收益率截面排名（约60日）。",
-    category="price",
-    thesis="12周动量捕捉季度趋势，周频信号日频应用可降低换手率。",
-    dependencies=("kline_adj_weekly.parquet",),
-)
-def factor_mom_12w(context: FactorContext):
-    weekly = context.load("kline_adj_weekly.parquet")
-    ret = weekly.groupby(level="Code")["close"].transform(
-        lambda s: s.pct_change(12)
-    )
-    return cross_sectional_rank(ret)
-
-
-@register_factor(
-    name="mom_3m",
-    description="3月动量因子，基于月线复权收盘价的3月收益率截面排名。",
-    category="price",
-    thesis="季度动量是长期趋势交易的核心，月频信号稳定性最高。",
-    dependencies=("kline_adj_monthly.parquet",),
-)
-def factor_mom_3m(context: FactorContext):
-    monthly = context.load("kline_adj_monthly.parquet")
-    ret = monthly.groupby(level="Code")["close"].transform(
-        lambda s: s.pct_change(3)
-    )
-    return cross_sectional_rank(ret)
-
-
-@register_factor(
-    name="mom_6m",
-    description="6月动量因子，基于月线的6月收益率截面排名。",
-    category="price",
-    thesis="半年度动量是中长期趋势的经典度量。",
-    dependencies=("kline_adj_monthly.parquet",),
-)
-def factor_mom_6m(context: FactorContext):
-    monthly = context.load("kline_adj_monthly.parquet")
-    ret = monthly.groupby(level="Code")["close"].transform(
-        lambda s: s.pct_change(6)
-    )
-    return cross_sectional_rank(ret)
 
 
 # ── Breakout ──────────────────────────────────────────────────────────────

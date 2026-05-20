@@ -107,12 +107,15 @@ def write_factor(
     factor_path = factor_base_path(spec, paths)
     manifest_path = paths.manifest_output_dir / f"{spec.name}.json"
 
-    # Purge stale incremental file — base file now contains full data.
+    # Atomic write: write to temp, then replace
+    tmp = factor_path.with_suffix(".fea.tmp")
+    factor_frame.to_feather(tmp)
+    tmp.replace(factor_path)
+
+    # Purge stale incremental file — only after the base write succeeded
     incr_path = factor_incr_path(spec, paths)
     if incr_path.exists():
         incr_path.unlink()
-
-    factor_frame.to_feather(factor_path)
 
     # Last date and stock count (wide format: Date index, Code columns)
     dates = factor_frame.index
@@ -184,11 +187,13 @@ def write_factor_incremental(
     base_path = factor_base_path(spec, paths)
     base_cells = 0
     base_nn = 0
+    base_rows = 0
     if base_path.exists():
         try:
             base_df = pd.read_feather(base_path)
             base_cells = len(base_df) * len(base_df.columns)
             base_nn = int(base_df.notna().sum().sum())
+            base_rows = len(base_df)
         except Exception:
             pass
 
@@ -196,6 +201,7 @@ def write_factor_incremental(
     incr_nn = int(merged.notna().sum().sum())
     total_cells = base_cells + incr_cells
     total_nn = base_nn + incr_nn
+    total_rows = base_rows + len(merged)
 
     # Last date and stock count come from the incremental data (newest)
     dates = merged.index

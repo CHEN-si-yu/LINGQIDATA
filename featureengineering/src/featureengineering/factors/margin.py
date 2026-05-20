@@ -55,18 +55,3 @@ def factor_margin_buy_intensity_5d(context: FactorContext):
     return cross_sectional_rank(intensity)
 
 
-# ── Short sale pressure 5d ────────────────────────────────────────────────
-
-@register_factor(
-    name="short_sale_pressure_5d",
-    description="5日融券余量变化率因子，正值表示做空压力增加（负向排后）。",
-    category="margin",
-    thesis="融券余量快速增加反映做空力量的边际增强，是负面信号的先行指标。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_short_sale_pressure_5d(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    rqye = margin["rqye"]
-    # 5-day change rate
-    chg = rqye.groupby(level="Code").transform(lambda s: s.pct_change(5))
-    return cross_sectional_rank(-chg)

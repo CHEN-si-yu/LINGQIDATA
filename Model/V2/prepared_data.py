@@ -3,13 +3,32 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
+# ============================================================
+# Input paths
+# ============================================================
+code_num_path = Path("/root/shared-nvme/lingqiData/Code_num.txt")
+factor_dir = Path("/root/shared-nvme/lingqiData/featureengineering/data/factors")
+label_ret_path = Path("/root/shared-nvme/lingqiData/featureengineering/data/targets/label_ret_1d.fea")
+daily_adj_path = Path("/root/shared-nvme/lingqiData/data/daily_adj.parquet")
+
+# ============================================================
+# Output paths
+# ============================================================
+out_dir = Path("/root/shared-nvme/lingqiData/trainingdata/V2")
+fac_path = out_dir / "fac20260517.fea"
+label_path = out_dir / "label.fea"
+trade_path = out_dir / "trade_amt.fea"
+
+# ============================================================
+# Config
+# ============================================================
 N_WORKERS = 16
 
-out_dir = Path("/root/shared-nvme/lingqiData/trainingdata/V2")
+# ============================================================
+# Setup
+# ============================================================
 out_dir.mkdir(parents=True, exist_ok=True)
 
-# Load allowed stock codes
-code_num_path = Path("/root/shared-nvme/lingqiData/Code_num.txt")
 with open(code_num_path) as f:
     allowed_codes = [line.strip() for line in f if line.strip()]
 allowed_codes_set = set(allowed_codes)
@@ -18,7 +37,6 @@ print(f"Loaded {len(allowed_codes)} codes from {code_num_path}")
 # ============================================================
 # 1. Merge factors
 # ============================================================
-factor_dir = Path("/root/shared-nvme/lingqiData/featureengineering/data/factors")
 files = sorted(factor_dir.glob("*.fea"))
 if not files:
     raise FileNotFoundError(f"No .fea files found in {factor_dir}")
@@ -64,7 +82,6 @@ merged.reset_index(drop=True, inplace=True)
 print(f"Merged shape: {merged.shape}")
 print(f"Factor columns: {len(factor_cols)}")
 
-fac_path = out_dir / "fac20260517.fea"
 merged.to_feather(fac_path)
 print(f"Saved factors to {fac_path}")
 
@@ -72,7 +89,7 @@ print(f"Saved factors to {fac_path}")
 # 2. Generate label
 # ============================================================
 print("\nLoading label_ret_1d.fea...")
-label_df = pd.read_feather("/root/shared-nvme/lingqiData/featureengineering/data/targets/label_ret_1d.fea")
+label_df = pd.read_feather(label_ret_path)
 
 print("Processing label...")
 label = label_df.reset_index()
@@ -85,7 +102,6 @@ label = label[label_cols]
 
 print(f"label shape: {label.shape}")
 
-label_path = out_dir / "label.fea"
 label.to_feather(label_path)
 print(f"Saved label to {label_path}")
 
@@ -93,7 +109,7 @@ print(f"Saved label to {label_path}")
 # 3. Generate trade_amt
 # ============================================================
 print("\nLoading daily_adj.parquet...")
-trade_df = pd.read_parquet("/root/shared-nvme/lingqiData/data/daily_adj.parquet",
+trade_df = pd.read_parquet(daily_adj_path,
                            columns=["stock_code", "trade_date", "amount"])
 
 trade_df["Code"] = trade_df["stock_code"].str.replace(".SZ", "", regex=False).str.replace(".SH", "", regex=False).str.replace(".BJ", "", regex=False)
@@ -109,7 +125,6 @@ trade_amt.rename(columns={"date": "index"}, inplace=True)
 
 print(f"trade_amt shape: {trade_amt.shape}")
 
-trade_path = out_dir / "trade_amt.fea"
 trade_amt.to_feather(trade_path)
 print(f"Saved trade_amt to {trade_path}")
 

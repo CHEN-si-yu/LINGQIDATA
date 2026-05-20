@@ -212,7 +212,7 @@ def factor_holder_num_change(context: FactorContext):
         value_cols=["holder_num"],
     )
     holder = hn["holder_num"]
-    chg = holder.groupby(level="Code").transform(lambda s: s.pct_change(63))
+    chg = holder.groupby(level="Code").transform(lambda s: s.pct_change(63, fill_method=None))
     return cross_sectional_rank(-chg)
 
 
@@ -234,40 +234,7 @@ def factor_pledge_ratio(context: FactorContext):
     return cross_sectional_rank(-ps["pledge_ratio"])
 
 
-# ── Cash conversion cycle ─────────────────────────────────────────────────
 
-@register_factor(
-    name="cash_conversion_cycle",
-    description="现金转换周期因子，存货周转天数+应收周转天数-应付周转天数截面排名（短周期排前）。",
-    category="financial",
-    thesis="CCC越短说明企业从投入资金到收回现金的周期越短、运营效率越高，短周期企业现金流更健康。",
-    dependencies=("financial_indicator.parquet", "balancesheet.parquet", "income.parquet", "calendar.parquet"),
-)
-def factor_cash_conversion_cycle(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["invturn_days", "arturn_days"],
-    )
-    bs = context.load_financial(
-        "balancesheet.parquet",
-        value_cols=["acct_payable"],
-    )
-    inc = context.load_financial(
-        "income.parquet",
-        value_cols=["oper_cost"],
-    )
-
-    inv_days = fin["invturn_days"]
-    ar_days = fin["arturn_days"]
-    ap = bs["acct_payable"]
-    oper_cost = inc["oper_cost"]
-
-    # AP turnover days = AP / (oper_cost / 365)
-    apturn_days = ap / (oper_cost / 365).replace(0, np.nan)
-
-    ccc = inv_days + ar_days - apturn_days
-    ccc = ccc.clip(-1000, 1000)
-    return cross_sectional_rank(-ccc)
 
 
 # ── Gross margin stability ────────────────────────────────────────────────

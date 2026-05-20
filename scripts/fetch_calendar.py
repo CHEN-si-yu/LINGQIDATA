@@ -1,5 +1,6 @@
 import requests
 import argparse
+from datetime import datetime, timedelta
 import pandas as pd
 from config import load_api_key, BASE_URL, DATA_DIR, rate_limiter, log_print
 
@@ -7,10 +8,14 @@ ENDPOINT = "basic/calendar"
 
 
 def fetch_calendar(start_time, end_time, output=None):
+    # Extend 30 days into the future so upcoming trading days are known
+    end_dt = datetime.strptime(end_time, "%Y-%m-%d")
+    fetch_end = (end_dt + timedelta(days=30)).strftime("%Y-%m-%d")
+
     api_key = load_api_key()
     url = f"{BASE_URL}/{ENDPOINT}"
     headers = {"apiKey": api_key}
-    params = {"start_time": start_time, "end_time": end_time}
+    params = {"start_time": start_time, "end_time": fetch_end}
 
     limiter = rate_limiter()
     limiter.acquire(ENDPOINT)

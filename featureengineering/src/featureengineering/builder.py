@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from .dataset import DataRepository
 from .factor_loader import ensure_builtin_factors_loaded
+
 from .registry import FACTOR_REGISTRY, FactorContext, FactorSpec, get_factor
 from .settings import ProjectPaths, configure_paths
 from .storage import (
@@ -33,6 +34,8 @@ class BuildResult:
     manifest_path: Path
     elapsed: float
     action: str  # "rebuild", "incremental", "skip"
+    rows: int = 0
+    non_null_rows: int = 0
 
 
 CATEGORY_ORDER = [
@@ -204,22 +207,23 @@ def decide_build_action(
     # Effective end date: cap at the latest legitimately-available trading day
     effective_end = _resolve_effective_end_date(source_root)
 
-    # Get source data max dates — use MIN so all dependencies must have data
+    # Get source data max dates — use MIN (oldest) so all dependencies
+    # must be fresh. The factor is limited by its stalest dependency.
     source_dates = _check_source_dates(deps, source_root)
-    source_max: str | None = None
+    limiting_source_date: str | None = None
     for dep, max_d in source_dates.items():
         if max_d is None:
-            source_max = None
+            limiting_source_date = None
             break
-        if source_max is None or max_d < source_max:
-            source_max = max_d
+        if limiting_source_date is None or max_d < limiting_source_date:
+            limiting_source_date = max_d
 
-    if source_max is None:
+    if limiting_source_date is None:
         return "skip", "one or more source dependencies have no detectable max date"
 
     # Never treat source data as available beyond the effective end date
-    if source_max > effective_end:
-        source_max = effective_end
+    if limiting_source_date > effective_end:
+        limiting_source_date = effective_end
 
     factor_max = _read_factor_max_date(factor_path)
 
@@ -230,8 +234,8 @@ def decide_build_action(
     if factor_max > effective_end:
         return "rebuild", f"factor has future date {factor_max} > effective end {effective_end}"
 
-    if factor_max >= source_max:
-        return "skip", f"factor max {factor_max} >= safe source date {source_max}"
+    if factor_max >= limiting_source_date:
+        return "skip", f"factor max {factor_max} >= limiting source date {limiting_source_date}"
 
     # Factor is behind — need incremental rebuild
     return "incremental", factor_max
@@ -339,6 +343,8 @@ def build_factor(
 
     t0 = time.perf_counter()
     factor_frame = None
+    rows = 0
+    nn_rows = 0
 
     # Compute context start date for date-aware loading
     _LOOKBACK = 252  # one calendar year, covers all rolling-window factors
@@ -362,6 +368,9 @@ def build_factor(
         # If incremental, slice to only new dates
         if factor_start_date:
             factor_frame = factor_frame.loc[factor_frame.index > factor_start_date]
+
+        rows = len(factor_frame)
+        nn_rows = int(factor_frame.notna().sum().sum())
 
         if spec.category == "target":
             factor_path, manifest_path = write_target(spec, factor_frame, paths=repo.paths)
@@ -390,6 +399,8 @@ def build_factor(
         manifest_path=manifest_path,
         elapsed=elapsed,
         action=action,
+        rows=rows,
+        non_null_rows=nn_rows,
     )
 
 

@@ -63,3 +63,4 @@ def rolling_group_max(series: pd.Series, window: int) -> pd.Series:
 
 def rolling_group_min(series: pd.Series, window: int) -> pd.Series:
     return series.groupby(level="Code").transform(lambda s: s.rolling(window, min_periods=1).min())
+

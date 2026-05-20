@@ -58,112 +58,9 @@ def _load_stock_sector_map(context: FactorContext) -> dict[str, list[str]]:
     return stock_map
 
 
-def _stock_sector_returns(
-    context: FactorContext, window: int
-) -> pd.Series:
-    """Compute average sector return for each (date, stock) over *window* days.
-
-    Returns a Series with (Date, Code) MultiIndex.
-    """
-    sector_panel = _load_ths_sector_panel(context)
-    sector_ret = sector_panel.pct_change(window, fill_method=None)
-
-    stock_map = _load_stock_sector_map(context)
-
-    # Align dates: keep only dates present in both sector data and allowed pool
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    stock_dates = close.index.get_level_values("Date").unique()
-
-    # For each stock, get its sector returns and average
-    records: list[dict] = []
-    all_codes = sorted(stock_map.keys())
-    for code in all_codes:
-        sectors = stock_map[code]
-        available = [s for s in sectors if s in sector_ret.columns]
-        if not available:
-            continue
-        avg_ret = sector_ret[available].mean(axis=1).dropna()
-        for date_val in avg_ret.index:
-            if date_val in stock_dates:
-                records.append({"Date": date_val, "Code": code, "sector_ret": avg_ret[date_val]})
-
-    if not records:
-        result = pd.Series(dtype=float, name="sector_ret")
-        result.index = pd.MultiIndex.from_tuples([], names=["Date", "Code"])
-        return result
-
-    result = pd.DataFrame(records).set_index(["Date", "Code"])["sector_ret"]
-    result.index = result.index.set_names(["Date", "Code"])
-    return result.sort_index()
-
 
 # ── THS 板块因子 ───────────────────────────────────────────────────────────────
 
-@register_factor(
-    name="sector_rel_strength_20",
-    description="板块内相对强度因子，个股20日收益率减去所属THS行业板块20日均收益率的截面排名。",
-    category="sector",
-    thesis="剥离板块贝塔后的个股alpha是纯净的选股信号。强于板块的个股表明公司层面的积极因素正在被定价，弱于板块的个股则有公司层面风险。板块内相对强度比绝对动量更具可比性。",
-    dependencies=("daily_adj.parquet", "ths_daily.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
-)
-def factor_sector_rel_strength_20(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    stock_ret = close.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
-    )
-    sector_ret = _stock_sector_returns(context, 20)
-
-    aligned = pd.concat([stock_ret.rename("stock"), sector_ret.rename("sector")], axis=1)
-    rel_strength = aligned["stock"] - aligned["sector"]
-    return cross_sectional_rank(rel_strength)
-
-
-@register_factor(
-    name="sector_momentum_20",
-    description="板块动量因子，个股所属THS行业板块的20日均收益率截面排名。",
-    category="sector",
-    thesis="行业轮动是A股重要的收益来源，强势板块中的个股享有贝塔红利。板块动量因子将行业趋势信号映射到个股层面，捕捉行业层面的动量效应。",
-    dependencies=("ths_daily.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
-)
-def factor_sector_momentum_20(context: FactorContext):
-    sector_ret = _stock_sector_returns(context, 20)
-    return cross_sectional_rank(sector_ret)
-
-
-@register_factor(
-    name="sector_beta_60",
-    description="板块Beta因子，个股60日收益率对所属THS行业板块收益率的滚动Beta截面排名。",
-    category="sector",
-    thesis="高板块Beta的个股在板块上涨时弹性更大但下跌时跌幅也更大。在趋势明确的行情中高Beta占优，在震荡市中低Beta更稳健。板块Beta反映了个股对行业系统性风险的暴露程度。",
-    dependencies=("daily_adj.parquet", "ths_daily.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
-)
-def factor_sector_beta_60(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    stock_ret_1d = close.groupby(level="Code").transform(
-        lambda s: s.pct_change(1)
-    )
-
-    sector_ret_1d = _stock_sector_returns(context, 1)
-
-    aligned = pd.concat(
-        [stock_ret_1d.rename("stock"), sector_ret_1d.rename("sector")], axis=1
-    ).dropna()
-
-    def _rolling_beta(grp: pd.DataFrame) -> pd.Series:
-        stock = grp["stock"]
-        sector = grp["sector"]
-        cov = stock.rolling(60, min_periods=30).cov(sector)
-        var = sector.rolling(60, min_periods=30).var()
-        return cov / var.replace(0, np.nan)
-
-    beta = aligned.groupby(level="Code").apply(_rolling_beta)
-    if isinstance(beta.index, pd.MultiIndex) and beta.index.nlevels > 2:
-        beta = beta.droplevel(0)
-    beta = beta.clip(-5, 5)
-    return cross_sectional_rank(beta)
 
 
 @register_factor(
@@ -250,42 +147,6 @@ def factor_sector_amount_rank(context: FactorContext):
     combined.name = "sector_amount_rank"
     return cross_sectional_rank(combined)
 
-
-@register_factor(
-    name="sector_rotation_20",
-    description="板块轮动速度因子，板块截面排名20日变化的绝对值截面排名（高轮动排后）。",
-    category="sector",
-    thesis="板块轮动速度过快意味着市场缺乏主线、资金频繁切换，系统性风险较高；轮动速度低意味着市场风格稳定、趋势可持续，选股Alpha更容易实现。",
-    dependencies=("ths_daily.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
-)
-def factor_sector_rotation_20(context: FactorContext):
-    sector_panel = _load_ths_sector_panel(context)
-    sector_ret = sector_panel.pct_change(20, fill_method=None)
-
-    # Cross-sectional rank of sector returns each day
-    sector_rank_today = sector_ret.rank(axis=1, pct=True)
-    sector_rank_20d_ago = sector_ret.shift(20).rank(axis=1, pct=True)
-
-    # Rank change magnitude (high change = fast rotation)
-    rank_change = (sector_rank_today - sector_rank_20d_ago).abs()
-
-    # Map sector rotation to stocks
-    stock_map = _load_stock_sector_map(context)
-    stock_codes = sorted(stock_map.keys())
-
-    records: list[dict] = []
-    for code in stock_codes:
-        sectors = stock_map[code]
-        available = [s for s in sectors if s in rank_change.columns]
-        if available:
-            avg_change = rank_change[available].mean(axis=1).dropna()
-            for date_val, val in avg_change.items():
-                records.append({"Date": date_val, "Code": code, "rotation": val})
-
-    result = pd.DataFrame(records).set_index(["Date", "Code"])["rotation"]
-    result.index = result.index.set_names(["Date", "Code"])
-    result = result.sort_index()
-    return cross_sectional_rank(-result)
 
 
 @register_factor(

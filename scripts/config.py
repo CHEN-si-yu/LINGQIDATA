@@ -38,7 +38,26 @@ def log_path():
 def load_api_key():
     try:
         with open(API_KEY_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip().split("\t")[0]
+            for line in f:
+                line = line.strip()
+                if line:
+                    return line
+        print(f"Error: APIKey.txt is empty")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: APIKey.txt not found at {API_KEY_FILE}")
+        sys.exit(1)
+
+
+def load_api_keys():
+    """Return all non-empty API keys from APIKey.txt as a list."""
+    try:
+        with open(API_KEY_FILE, "r", encoding="utf-8") as f:
+            keys = [line.strip() for line in f if line.strip()]
+        if not keys:
+            print(f"Error: APIKey.txt is empty")
+            sys.exit(1)
+        return keys
     except FileNotFoundError:
         print(f"Error: APIKey.txt not found at {API_KEY_FILE}")
         sys.exit(1)

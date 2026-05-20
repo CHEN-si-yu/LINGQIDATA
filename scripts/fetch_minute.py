@@ -1,10 +1,9 @@
 """
-Fetch minute-level K-line data: /api/stock/history (raw) and
-/api/stock/min_adj (adjusted).  Per-stock parallel, main-board only.
+Fetch 1min K-line data from /api/stock/history.
+Per-stock parallel, main-board only.
 
 Usage:
-  python fetch_minute.py history --level 60min --start 2019-01-01 -w 3
-  python fetch_minute.py min_adj  --level 5min  --start 2020-01-01 -w 3
+  python fetch_minute.py --start 2019-01-01 -w 3
 """
 
 import requests
@@ -14,18 +13,12 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from config import load_api_key, BASE_URL, DATA_DIR, rate_limiter, log_print
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import (load_api_keys, BASE_URL, DATA_DIR, RateLimiter, log_print)
 
-
-ENDPOINTS = {
-    "history":  "stock/history",
-    "min_adj":  "stock/min_adj",
-}
-_LEVELS = ["60min", "30min", "15min", "5min", "1min"]
-
-# Bars-per-day estimate per level (used for ETA estimates only).
-# Actual fetching uses adaptive range splitting — no fixed chunks.
-_BARS_PER_DAY = {"1min": 240, "5min": 48, "15min": 16, "30min": 8, "60min": 4}
+ENDPOINT = "stock/history"
+LEVEL = "1min"
+TAG = "history_1min"
 
 CODE_NUM_FILE = Path(DATA_DIR).parent / "Code_num.txt"
 
@@ -34,17 +27,40 @@ def _add_exchange_suffix(code):
     """Add .SZ or .SH suffix to a 6-digit stock code."""
     return code + (".SH" if code.startswith("60") else ".SZ")
 
-# ── Concurrency gate ────────────────────────────────────────────────────
-# The global RateLimiter controls long-term throughput (280 req/min).
-# However its token bucket starts empty and the first acquire() after a
-# long idle period fills it to 280 instantly — causing a burst of
-# concurrent requests that trigger server-side 429.
-#
-# This semaphore caps the number of *simultaneous in-flight* HTTP
-# requests.  Together they provide: burst prevention (semaphore) +
-# sustained rate control (token bucket).
-_MAX_CONCURRENT = 3
-_api_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
+# ── Channel pool (dual-key, round-robin) ───────────────────────────────
+# Each API key gets its own RateLimiter (280 req/min) and concurrency
+# gate (3 in-flight).  Pages are distributed round-robin across channels,
+# doubling effective throughput to ~560 req/min.
+
+class _Channel:
+    __slots__ = ('api_key', 'limiter', 'gate')
+    def __init__(self, api_key, rpm=280, max_concurrent=3):
+        self.api_key = api_key
+        self.limiter = RateLimiter(max_rpm=rpm)
+        self.gate = threading.BoundedSemaphore(max_concurrent)
+
+_channels = None
+_channel_lock = threading.Lock()
+_channel_idx = 0
+
+
+def _init_channels():
+    global _channels, _channel_idx
+    if _channels is not None:
+        return
+    keys = load_api_keys()
+    _channels = [_Channel(k) for k in keys]
+    _channel_idx = 0
+    log_print(f"[minute] {len(_channels)} API key(s) loaded, "
+              f"{len(_channels) * 280} req/min capacity")
+
+
+def _next_channel():
+    global _channel_idx
+    with _channel_lock:
+        ch = _channels[_channel_idx % len(_channels)]
+        _channel_idx += 1
+        return ch
 
 
 def _filter_stocks():
@@ -60,16 +76,20 @@ def _filter_stocks():
 
 # ── API helpers ─────────────────────────────────────────────────────────
 
-def _fetch_page(endpoint, payload, api_key, retries=3):
-    """Fetch one page.  Acquires both rate-limiter token *and* concurrency
-    gate slot before issuing the HTTP request."""
+def _fetch_page(endpoint, payload, retries=3):
+    """Fetch one page via a round-robin channel.
+
+    Each channel has its own RateLimiter (280 req/min) and concurrency
+    gate (3 in-flight).  Round-robin distributes load across all keys.
+    """
     url = f"{BASE_URL}/{endpoint}"
-    headers = {"apiKey": api_key, "Content-Type": "application/json"}
 
     for attempt in range(retries):
-        limiter = rate_limiter()
-        limiter.acquire(endpoint)          # long-term rate throttle
-        _api_gate.acquire()                # burst prevention
+        ch = _next_channel()
+        headers = {"apiKey": ch.api_key, "Content-Type": "application/json"}
+
+        ch.limiter.acquire(endpoint)        # per-key rate throttle
+        ch.gate.acquire()                   # per-key burst prevention
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
             resp.raise_for_status()
@@ -91,56 +111,82 @@ def _fetch_page(endpoint, payload, api_key, retries=3):
             else:
                 raise
         finally:
-            _api_gate.release()
+            ch.gate.release()
 
 
-def _fetch_chunk(endpoint, stock_code, level, chunk_start, chunk_end,
-                 api_key, extra_payload=None):
-    """Fetch all pages for one stock × level × date range.
+# ── Proactive chunk sizing ─────────────────────────────────────────────
 
-    Returns (rows, capped).  capped=True when the 100K pagination limit
-    prevented fetching all rows — the caller should split and retry.
+# 1min bars/day.  API pagination caps at 100K rows (10 pages × 10K).
+# We split into 180-day chunks — at 240 bars/day that's ≤43K rows, well
+# under the limit even when the API `total` field is unreliable.
+_DAYS_PER_CHUNK = 180
+_PAGE_SIZE = 10000
+_MAX_PAGE = (100000 // _PAGE_SIZE) - 1  # 9 → pages 0-9 = 10 pages = 100K
+
+
+def _generate_chunks(range_start, range_end):
+    """Split a date range into fixed 180-day chunks, each guaranteed
+    to produce ≤43K rows — safely under the 100K pagination limit."""
+    start_dt = datetime.strptime(range_start, "%Y-%m-%d")
+    end_dt = datetime.strptime(range_end, "%Y-%m-%d")
+    chunks = []
+    cs = start_dt
+    while cs <= end_dt:
+        ce = min(cs + timedelta(days=_DAYS_PER_CHUNK - 1), end_dt)
+        chunks.append((cs.strftime("%Y-%m-%d"), ce.strftime("%Y-%m-%d")))
+        cs = ce + timedelta(days=1)
+    return chunks
+
+
+# ── API helpers ─────────────────────────────────────────────────────────
+
+def _fetch_chunk(stock_code, chunk_start, chunk_end):
+    """Fetch all pages for one stock × date range.
+
+    Returns (rows, capped).  Uses the last page's row count (not the API
+    `total` field) to decide whether more pages exist, because the API
+    may report an inflated `total`.
     """
     payload = {
-        "stock_code": stock_code if endpoint == "stock/min_adj" else [stock_code],
-        "level": level,
+        "stock_code": [stock_code],
+        "level": LEVEL,
         "start_time": f"{chunk_start} 00:00:00",
         "end_time":   f"{chunk_end} 23:59:59",
         "page": 0,
-        "page_size": 10000,
+        "page_size": _PAGE_SIZE,
     }
-    if extra_payload:
-        payload.update(extra_payload)
 
-    page0, total = _fetch_page(endpoint, payload, api_key)
+    page0, total = _fetch_page(ENDPOINT, payload)
     if not page0:
         return [], False
 
     all_data = list(page0)
-    max_page = 100000 // 10000  # 9 → page 0..9 = 10 pages = 100K rows
+    last_page_size = len(page0)
     page = 1
-    while len(all_data) < total and page <= max_page:
+    while last_page_size > 0 and page <= _MAX_PAGE:
         payload["page"] = page
-        b, _ = _fetch_page(endpoint, payload, api_key)
+        b, _ = _fetch_page(ENDPOINT, payload)
         if not b:
             break
+        last_page_size = len(b)
         all_data.extend(b)
         page += 1
 
-    capped = len(all_data) < total
+    # capped when we hit the page limit AND the last page had data
+    # (API likely has more rows beyond what its pagination allows)
+    capped = page > _MAX_PAGE and last_page_size > 0
     return all_data, capped
 
 
-# ── Adaptive range fetcher ─────────────────────────────────────────────
+# ── Fallback: adaptive split for unexpectedly capped chunks ────────────
 
-def _fetch_range_adaptive(endpoint, stock_code, level, range_start, range_end,
-                          api_key, extra_payload, depth=0):
+def _fetch_range_adaptive(stock_code, range_start, range_end, depth=0):
     """Fetch a date range, recursively splitting when capped by the 100K limit.
 
-    Returns (rows, failed).
+    Only reached when a proactive chunk is unexpectedly capped (e.g. stock
+    with unusually dense data).  Returns (rows, failed).
     """
-    rows, capped = _fetch_chunk(endpoint, stock_code, level, range_start, range_end,
-                                api_key, extra_payload)
+    rows, capped = _fetch_chunk(stock_code, range_start, range_end)
     if not capped:
         return rows, False
 
@@ -160,34 +206,42 @@ def _fetch_range_adaptive(endpoint, stock_code, level, range_start, range_end,
               f"{range_start}~{mid_str} | {next_str}~{range_end}")
 
     left_rows, left_fail = _fetch_range_adaptive(
-        endpoint, stock_code, level, range_start, mid_str,
-        api_key, extra_payload, depth + 1)
+        stock_code, range_start, mid_str, depth + 1)
     right_rows, right_fail = _fetch_range_adaptive(
-        endpoint, stock_code, level, next_str, range_end,
-        api_key, extra_payload, depth + 1)
+        stock_code, next_str, range_end, depth + 1)
 
     return left_rows + right_rows, left_fail or right_fail
 
 
 # ── Per-stock worker ────────────────────────────────────────────────────
 
-def _fetch_stock(endpoint, stock_code, level, start_date, end_date,
-                 api_key, out_dir, extra_payload=None, chunk_workers=3):
-    """Fetch all minute data for one stock with adaptive range splitting.
+def _fetch_stock(stock_code, start_date, end_date, out_dir):
+    """Fetch all 1min data for one stock with proactive chunk splitting.
 
-    Starts with the full date range.  Only splits when the API 100K
-    pagination limit prevents returning all rows (fine levels like 1min).
+    The date range is divided upfront into fixed-size chunks guaranteed to
+    fit within the 100K pagination limit.  The old trial-based adaptive
+    splitting is kept only as a fallback for unexpected edge cases.
 
-    All-or-nothing: if any sub-range fails, the stock is NOT saved so it
-    will be re-fetched from scratch on restart.
+    All-or-nothing: if any chunk fails, the stock is NOT saved so it will
+    be re-fetched from scratch on restart.
     """
-    all_rows, failed = _fetch_range_adaptive(
-        endpoint, stock_code, level, start_date, end_date,
-        api_key, extra_payload)
+    chunks = _generate_chunks(start_date, end_date)
+    all_rows = []
+    t_stock = time.perf_counter()
 
-    if failed:
-        log_print(f"  [{stock_code}] SKIPPED — {len(all_rows)} rows discarded")
-        return 0
+    for i, (cs, ce) in enumerate(chunks):
+        t0 = time.perf_counter()
+        rows, capped = _fetch_chunk(stock_code, cs, ce)
+        if capped:
+            log_print(f"  [{stock_code}] {cs}~{ce} unexpectedly capped → fallback")
+            rows, fb_failed = _fetch_range_adaptive(stock_code, cs, ce)
+            if fb_failed:
+                log_print(f"  [{stock_code}] SKIPPED — {len(rows)} rows discarded")
+                return 0
+        all_rows.extend(rows)
+        log_print(f"  [{stock_code}] chunk {i+1}/{len(chunks)} {cs}~{ce} "
+                  f"→ {len(rows)}r/{time.perf_counter()-t0:.1f}s "
+                  f"(total {len(all_rows)}r/{time.perf_counter()-t_stock:.0f}s)")
 
     if all_rows:
         df = pd.DataFrame(all_rows)
@@ -208,37 +262,47 @@ def _fetch_stock(endpoint, stock_code, level, start_date, end_date,
 
 # ── Orchestrator ────────────────────────────────────────────────────────
 
-def _run(endpoint, level, start_date, end_date, output, resume, workers,
-         cleanup, extra_payload=None, tag=None):
-    if tag is None:
-        tag = f"{endpoint.replace('stock/', '')}_{level}"
+def _channel_stats():
+    """Aggregate token stats across all channels."""
+    total_tokens = 0
+    total_max = 0
+    for ch in _channels:
+        s = ch.limiter.stats
+        total_tokens += s['tokens_available']
+        total_max += s['max_rpm']
+    return total_tokens, total_max
 
-    api_key = load_api_key()
+
+def _run(start_date, end_date, resume, workers, cleanup):
+    _init_channels()
+
     if end_date is None:
         end_date = date.today().strftime("%Y-%m-%d")
 
     stocks = _filter_stocks()
     if stocks is None:
-        log_print(f"[{tag}] No stock list, abort")
+        log_print(f"[{TAG}] No stock list, abort")
         return pd.DataFrame()
 
-    out_dir = Path(DATA_DIR) / tag
+    out_dir = Path(DATA_DIR) / TAG
     out_dir.mkdir(exist_ok=True)
 
-    # Rough ETA estimate — coarse levels fit one call per stock,
-    # fine levels may split.  Assume 1 call/stock for 60/30min,
-    # 2 for 15min, 4 for 5min, 16 for 1min as a rough guide.
-    splits_est = {"1min": 16, "5min": 4, "15min": 2, "30min": 1, "60min": 1}
-    est_calls = len(stocks) * splits_est.get(level, 1)
-    est_min = est_calls / 280.0
-    bars_per_day = _BARS_PER_DAY.get(level, 4)
+    # ETA: calculate actual chunk count from a sample date range
+    sample_chunks = _generate_chunks(start_date, end_date)
+    chunks_per_stock = len(sample_chunks)
+    est_calls = len(stocks) * chunks_per_stock
+    total_rpm = len(_channels) * 280
+    total_slots = len(_channels) * 3
+    est_min = est_calls / total_rpm
 
-    log_print(f"[{tag}] {len(stocks)} stocks | level={level} | "
+    log_print(f"[{TAG}] {len(stocks)} stocks | level={LEVEL} | "
               f"{start_date} ~ {end_date}")
-    log_print(f"[{tag}] Concurrency: {_MAX_CONCURRENT} in-flight max | "
-              f"rate-limit: 280/min")
-    log_print(f"[{tag}] ~{est_calls} API calls (adaptive) | "
-              f"~{est_min:.0f} min est | ~{bars_per_day} bars/day")
+    log_print(f"[{TAG}] {len(_channels)} key(s) | "
+              f"{total_slots} in-flight max | "
+              f"rate-limit: {total_rpm}/min")
+    log_print(f"[{TAG}] ~{est_calls} API calls "
+              f"({chunks_per_stock} chunks/stock × {len(stocks)} stocks) | "
+              f"~{est_min:.0f} min est")
 
     # Determine which stocks need fetching
     todo = []
@@ -253,86 +317,83 @@ def _run(endpoint, level, start_date, end_date, output, resume, workers,
         todo.append(code)
 
     if not todo:
-        log_print(f"[{tag}] All stocks already cached")
+        log_print(f"[{TAG}] All stocks already cached")
         return pd.DataFrame()
 
     total_todo = len(todo)
-    log_print(f"[{tag}] {total_todo} stocks to fetch")
+    log_print(f"[{TAG}] {total_todo} stocks to fetch "
+              f"(parallel ×{total_slots} slots)")
 
+    # ── Parallel stock fetch ──────────────────────────────────────────
     total_rows = 0
+    completed = 0
+    failed = 0
     t_start = time.perf_counter()
-    limiter = rate_limiter()
-    elapsed_smooth = None  # exponential moving average of per-stock time
+    progress_lock = threading.Lock()
+    last_log_time = [time.perf_counter()]  # mutable for closure
 
-    for i, code in enumerate(todo):
-        t0 = time.perf_counter()
-        try:
-            n = _fetch_stock(endpoint, code, level, start_date, end_date,
-                             api_key, out_dir, extra_payload=extra_payload,
-                             chunk_workers=workers)
-        except Exception as e:
-            log_print(f"[{tag}] [{i+1}/{total_todo}] {code} FAILED: {e}")
-            n = 0
+    def _fetch_one(code):
+        nonlocal total_rows, completed, failed
+        n = _fetch_stock(code, start_date, end_date, out_dir)
+        with progress_lock:
+            completed += 1
+            total_rows += n
+            if n == 0:
+                failed += 1
+            # throttle progress logging to ~1 line/sec
+            now = time.perf_counter()
+            if now - last_log_time[0] >= 1.0:
+                last_log_time[0] = now
+                elapsed = now - t_start
+                pct = completed / total_todo * 100
+                rate = completed / elapsed * 60 if elapsed > 0 else 0
+                eta_s = (total_todo - completed) / rate * 60 if rate > 0 else 0
+                eta_str = f"{eta_s/60:.1f}m" if eta_s >= 60 else f"{eta_s:.0f}s"
+                tok, max_rpm = _channel_stats()
+                bar_w = 20
+                filled = int(bar_w * completed / total_todo)
+                bar = "#" * filled + "-" * (bar_w - filled)
+                log_print(f"[{TAG}] [{bar}] {pct:5.1f}%  {completed}/{total_todo}  "
+                          f"{rate:.0f} st/min  ETA {eta_str}  "
+                          f"rows:{total_rows}  fail:{failed}  "
+                          f"tok:{tok:.0f}/{max_rpm}")
+        return n
 
-        elapsed = time.perf_counter() - t0
-        total_rows += n
-
-        # Smooth average for ETA
-        if elapsed_smooth is None:
-            elapsed_smooth = elapsed
-        else:
-            elapsed_smooth = 0.9 * elapsed_smooth + 0.1 * elapsed
-
-        remaining = total_todo - (i + 1)
-        eta_s = elapsed_smooth * remaining
-        eta_str = f"{eta_s/60:.1f}m" if eta_s >= 60 else f"{eta_s:.0f}s"
-
-        pct = (i + 1) / total_todo * 100
-        bar_w = 30
-        filled = int(bar_w * (i + 1) / total_todo)
-        bar = "#" * filled + "-" * (bar_w - filled)
-
-        s = limiter.stats
-        log_print(f"[{tag}] [{bar}] {pct:5.1f}%  {i+1}/{total_todo}  "
-                  f"ETA {eta_str}  "
-                  f"last:{code} {n}r/{elapsed:.1f}s  "
-                  f"tok:{s['tokens_available']:.0f}/{s['max_rpm']}")
+    max_workers = min(total_slots, total_todo)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_fetch_one, code): code for code in todo}
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+            except Exception as e:
+                code = futures[fut]
+                with progress_lock:
+                    completed += 1
+                    failed += 1
+                log_print(f"[{TAG}] {code} FAILED: {e}")
 
     elapsed_total = time.perf_counter() - t_start
-    log_print(f"[{tag}] Done: {total_rows} rows from {total_todo} stocks "
-              f"in {elapsed_total/60:.1f} min")
+    log_print(f"[{TAG}] Done: {total_rows} rows from {total_todo} stocks "
+              f"(failed:{failed}) in {elapsed_total/60:.1f} min "
+              f"({total_todo/(elapsed_total/60):.0f} st/min)")
     done_file = out_dir / ".done"
     done_file.write_text(str(date.today()))
-    log_print(f"[{tag}] Done marker -> {done_file}")
+    log_print(f"[{TAG}] Done marker -> {done_file}")
     return pd.DataFrame()
 
 
-# ── Public entry points ─────────────────────────────────────────────────
+# ── Public entry point ─────────────────────────────────────────────────
 
 def fetch_history(start_date="2019-01-01", end_date=None, output=None,
-                  resume=True, workers=3, cleanup=True, level="5min"):
-    """Fetch raw minute K-line (/api/stock/history)."""
-    return _run("stock/history", level, start_date, end_date, output,
-                resume, workers, cleanup, tag=f"history_{level}")
-
-
-def fetch_min_adj(start_date="2019-01-01", end_date=None, output=None,
-                  resume=True, workers=3, cleanup=True, level="5min"):
-    """Fetch adjusted minute K-line (/api/stock/min_adj)."""
-    return _run("stock/min_adj", level, start_date, end_date, output,
-                resume, workers, cleanup,
-                extra_payload={"algo": "recursive"},
-                tag=f"min_adj_{level}")
+                  resume=True, workers=3, cleanup=True):
+    """Fetch 1min K-line from /api/stock/history."""
+    return _run(start_date, end_date, resume, workers, cleanup)
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fetch minute K-line data")
-    parser.add_argument("endpoint", choices=["history", "min_adj"],
-                        help="Which endpoint")
-    parser.add_argument("--level", default="30min", choices=_LEVELS,
-                        help="Bar level (default: 30min)")
+    parser = argparse.ArgumentParser(description="Fetch 1min K-line data")
     parser.add_argument("--start", default="2019-01-01", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", help="End date (default: today)")
     parser.add_argument("--no-resume", action="store_true", help="Skip checkpoints")
@@ -340,16 +401,12 @@ if __name__ == "__main__":
                         help="Chunk workers per stock (default: 3)")
     parser.add_argument("--no-cleanup", action="store_true",
                         help="Keep per-stock checkpoint files")
-    parser.add_argument("-o", "--output", help="Output parquet path")
     args = parser.parse_args()
 
-    fn = fetch_history if args.endpoint == "history" else fetch_min_adj
-    fn(
+    fetch_history(
         start_date=args.start,
         end_date=args.end,
-        output=args.output,
         resume=not args.no_resume,
         workers=args.workers,
         cleanup=not args.no_cleanup,
-        level=args.level,
     )

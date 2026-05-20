@@ -135,7 +135,14 @@ def _build_daily_financial(
     df = df.copy()
     df["ann_date"] = pd.to_datetime(df[date_col], errors="coerce")
     df["stock_code"] = df["stock_code"].apply(_pad_code)
-    calendar_dates = pd.to_datetime(calendar["date"]).sort_values()
+    # Only forward-fill to trading days (is_open=1), skipping weekends and holidays.
+    # calendar.parquet contains both trading and non-trading days — without this
+    # filter, the resulting panel has ~52% useless rows for every financial factor.
+    if "is_open" in calendar.columns:
+        trading = calendar.loc[calendar["is_open"].astype(bool)]
+    else:
+        trading = calendar
+    calendar_dates = pd.to_datetime(trading["date"]).sort_values()
 
     # Keep latest report per (stock_code, ann_date)
     df = df.sort_values(["stock_code", "ann_date"])

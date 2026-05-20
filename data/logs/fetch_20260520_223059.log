@@ -1,0 +1,7 @@
+[2026-05-20 22:31:02] [main] start | rate_limit=280 req/min | parallel=False | workers=6 | tasks=['history']
+[2026-05-20 22:31:02] [main] === history (2019-01-01 ~ 2026-05-20) ===
+[2026-05-20 22:31:02] [minute] 2542 stocks loaded from Code_num.txt
+[2026-05-20 22:31:02] [history_1min] 2542 stocks | level=1min | 2019-01-01 ~ 2026-05-20
+[2026-05-20 22:31:02] [history_1min] Concurrency: 3 in-flight max | rate-limit: 280/min
+[2026-05-20 22:31:02] [history_1min] ~40672 API calls (adaptive) | ~145 min est | ~240 bars/day
+[2026-05-20 22:31:02] [history_1min] 2542 stocks to fetch

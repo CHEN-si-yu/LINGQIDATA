@@ -7,6 +7,8 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import load_api_key, BASE_URL, DATA_DIR, rate_limiter, log_print
 
+ENDPOINT = "stock/cyq_perf"
+
 
 def _month_ranges(start_str, end_str):
     """Generate (month_start, month_end) pairs for every month in [start, end]."""
@@ -37,9 +39,8 @@ def _month_label(start_str, end_str):
     return start_str[:7]
 
 
-def _fetch_page(endpoint, start_time, end_time, page, page_size,
-                api_key, extra_payload=None, retries=3):
-    url = f"{BASE_URL}/{endpoint}"
+def _fetch_page(start_time, end_time, page, page_size, api_key, retries=3):
+    url = f"{BASE_URL}/{ENDPOINT}"
     headers = {"apiKey": api_key, "Content-Type": "application/json"}
     payload = {
         "start_time": start_time,
@@ -47,13 +48,11 @@ def _fetch_page(endpoint, start_time, end_time, page, page_size,
         "page": page,
         "page_size": page_size,
     }
-    if extra_payload:
-        payload.update(extra_payload)
 
     for attempt in range(retries):
         try:
             limiter = rate_limiter()
-            limiter.acquire(endpoint)
+            limiter.acquire(ENDPOINT)
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
             resp.raise_for_status()
             result = resp.json()
@@ -68,13 +67,18 @@ def _fetch_page(endpoint, start_time, end_time, page, page_size,
         except (requests.RequestException, ValueError, KeyError, RuntimeError) as e:
             if attempt < retries - 1:
                 import time
-                time.sleep(2 ** attempt)
+                is_429 = (
+                    (hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429)
+                    or "429" in str(e) or "频繁" in str(e)
+                )
+                delay = (15 * (2 ** attempt)) if is_429 else (2 ** attempt)
+                time.sleep(delay)
                 log_print(f"  [retry {attempt+1}/{retries}] {e}")
             else:
                 raise
 
 
-def _fetch_range(endpoint, start_time, end_time, api_key, extra_payload=None):
+def _fetch_range(start_time, end_time, api_key):
     """Fetch all rows for a date range, splitting if range > 5 days or total > 100K."""
     start_dt = datetime.strptime(start_time, "%Y-%m-%d")
     end_dt = datetime.strptime(end_time, "%Y-%m-%d")
@@ -86,11 +90,10 @@ def _fetch_range(endpoint, start_time, end_time, api_key, extra_payload=None):
             return []
         mid_str = mid.strftime("%Y-%m-%d")
         next_str = (mid + timedelta(days=1)).strftime("%Y-%m-%d")
-        return (_fetch_range(endpoint, start_time, mid_str, api_key, extra_payload) +
-                _fetch_range(endpoint, next_str, end_time, api_key, extra_payload))
+        return (_fetch_range(start_time, mid_str, api_key) +
+                _fetch_range(next_str, end_time, api_key))
 
-    page0, total = _fetch_page(endpoint, start_time, end_time, 0, 10000,
-                               api_key, extra_payload)
+    page0, total = _fetch_page(start_time, end_time, 0, 10000, api_key)
     if not page0:
         return []
 
@@ -98,8 +101,7 @@ def _fetch_range(endpoint, start_time, end_time, api_key, extra_payload=None):
         all_data = list(page0)
         page = 1
         while len(all_data) < total:
-            b, _ = _fetch_page(endpoint, start_time, end_time, page, 10000,
-                               api_key, extra_payload)
+            b, _ = _fetch_page(start_time, end_time, page, 10000, api_key)
             if not b:
                 break
             all_data.extend(b)
@@ -110,18 +112,17 @@ def _fetch_range(endpoint, start_time, end_time, api_key, extra_payload=None):
     mid_str = mid.strftime("%Y-%m-%d")
     next_str = (mid + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    log_print(f"  [{endpoint}] splitting {start_time}~{end_time} "
+    log_print(f"  [cyq_perf] splitting {start_time}~{end_time} "
               f"(total={total}) -> {start_time}~{mid_str} + {next_str}~{end_time}")
 
-    left = _fetch_range(endpoint, start_time, mid_str, api_key, extra_payload)
-    right = _fetch_range(endpoint, next_str, end_time, api_key, extra_payload)
+    left = _fetch_range(start_time, mid_str, api_key)
+    right = _fetch_range(next_str, end_time, api_key)
     return left + right
 
 
-def _fetch_and_save(endpoint, start_time, end_time, label, api_key,
-                    checkpoints_dir, extra_payload=None):
+def _fetch_and_save(start_time, end_time, label, api_key, checkpoints_dir):
     """Fetch one month (adaptively) and atomically save checkpoint."""
-    batch = _fetch_range(endpoint, start_time, end_time, api_key, extra_payload)
+    batch = _fetch_range(start_time, end_time, api_key)
     if batch:
         df_q = pd.DataFrame(batch)
         checkpoint_file = checkpoints_dir / f"{label}.parquet"
@@ -131,24 +132,25 @@ def _fetch_and_save(endpoint, start_time, end_time, label, api_key,
     return batch
 
 
-def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
-                 cleanup, extra_payload=None, tag="daily"):
-    """Shared implementation for daily and daily_adj."""
+def fetch_cyq_perf(start_date="2019-01-01", end_date=None, output=None,
+                   resume=True, workers=6, cleanup=True):
+    """Fetch CYQ performance — consolidated, month-based checkpointing."""
     api_key = load_api_key()
 
     if end_date is None:
         end_date = date.today().strftime("%Y-%m-%d")
+    # cyq_perf uses [start_time, end_time) — add 1 day so end_date is included
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    end_date = end_dt.strftime("%Y-%m-%d")
 
     months = _month_ranges(start_date, end_date)
     if not months:
-        log_print(f"[{tag}] No months in range")
+        log_print("[cyq_perf] No months in range")
         return pd.DataFrame()
 
-    log_print(f"[{tag}] {len(months)} months: "
-              f"{months[0][0]} ~ {months[-1][1]}")
+    log_print(f"[cyq_perf] {len(months)} months: {months[0][0]} ~ {months[-1][1]}")
 
-    suffix = "daily" if endpoint == "stock/daily" else "daily_adj"
-    checkpoints_dir = Path(DATA_DIR) / suffix
+    checkpoints_dir = Path(DATA_DIR) / "cyq_perf_checkpoints"
     checkpoints_dir.mkdir(exist_ok=True)
 
     all_data = []
@@ -160,18 +162,18 @@ def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
             try:
                 df_q = pd.read_parquet(checkpoint_file)
                 all_data.extend(df_q.to_dict(orient="records"))
-                log_print(f"[{tag}] {label} -> checkpoint ({len(df_q)} rows)")
+                log_print(f"[cyq_perf] {label} -> checkpoint ({len(df_q)} rows)")
                 continue
             except Exception:
-                log_print(f"[{tag}] {label} -> checkpoint corrupt, re-fetching")
+                log_print(f"[cyq_perf] {label} -> checkpoint corrupt, re-fetching")
                 checkpoint_file.unlink(missing_ok=True)
         todo.append((r_start, r_end, label))
 
     if not todo:
-        log_print(f"[{tag}] All {len(months)} months already cached")
+        log_print(f"[cyq_perf] All {len(months)} months already cached")
     else:
         limiter = rate_limiter()
-        log_print(f"[{tag}] {len(todo)} to fetch, workers={workers}, "
+        log_print(f"[cyq_perf] {len(todo)} to fetch, workers={workers}, "
                   f"tokens={limiter.stats['tokens_available']}")
 
         if workers > 1:
@@ -179,8 +181,7 @@ def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
             completed = 0
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
-                    pool.submit(_fetch_and_save, endpoint, rs, re, label,
-                                api_key, checkpoints_dir, extra_payload): label
+                    pool.submit(_fetch_and_save, rs, re, label, api_key, checkpoints_dir): label
                     for (rs, re, label) in todo
                 }
                 for fut in as_completed(futures):
@@ -190,19 +191,18 @@ def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
                         with lock:
                             all_data.extend(batch)
                             completed += 1
-                        log_print(f"[{tag}] [{completed}/{len(todo)}] {label} -> "
+                        log_print(f"[cyq_perf] [{completed}/{len(todo)}] {label} -> "
                                   f"{len(batch)} rows | tokens={limiter.stats['tokens_available']}")
                     except Exception as e:
                         with lock:
                             completed += 1
-                        log_print(f"[{tag}] [{completed}/{len(todo)}] {label} FAILED: {e}")
+                        log_print(f"[cyq_perf] [{completed}/{len(todo)}] {label} FAILED: {e}")
         else:
             for i, (rs, re, label) in enumerate(todo):
-                batch = _fetch_and_save(endpoint, rs, re, label, api_key,
-                                        checkpoints_dir, extra_payload)
+                batch = _fetch_and_save(rs, re, label, api_key, checkpoints_dir)
                 if batch:
                     all_data.extend(batch)
-                log_print(f"[{tag}] [{i+1}/{len(todo)}] {label} -> "
+                log_print(f"[cyq_perf] [{i+1}/{len(todo)}] {label} -> "
                           f"{len(batch)} rows | tokens={limiter.stats['tokens_available']}")
 
     df = pd.DataFrame(all_data)
@@ -211,18 +211,18 @@ def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
         before = len(df)
         df = df[df['stock_code'].str.match(r'^\d{6}\.(SH|SZ|BJ)$')]
         if len(df) < before:
-            log_print(f"[{tag}] Dropped {before - len(df)} rows with malformed stock_code")
+            log_print(f"[cyq_perf] Dropped {before - len(df)} rows with malformed stock_code")
 
         _key = df['stock_code'].str.extract(r'(\d{6})').iloc[:, 0]
         df['_sort_code'] = pd.to_numeric(_key, errors='coerce').fillna(0).astype(int)
         df = df.sort_values(['_sort_code', 'trade_date']).drop(columns=['_sort_code']).reset_index(drop=True)
 
-    log_print(f"[{tag}] Total: {len(df)} rows, {len(df.columns)} columns")
+    log_print(f"[cyq_perf] Total: {len(df)} rows, {len(df.columns)} columns")
 
     if output is None:
-        output = f"{DATA_DIR}/{suffix}.parquet"
+        output = f"{DATA_DIR}/cyq_perf.parquet"
     df.to_parquet(output, index=False)
-    log_print(f"[{tag}] Saved -> {output}")
+    log_print(f"[cyq_perf] Saved -> {output}")
 
     if cleanup:
         removed = 0
@@ -236,31 +236,13 @@ def _fetch_daily(endpoint, start_date, end_date, output, resume, workers,
             checkpoints_dir.rmdir()
         except OSError:
             pass
-        log_print(f"[{tag}] Cleaned up {removed} checkpoint files")
+        log_print(f"[cyq_perf] Cleaned up {removed} checkpoint files")
 
     return df
 
 
-def fetch_daily(start_date="2019-01-01", end_date=None, output=None,
-                resume=True, workers=6, cleanup=True):
-    """Fetch daily K-line data (OHLCV) for all stocks."""
-    return _fetch_daily("stock/daily", start_date, end_date, output,
-                        resume, workers, cleanup, tag="daily")
-
-
-def fetch_daily_adj(start_date="2019-01-01", end_date=None, output=None,
-                    resume=True, workers=6, cleanup=True):
-    """Fetch adjusted (前复权) daily K-line data for all stocks."""
-    return _fetch_daily("stock/daily_adj", start_date, end_date, output,
-                        resume, workers, cleanup,
-                        extra_payload={"algo": "recursive", "volType": "share"},
-                        tag="daily_adj")
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fetch stock daily K-line (raw or adj)")
-    parser.add_argument("--adj", action="store_true",
-                        help="Fetch adjusted (前复权) daily K-line instead of raw")
+    parser = argparse.ArgumentParser(description="Fetch CYQ performance (consolidated)")
     parser.add_argument("--start", default="2019-01-01", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", help="End date (default: today)")
     parser.add_argument("--no-resume", action="store_true", help="Skip checkpoints, re-fetch all")
@@ -271,8 +253,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", help="Output parquet path")
     args = parser.parse_args()
 
-    fn = fetch_daily_adj if args.adj else fetch_daily
-    fn(
+    fetch_cyq_perf(
         start_date=args.start,
         end_date=args.end,
         output=args.output,
