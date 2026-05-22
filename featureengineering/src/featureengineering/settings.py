@@ -1,8 +1,53 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+_LOGGING_CONFIGURED = False
+
+
+def setup_logging(level: int = logging.INFO) -> None:
+    """Configure logging once — stdout INFO+, file DEBUG+ in data/logs/."""
+    global _LOGGING_CONFIGURED
+    if _LOGGING_CONFIGURED:
+        return
+    _LOGGING_CONFIGURED = True
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # stdout handler — INFO and above
+    stdout = logging.StreamHandler()
+    stdout.setLevel(logging.INFO)
+    stdout.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(stdout)
+
+
+def _setup_file_logging(log_dir: Path) -> None:
+    """Add a file handler once the log directory is known."""
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        return  # silently skip file logging if the directory is not writable
+    try:
+        file_handler = logging.FileHandler(log_dir / "featureengineering.log", encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        root = logging.getLogger()
+        if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
+            root.addHandler(file_handler)
+    except (OSError, PermissionError):
+        return
 
 
 @dataclass(frozen=True)
@@ -67,6 +112,7 @@ def configure_paths(
             str(PATHS.manifest_output_dir),
         )).resolve()
     )
+    setup_logging()
     PATHS = ProjectPaths(
         project_root=resolved_project_root,
         source_root=resolved_source_root,
@@ -75,4 +121,5 @@ def configure_paths(
         target_output_dir=resolved_project_root / "data" / "targets",
         stock_pool_file=resolved_project_root.parent / "Code_num.txt",
     )
+    _setup_file_logging(PATHS.project_root / "data" / "logs")
     return PATHS

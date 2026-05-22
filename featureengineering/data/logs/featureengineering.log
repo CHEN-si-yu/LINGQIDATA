@@ -1,0 +1,9 @@
+2026-05-21 02:47:20 [INFO] featureengineering.builder: Build plan: 1 rebuild | 0 incremental | 0 skip
+2026-05-21 02:47:33 [INFO] featureengineering.builder: Build plan: 9 rebuild | 0 incremental | 0 skip
+2026-05-21 02:48:27 [INFO] featureengineering.builder: Build summary: {'rebuild': 9}
+2026-05-21 02:48:27 [INFO] featureengineering.builder: Slowest factors:
+2026-05-21 02:48:27 [INFO] featureengineering.builder:   margin_leverage_ratio                   32.6s  (rebuild)
+2026-05-21 02:48:27 [INFO] featureengineering.builder:   margin_buy_intensity_5d                 31.4s  (rebuild)
+2026-05-21 02:48:27 [INFO] featureengineering.builder:   margin_balance_change                   15.6s  (rebuild)
+2026-05-21 02:48:27 [INFO] featureengineering.builder:   margin_buy_strength                     13.4s  (rebuild)
+2026-05-21 02:48:27 [INFO] featureengineering.builder:   margin_short_pressure                   13.2s  (rebuild)

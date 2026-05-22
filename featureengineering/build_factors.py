@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -19,7 +16,9 @@ from featureengineering.builder import (
     list_factors,
 )
 from featureengineering.factor_loader import ensure_builtin_factors_loaded
+from featureengineering.report import action_colored, print_plan_summary
 from featureengineering.settings import ProjectPaths, configure_paths
+from featureengineering.state import BuildState, resolve_state_path
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Configuration
@@ -58,121 +57,9 @@ RESUME = True
 STATE_FILE = "data/build_state.json"
 
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# BuildState — lightweight JSON-backed state for crash recovery & fast restart
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class BuildState:
-    """Tracks build progress so interrupted runs can resume near-instantly.
-
-    On every factor completion the state is flushed to disk.  On restart
-    *completed* factors are skipped without touching source parquet files,
-    which makes resume effectively free for large factor sets.
-    """
-
-    def __init__(self, path: Path, force: bool = False) -> None:
-        self._path = path
-        self._force = force
-        self._data: dict = {}
-        self._dirty = False
-
-    # ── load / save ──────────────────────────────────────────────────────────
-
-    def load(self) -> dict:
-        if self._path.exists():
-            try:
-                self._data = json.loads(self._path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                self._data = {}
-        else:
-            self._data = {}
-
-        # Invalidate if force mode changed
-        if self._data.get("force") != self._force:
-            self._data = {}
-
-        return self._data
-
-    def save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        tmp = self._path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        tmp.replace(self._path)
-
-    # ── lifecycle ────────────────────────────────────────────────────────────
-
-    def start(self, total: int) -> None:
-        """Initialise a fresh build record."""
-        self._data = {
-            "version": 1,
-            "build_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": "",
-            "force": self._force,
-            "status": "running",
-            "phase1": {"status": "pending", "total": total, "done": 0,
-                       "errors": []},
-            "completed": {},
-        }
-        self.save()
-
-    def mark_phase(self, phase: str, status: str) -> None:
-        if phase in self._data:
-            self._data[phase]["status"] = status
-        self.save()
-
-    def finish(self, status: str = "completed") -> None:
-        self._data["status"] = status
-        self._data["finished_at"] = datetime.now(timezone.utc).isoformat()
-        self.save()
-
-    # ── per-factor tracking ──────────────────────────────────────────────────
-
-    def is_completed(self, factor_name: str) -> bool:
-        return factor_name in self._data.get("completed", {})
-
-    def mark_factor(self, factor_name: str, action: str, phase: str) -> None:
-        self._data["completed"][factor_name] = {
-            "action": action,
-            "time": datetime.now(timezone.utc).isoformat(),
-        }
-        phase_data = self._data.get(phase)
-        if phase_data:
-            phase_data["done"] = phase_data.get("done", 0) + 1
-            if action == "error":
-                phase_data.setdefault("errors", []).append(factor_name)
-        self.save()
-
-    def completed_in_phase(self, phase: str) -> set[str]:
-        """Return factor names completed during *phase* in the current run."""
-        phase_data = self._data.get(phase)
-        if not phase_data:
-            return set()
-        # All completed factors belong to the active build — we trust
-        # that factors completed in prior phases won't be re-submitted.
-        return set(self._data.get("completed", {}).keys())
-
-    # ── query ────────────────────────────────────────────────────────────────
-
-    def is_active(self) -> bool:
-        return self._data.get("status") == "running"
-
-    def stale_build_id(self) -> str | None:
-        if self.is_active():
-            return self._data.get("build_id")
-        return None
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
-
-def _resolve_state_path() -> Path:
-    return (PROJECT_ROOT / STATE_FILE).resolve()
-
 
 def _classify_factor(name: str, paths: ProjectPaths, force: bool) -> tuple[str, str | None]:
     """Return (action, reason) for a single factor using the full date logic."""
@@ -181,114 +68,6 @@ def _classify_factor(name: str, paths: ProjectPaths, force: bool) -> tuple[str, 
     return decide_build_action(
         name, factor_path, spec.dependencies, paths.source_root, force=force,
     )
-
-
-def _print_plan_summary(plan: dict[str, tuple[str, str | None]],
-                         title: str = "Build plan") -> None:
-    """Print a compact build-plan summary."""
-    counts: dict[str, int] = {}
-    for action, _ in plan.values():
-        counts[action] = counts.get(action, 0) + 1
-    parts = "  ".join(f"{v} {k}" for k, v in sorted(counts.items()))
-    print(f"{title}:  {parts}  (total: {len(plan)})")
-
-
-_STATUS_MARKERS = {
-    "ok": "✓", "stale": "△", "future": "▶", "error": "✗", "empty": "○",
-}
-
-
-def _print_status_table(
-    date_info: dict[str, dict[str, str | None]],
-    title: str = "Factor status",
-) -> None:
-    """Print a multi-column status table with aligned columns."""
-    if not date_info:
-        print("No factor files found.")
-        return
-
-    effective_end = next(iter(date_info.values()))["effective_end"]
-    print(f"\n{'='*72}")
-    print(f"  {title}  (effective end: {effective_end})")
-    print(f"{'='*72}")
-    print(f"  {'Factor':<38} {'Last date':>10}  Status")
-    print(f"  {'-'*38} {'-'*10}  {'-'*6}")
-    counts: dict[str, int] = {}
-    for name, info in date_info.items():
-        last = info["last_date"] or "---"
-        status = info["status"]
-        marker = _STATUS_MARKERS.get(status, "?")
-        print(f"  {name:<38} {last:>10}  {marker}  {status}")
-        counts[status] = counts.get(status, 0) + 1
-    print(f"{'='*72}")
-    total = sum(counts.values())
-    detail = "  ".join(f"{v} {k}" for k, v in sorted(counts.items()))
-    print(f"  Total: {total}  |  {detail}")
-
-
-_COLOR_MAP = {"rebuild": "\033[33m", "incremental": "\033[36m",
-              "skip": "\033[32m", "error": "\033[31m"}
-_RESET = "\033[0m"
-
-
-def _action_colored(action: str) -> str:
-    c = _COLOR_MAP.get(action, "")
-    return f"{c}{action}{_RESET}"
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Status mode
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _show_status() -> None:
-    """Print every factor's last date and health, then exit."""
-    from featureengineering.builder import check_factor_dates
-
-    configure_paths()
-    ensure_builtin_factors_loaded()
-    _print_status_table(check_factor_dates())
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Dry-run / plan mode
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _plan_build(names: list[str], state: BuildState, paths: ProjectPaths) -> None:
-    """Print what *would* be built without touching any data."""
-    configure_paths()
-    ensure_builtin_factors_loaded()
-
-    plan: dict[str, tuple[str, str | None]] = {}
-    for name in names:
-        if state.is_completed(name):
-            plan[name] = ("skip", "state: already completed")
-        else:
-            plan[name] = _classify_factor(name, paths, FORCE)
-    _print_plan_summary(plan, "Build plan")
-    print()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Single-factor mode
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _build_single_factor(name: str) -> int:
-    """Build exactly one factor and print the result."""
-    configure_paths()
-    ensure_builtin_factors_loaded()
-
-    spec = get_factor(name)  # validates the factor exists
-    print(f"Building single factor: {name}  (category={spec.category})")
-
-    result = build_many(names=[name], force=FORCE)
-    if not result:
-        return 1
-
-    r = result[0]
-    action_str = _action_colored(r.action)
-    print(f"[{action_str}] {r.factor_name}  elapsed={r.elapsed:.1f}s  "
-          f"rows={r.rows}  path={r.factor_path}")
-    return 0 if r.action != "error" else 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -308,16 +87,13 @@ def _build_all() -> int:
     names = sorted(s.name for s in specs)
 
     # ── State file setup ──────────────────────────────────────────────────
-    state_path = _resolve_state_path()
-    state = BuildState(state_path, force=FORCE)
+    state = BuildState(resolve_state_path(PROJECT_ROOT, STATE_FILE), force=FORCE)
     state.load()
 
     # Resume from interrupted run?
     if RESUME and state.is_active():
-        prev_id = state.stale_build_id()
-        prev_completed = set(state._data.get("completed", {}).keys())
-        print(f"Found interrupted build [{prev_id}] — "
-              f"{len(prev_completed)} factors already completed, will resume.\n")
+        print(f"Resuming from previous build [{state._data.get('build_id', '?')}] — "
+              f"{state.completed_count} factors already completed.\n")
     elif not state.is_active() or not RESUME:
         state.start(len(names))
 
@@ -360,7 +136,7 @@ def _build_all() -> int:
 
     # ── Final summary ─────────────────────────────────────────────────────
     all_errors = state._data.get("phase1", {}).get("errors", [])
-    total_completed = len(state._data.get("completed", {}))
+    total_completed = state.completed_count
 
     state.finish("completed" if not all_errors else "completed_with_errors")
     print(f"All done: {total_completed} factors processed, "
@@ -377,27 +153,47 @@ def _build_all() -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        # CLI passthrough — forward all arguments to the standard CLI entry point.
         from featureengineering.cli import main
-
         raise SystemExit(main())
 
     # ── Direct-run dispatch ──────────────────────────────────────────────────
     if SHOW_STATUS:
-        _show_status()
+        from featureengineering.builder import check_factor_dates
+        from featureengineering.report import print_status_table
+        configure_paths()
+        ensure_builtin_factors_loaded()
+        print_status_table(check_factor_dates())
         raise SystemExit(0)
 
     if ONLY_FACTOR:
-        raise SystemExit(_build_single_factor(ONLY_FACTOR))
+        configure_paths()
+        ensure_builtin_factors_loaded()
+        specify = get_factor(ONLY_FACTOR)
+        print(f"Building single factor: {ONLY_FACTOR}  (category={specify.category})")
+        result = build_many(names=[ONLY_FACTOR], force=FORCE)
+        if result:
+            r = result[0]
+            action_str = action_colored(r.action)
+            print(f"[{action_str}] {r.factor_name}  elapsed={r.elapsed:.1f}s  "
+                  f"rows={r.rows}  path={r.factor_path}")
+        raise SystemExit(0 if result and result[0].action != "error" else 1)
 
     if DRY_RUN:
         configure_paths()
         ensure_builtin_factors_loaded()
         specs = list_factors()
         names = sorted(s.name for s in specs)
-        state = BuildState(_resolve_state_path(), force=FORCE)
+        state = BuildState(resolve_state_path(PROJECT_ROOT, STATE_FILE), force=FORCE)
         state.load()
-        _plan_build(names, state, configure_paths())
+
+        plan: dict[str, tuple[str, str | None]] = {}
+        for name in names:
+            if state.is_completed(name):
+                plan[name] = ("skip", "state: already completed")
+            else:
+                plan[name] = _classify_factor(name, configure_paths(), FORCE)
+        print_plan_summary(plan, "Build plan")
+        print()
         raise SystemExit(0)
 
     raise SystemExit(_build_all())

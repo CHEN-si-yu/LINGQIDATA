@@ -645,72 +645,118 @@ def _filter_main_board_stocks():
 _PER_STOCK_BATCH_SIZE = 100
 
 
-def _merge_per_stock_batch(batch_results, out_dir, date_col, cache_ns=None, dedup_keys=None):
-    """Split a batch API result by stock_code and merge each into its file.
+def _merge_per_stock_batch(batch_results, out_dir, date_col, cache_ns=None, dedup_keys=None, workers=8):
+    """Split a batch result by stock_code and merge each into its file (parallel).
 
-    *batch_results* is a list of dict rows from the API (all stocks mixed).
+    *batch_results* is a list of dict rows or a DataFrame (all stocks mixed).
+    Only stocks listed in Code_num.txt are processed; others are silently dropped.
     Returns (results_list, cache_updates_dict) where cache_updates maps
     namespace:stock_code -> new_max_date_str for the cyq_cache.
     """
-    if not batch_results:
+    if isinstance(batch_results, pd.DataFrame):
+        df_all = batch_results
+    elif batch_results:
+        df_all = pd.DataFrame(batch_results)
+    else:
         return [], {}
-    df_all = pd.DataFrame(batch_results)
+
     if df_all.empty or "stock_code" not in df_all.columns:
         return [], {}
 
-    ns_prefix = f"{cache_ns}:" if cache_ns else ""
+    # Filter to target stocks (2542 from Code_num.txt) — safety net
+    target_stocks = set(_filter_main_board_stocks())
+    before = len(df_all)
+    df_all = df_all[df_all["stock_code"].isin(target_stocks)]
+    if len(df_all) < before:
+        log_print(f"  [merge] Dropped {before - len(df_all):,} non-target stock rows "
+                  f"({len(df_all):,} rows, {df_all['stock_code'].nunique()} stocks remain)")
 
-    results = []
-    cache_updates = {}
-    for code, group in df_all.groupby("stock_code"):
+    if df_all.empty:
+        return [], {}
+
+    ns_prefix = f"{cache_ns}:" if cache_ns else ""
+    dk = dedup_keys if dedup_keys is not None else ([date_col] if date_col else None)
+
+    # Split into per-stock groups (pre-split to avoid thread-safety issues)
+    groups = [(code, group.copy()) for code, group in df_all.groupby("stock_code")]
+    del df_all
+
+    def _merge_one(code, group):
         out_file = Path(out_dir) / f"{code}.parquet"
         existing = _safe_read_parquet(out_file) if out_file.exists() else pd.DataFrame()
         old_rows = len(existing)
 
-        # API may return null stock_code; drop it and reassign the known code
         new_chunk = group.drop(columns=["stock_code"], errors="ignore")
         new_chunk["stock_code"] = code
         if existing.empty:
             merged = new_chunk
         else:
             merged = pd.concat([existing, new_chunk], ignore_index=True)
-            # Dedup so API corrections in the overlap window properly
-            # replace old rows.  Uses dataset-specific dedup_keys (e.g.
-            # cyq_chips needs ["trade_date", "price"] since each day has
-            # multiple price levels), falling back to [date_col].
-            if dedup_keys is None:
-                dedup_keys = [date_col] if date_col else None
-            if dedup_keys:
-                available_dedup = [k for k in dedup_keys if k in merged.columns]
+            if dk:
+                available_dedup = [k for k in dk if k in merged.columns]
             else:
                 available_dedup = None
             merged = merged.drop_duplicates(subset=available_dedup or None, keep="last")
 
+        max_str = None
         if date_col and date_col in merged.columns:
             merged = merged.sort_values(date_col).reset_index(drop=True)
-            # Record new max date for cache
             max_val = merged[date_col].max()
             if not pd.isna(max_val):
                 max_str = str(max_val)[:10] if hasattr(max_val, "strftime") \
                           else max_val.strftime("%Y-%m-%d") if hasattr(max_val, "strftime") \
                           else str(max_val)[:10]
-                cache_updates[f"{ns_prefix}{code}"] = max_str
 
         tmp = out_file.with_suffix(".parquet.tmp")
         merged.to_parquet(tmp, index=False)
         tmp.replace(out_file)
-        results.append((code, old_rows, len(merged), len(merged) - old_rows))
+        return code, old_rows, len(merged), len(merged) - old_rows, max_str
+
+    # Parallel execution
+    results = []
+    cache_updates = {}
+    lock = threading.Lock()
+    n = len(groups)
+
+    if n <= 4 or workers <= 1:
+        # Too few stocks — sequential is faster (no thread overhead)
+        for code, group in groups:
+            res = _merge_one(code, group)
+            results.append(res[:4])
+            if res[4]:
+                cache_updates[f"{ns_prefix}{code}"] = res[4]
+    else:
+        from tqdm import tqdm
+        with ThreadPoolExecutor(max_workers=min(workers, n)) as pool:
+            futures = {pool.submit(_merge_one, code, group): code
+                       for code, group in groups}
+            for fut in tqdm(as_completed(futures), total=n,
+                           desc="  merge", unit="stock",
+                           ncols=100, smoothing=0.1):
+                code = futures[fut]
+                try:
+                    res = fut.result()
+                    with lock:
+                        results.append(res[:4])
+                        if res[4]:
+                            cache_updates[f"{ns_prefix}{code}"] = res[4]
+                except Exception as e:
+                    log_print(f"  [warn] Merge failed for {code}: {e}")
+
     return results, cache_updates
 
 
-def _consolidate_per_stock_dataset(name, out_dir, date_col):
-    """Merge all per-stock .parquet files into a single consolidated file.
+def _consolidate_per_stock_dataset(name, out_dir, date_col, workers=8):
+    """Merge per-stock .parquet files into a single consolidated file (streaming).
 
-    Reads every *.parquet from *out_dir*, concatenates them, sorts by
-    [stock_code, date_col], and writes atomically to DATA_DIR / f"{name}.parquet".
-    Displays a tqdm progress bar during the file-reading phase.
+    Processes files in sorted order (by stock_code) in batches to keep memory
+    usage bounded.  Each batch is read in parallel, concatenated, sorted, and
+    streamed directly into the output parquet via pyarrow's ParquetWriter.
+    The final file is globally sorted by [stock_code, date_col].
     """
     from tqdm import tqdm
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 
     t0 = time.perf_counter()
     out_dir = Path(out_dir)
@@ -719,43 +765,95 @@ def _consolidate_per_stock_dataset(name, out_dir, date_col):
         log_print(f"  [consolidate] [{name}] No stock files found in {out_dir}")
         return
 
-    log_print(f"  [consolidate] [{name}] Reading {len(stock_files)} stock files...")
-    parts = []
-    for f in tqdm(stock_files, desc=f"  consolidate/{name}", unit="file",
-                  ncols=100, smoothing=0.1):
+    n = len(stock_files)
+    BATCH_SIZE = 300  # files per batch — ~300 × 7 MB ≈ 2 GB raw
+    batches = [stock_files[i:i + BATCH_SIZE] for i in range(0, n, BATCH_SIZE)]
+    n_batches = len(batches)
+
+    dest = Path(DATA_DIR) / f"{name}.parquet"
+    tmp = dest.with_suffix(".parquet.tmp")
+
+    log_print(f"  [consolidate] [{name}] Streaming {n} files → {dest} "
+              f"({n_batches} batches of ~{BATCH_SIZE}, {workers} workers)")
+
+    def _read_one(f):
         try:
-            parts.append(pd.read_parquet(f))
+            return pd.read_parquet(f)
         except Exception as e:
-            log_print(f"\n  [consolidate] [{name}] Skipping {f.name}: {e}")
-
-    if not parts:
-        log_print(f"  [consolidate] [{name}] No readable files")
-        return
-
-    t1 = time.perf_counter()
-    log_print(f"  [consolidate] [{name}] Concatenating {len(parts)} DataFrames "
-              f"({t1 - t0:.1f}s reading)")
-
-    merged = pd.concat(parts, ignore_index=True)
-    del parts  # free memory before sort
+            log_print(f"\n  [consolidate] Skipping {f.name}: {e}")
+            return None
 
     sort_cols = ["stock_code", date_col]
-    available_sort = [c for c in sort_cols if c in merged.columns]
-    if available_sort:
-        log_print(f"  [consolidate] [{name}] Sorting by {available_sort}...")
-        merged = merged.sort_values(available_sort).reset_index(drop=True)
+    available_sort = None  # computed once from first non-empty DataFrame
+    writer = None
+    total_rows = 0
+    skipped = 0
+    batch_times = []
 
-    t2 = time.perf_counter()
-    dest = Path(DATA_DIR) / f"{name}.parquet"
-    log_print(f"  [consolidate] [{name}] Writing {len(merged):,} rows to {dest}...")
-    tmp = dest.with_suffix(".parquet.tmp")
-    merged.to_parquet(tmp, index=False)
+    try:
+        for bi, batch_files in enumerate(
+            tqdm(batches, desc=f"  consolidate/{name}", unit="batch",
+                 ncols=100, smoothing=0.1)
+        ):
+            t_batch = time.perf_counter()
+
+            # ── Read files in this batch (parallel if enough files) ──
+            parts = []
+            if len(batch_files) <= 4 or workers <= 1:
+                for f in batch_files:
+                    df = _read_one(f)
+                    if df is not None and not df.empty:
+                        parts.append(df)
+                    else:
+                        skipped += 1
+            else:
+                with ThreadPoolExecutor(max_workers=min(workers, len(batch_files))) as pool:
+                    futures = {pool.submit(_read_one, f): f for f in batch_files}
+                    for fut in as_completed(futures):
+                        df = fut.result()
+                        if df is not None and not df.empty:
+                            parts.append(df)
+                        else:
+                            skipped += 1
+
+            if not parts:
+                continue
+
+            # ── Concat + sort batch ──
+            batch_df = pd.concat(parts, ignore_index=True)
+            del parts
+
+            if available_sort is None:
+                available_sort = [c for c in sort_cols if c in batch_df.columns]
+            if available_sort:
+                batch_df = batch_df.sort_values(available_sort).reset_index(drop=True)
+
+            batch_rows = len(batch_df)
+            total_rows += batch_rows
+
+            # ── Stream to output parquet ──
+            table = pa.Table.from_pandas(batch_df)
+            if writer is None:
+                writer = pq.ParquetWriter(tmp, table.schema)
+            writer.write_table(table)
+            del batch_df, table
+
+            batch_times.append(time.perf_counter() - t_batch)
+
+    finally:
+        if writer:
+            writer.close()
+
+    # Replace temp with final
     tmp.replace(dest)
 
     elapsed = time.perf_counter() - t0
-    log_print(f"  [consolidate] [{name}] Done: {len(merged):,} rows → {dest} "
-              f"(read={t1 - t0:.1f}s, sort={t2 - t1:.1f}s, "
-              f"write={time.perf_counter() - t2:.1f}s, total={elapsed:.1f}s)")
+    file_gb = dest.stat().st_size / (1024 ** 3)
+    avg_batch = sum(batch_times) / len(batch_times) if batch_times else 0
+    log_print(f"  [consolidate] [{name}] Done: {total_rows:,} rows, "
+              f"{file_gb:.1f} GB → {dest} "
+              f"(avg {avg_batch:.1f}s/batch, {skipped} skipped, "
+              f"total {elapsed:.1f}s)")
 
 
 def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
@@ -1014,10 +1112,242 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
             name=name,
             out_dir=out_dir,
             date_col=date_col,
+            workers=workers,
         )
 
 
 # ── Consolidated dataset updater ──────────────────────────────────────────
+def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
+                               date_col, dedup_keys, workers, dry_run,
+                               backfill_fn=None, backfill_kwargs=None):
+    """Update per-stock 1min dataset via daily_dump (local-first, one file per date).
+
+    Reads already-downloaded daily dump parquet files from
+    data/daily_dump_{level}/ when available, only calling the API for
+    dates that are missing locally.  Filters to the stocks listed in
+    Code_num.txt so only the 2542 target stocks get per-stock files.
+    After unpacking, consolidates all per-stock files into a single
+    {name}.parquet under DATA_DIR.
+    """
+    from fetch_daily_dump import fetch_daily_dump
+
+    stocks = _filter_main_board_stocks()
+    if not stocks:
+        log_print(f"[{name}] No stocks to process")
+        return
+
+    target_stock_set = set(stocks)
+
+    out_dir = Path(DATA_DIR) / out_subdir
+    out_dir.mkdir(exist_ok=True)
+
+    daily_dump_dir = Path(DATA_DIR) / f"daily_dump_{level}"
+
+    # ── Scan daily_dump directory for available files ──
+    dump_dates = set()
+    if daily_dump_dir.exists():
+        for f in daily_dump_dir.glob("*.parquet"):
+            try:
+                dump_dates.add(f.stem)
+            except Exception:
+                pass
+
+    # ── Phase 0: backfill stocks without existing files ──
+    if not dry_run and backfill_fn:
+        missing = [code for code in stocks
+                   if not (out_dir / f"{code}.parquet").exists()]
+        if missing:
+            log_print(f"[{name}] {len(missing)} stocks without files, "
+                      f"running full backfill via {backfill_fn.__name__}...")
+            t0 = time.perf_counter()
+            try:
+                backfill_fn(
+                    start_date=start_date, end_date=end_date,
+                    workers=workers, cleanup=True, resume=True,
+                    **(backfill_kwargs or {})
+                )
+                _add_timing(name, "backfill", time.perf_counter() - t0,
+                           stocks=len(missing))
+            except Exception as e:
+                log_print(f"[{name}] Backfill FAILED: {e}")
+                _add_timing(name, "backfill", time.perf_counter() - t0,
+                           error=str(e))
+
+    # ── Phase 1: determine last fetched date ──
+    state = _load_state()
+    entry = state.get(name, {})
+    last_date = entry.get("last_fetch_max")
+
+    if last_date is None:
+        sample_files = sorted(out_dir.glob("*.parquet"))[:200]
+        for f in sample_files:
+            _, m = get_max_date(f)
+            if m and (last_date is None or m > last_date):
+                last_date = m
+
+    if last_date is None:
+        log_print(f"[{name}] No existing data — need full backfill first")
+        return
+
+    # Also consider unprocessed daily dump files that are newer than
+    # the per-stock max date.
+    new_dump_dates = sorted([d for d in dump_dates if d > last_date])
+    if new_dump_dates:
+        log_print(f"[{name}] Found {len(new_dump_dates)} unprocessed daily dump "
+                  f"file(s): {new_dump_dates[0]} ~ {new_dump_dates[-1]}"
+                  if len(new_dump_dates) > 1 else
+                  f"[{name}] Found unprocessed daily dump file: {new_dump_dates[0]}")
+
+    max_dt = datetime.strptime(last_date, "%Y-%m-%d")
+    effective_overlap = _get_effective_overlap(name, OVERLAP_DAYS)
+    inc_start_dt = max_dt - timedelta(days=effective_overlap)
+    default_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    if inc_start_dt < default_dt:
+        inc_start_dt = default_dt
+    inc_start = inc_start_dt.strftime("%Y-%m-%d")
+
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d") if end_date else \
+             datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
+
+    # Extend the end date if daily dump has files newer than the computed end
+    if new_dump_dates:
+        latest_dump = datetime.strptime(max(new_dump_dates), "%Y-%m-%d")
+        if latest_dump > end_dt:
+            end_dt = latest_dump
+
+    effective_today_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
+    if max_dt >= effective_today_dt and not new_dump_dates:
+        log_print(f"[{name}] Up to date (max={last_date})")
+        _record_state(name, last_date)
+        # Still consolidate if the consolidated file is missing
+        consolidated = Path(DATA_DIR) / f"{name}.parquet"
+        if not dry_run and not consolidated.exists():
+            log_print(f"[{name}] Consolidated file missing, creating...")
+            _consolidate_per_stock_dataset(
+                name=name, out_dir=out_dir, date_col=date_col,
+                workers=workers,
+            )
+        return
+
+    log_print(f"[{name}] Last date: {last_date} | "
+              f"Fetching: {inc_start} ~ {end_dt.strftime('%Y-%m-%d')}")
+
+    if dry_run:
+        log_print(f"[{name}] DRY-RUN: would process {inc_start} ~ "
+                  f"{end_dt.strftime('%Y-%m-%d')} via daily_dump/{level}")
+        if new_dump_dates:
+            log_print(f"[{name}] DRY-RUN: {len(new_dump_dates)} local file(s) "
+                      f"would be read (no API calls)")
+        return
+
+    # ── Phase 2: load trading calendar ──
+    cal_path = Path(DATA_DIR) / "calendar.parquet"
+    trading_days = set()
+    if cal_path.exists():
+        cal = pd.read_parquet(cal_path)
+        trading_days = set(cal[cal["is_open"] == 1]["date"].tolist())
+
+    dates_to_fetch = []
+    current_dt = inc_start_dt
+    while current_dt <= end_dt:
+        date_str = current_dt.strftime("%Y-%m-%d")
+        if not trading_days or date_str in trading_days:
+            dates_to_fetch.append(date_str)
+        current_dt += timedelta(days=1)
+
+    if not dates_to_fetch:
+        log_print(f"[{name}] No trading days in range")
+        return
+
+    log_print(f"[{name}] Will process {len(dates_to_fetch)} trading days "
+              f"via daily_dump/{level}")
+
+    # ── Phase 3: process each date (local-first, filter to target stocks) ──
+    limiter = rate_limiter()
+    total_added = 0
+    new_max_date = last_date
+    local_reads = 0
+    api_calls = 0
+
+    for i, date_str in enumerate(dates_to_fetch):
+        t0 = time.perf_counter()
+        try:
+            dump_file = daily_dump_dir / f"{date_str}.parquet"
+
+            if dump_file.exists():
+                df = pd.read_parquet(dump_file)
+                local_reads += 1
+                _add_timing(name, "fetch", time.perf_counter() - t0,
+                           rows=len(df), from_cache=True)
+            else:
+                df = fetch_daily_dump(date_str, level,
+                                      output_dir=str(daily_dump_dir))
+                api_calls += 1
+                _add_timing(name, "fetch", time.perf_counter() - t0,
+                           rows=len(df) if df is not None else 0, from_api=True)
+
+            if df is None or df.empty:
+                log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] {date_str}: "
+                          f"no data")
+                continue
+
+            # Filter to target stocks (2542 from Code_num.txt)
+            if "stock_code" in df.columns:
+                before = len(df)
+                df = df[df["stock_code"].isin(target_stock_set)]
+                dropped = before - len(df)
+                if dropped > 0:
+                    log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] "
+                              f"{date_str}: filtered {dropped:,} non-target "
+                              f"stocks ({len(df):,} rows remain)")
+
+            if df.empty:
+                continue
+
+            # Drop trade_date — per-stock files use trade_time only
+            if "trade_date" in df.columns:
+                df = df.drop(columns=["trade_date"])
+
+            t_merge = time.perf_counter()
+            merge_results, _ = _merge_per_stock_batch(
+                df, out_dir, date_col, cache_ns=name, dedup_keys=dedup_keys,
+                workers=workers,
+            )
+            _add_timing(name, "merge", time.perf_counter() - t_merge,
+                       rows=len(df), stocks=len(merge_results))
+
+            date_added = sum(r[3] for r in merge_results)
+            total_added += date_added
+            if date_str > new_max_date:
+                new_max_date = date_str
+
+            log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] {date_str}: "
+                      f"{len(df):,} rows, +{date_added} new | "
+                      f"tokens={limiter.stats['tokens_available']}")
+        except Exception as e:
+            log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] {date_str} "
+                      f"FAILED: {e}")
+
+    log_print(f"[{name}] Done: {total_added:,} new rows total "
+              f"({local_reads} local reads, {api_calls} API calls)")
+
+    # Record state
+    _record_state(name, new_max_date)
+
+    # Done marker
+    done_file = out_dir / ".done"
+    done_file.write_text(TODAY)
+
+    # Consolidate: merge all per-stock files into a single parquet
+    if not dry_run:
+        _consolidate_per_stock_dataset(
+            name=name,
+            out_dir=out_dir,
+            date_col=date_col,
+            workers=workers,
+        )
+
+
 def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
                           sort_cols, default_start, workers, dry_run,
                           extra_params=None, strict_dedup=False,
@@ -1533,6 +1863,22 @@ DATASETS = [
         "backfill_kwargs": {"level": "60min"},
     },
     {
+        "name": "history_1min",
+        "module": None, "fn_name": None,
+        "file": "history_1min/.done",
+        "date_col": "trade_time",
+        "dedup": ["trade_time", "stock_code"],
+        "sort": ["trade_time"],
+        "start": "2019-01-01",
+        "type": "per_stock",
+        "out_subdir": "history_1min",
+        "use_daily_dump": True,
+        "daily_dump_level": "1min",
+        "backfill_module": "fetch_minute",
+        "backfill_fn_name": "fetch_history",
+        "backfill_kwargs": {"level": "1min"},
+    },
+    {
         "name": "min_adj_15min",
         "module": None, "fn_name": None,
         "file": "min_adj_15min/.done",
@@ -1689,6 +2035,28 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                 if skip_per_stock:
                     log_print(f"[{name}] Skipped (per-stock disabled)")
                     return {"name": name, "status": "skip", "reason": "per_stock_disabled"}
+                # ── daily_dump path (history_1min): one API call per date, all stocks ──
+                if d.get("use_daily_dump"):
+                    backfill_fn = None
+                    bf_module = d.get("backfill_module")
+                    bf_fn_name = d.get("backfill_fn_name")
+                    if bf_module and bf_fn_name:
+                        bf_mod = __import__(bf_module, fromlist=[bf_fn_name])
+                        backfill_fn = getattr(bf_mod, bf_fn_name)
+                    update_daily_dump_dataset(
+                        name=name,
+                        out_subdir=d["out_subdir"],
+                        level=d["daily_dump_level"],
+                        start_date=d["start"],
+                        end_date=TODAY,
+                        date_col=d["date_col"],
+                        dedup_keys=d.get("dedup"),
+                        workers=workers,
+                        dry_run=dry_run,
+                        backfill_fn=backfill_fn,
+                        backfill_kwargs=d.get("backfill_kwargs"),
+                    )
+                    return {"name": name, "status": "updated" if not dry_run else "dry_run"}
                 # Resolve backfill function for stocks without existing files
                 backfill_fn = None
                 bf_module = d.get("backfill_module")

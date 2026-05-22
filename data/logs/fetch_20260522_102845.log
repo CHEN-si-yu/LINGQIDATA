@@ -1,0 +1,8 @@
+[2026-05-22 10:28:45] [incremental] 1 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-22 10:28:45] [incremental] Datasets: ['history_1min']
+[2026-05-22 10:28:45] 
+============================================================
+[2026-05-22 10:28:45] [history_1min] Starting incremental update
+[2026-05-22 10:28:45] [history_1min] Up to date (max=2026-05-21)
+[2026-05-22 10:28:45] [history_1min] Consolidated file missing, creating...
+[2026-05-22 10:28:45]   [consolidate] [history_1min] Reading 2542 stock files (parallel, 6 workers)...

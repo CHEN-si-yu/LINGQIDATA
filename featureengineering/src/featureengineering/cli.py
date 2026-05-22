@@ -14,6 +14,7 @@ from .builder import (
     recommend_worker_count,
 )
 from .factor_loader import ensure_builtin_factors_loaded
+from .report import action_colored, print_status_table
 from .settings import configure_paths, ProjectPaths
 
 
@@ -69,33 +70,6 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _print_status_table(
-    date_info: dict[str, dict[str, str | None]],
-    title: str = "Factor status",
-) -> None:
-    if not date_info:
-        print("No factor files found.")
-        return
-    effective_end = next(iter(date_info.values()))["effective_end"]
-    print(f"\n{'='*72}")
-    print(f"  {title}  (effective end: {effective_end})")
-    print(f"{'='*72}")
-    print(f"  {'Factor':<38} {'Last date':>10}  Status")
-    print(f"  {'-'*38} {'-'*10}  {'-'*6}")
-    counts: dict[str, int] = {}
-    for name, info in date_info.items():
-        last = info["last_date"] or "---"
-        status = info["status"]
-        marker = {"ok": "✓", "stale": "△", "future": "▶",
-                  "error": "✗", "empty": "○"}.get(status, "?")
-        print(f"  {name:<38} {last:>10}  {marker}  {status}")
-        counts[status] = counts.get(status, 0) + 1
-    print(f"{'='*72}")
-    total = sum(counts.values())
-    detail = "  ".join(f"{v} {k}" for k, v in sorted(counts.items()))
-    print(f"  Total: {total}  |  {detail}")
-
-
 def _print_plan(selected: list[str], paths: ProjectPaths, force: bool) -> None:
     """Print build plan: what each factor would do."""
     plan: dict[str, tuple[str, str | None]] = {}
@@ -115,7 +89,7 @@ def _print_plan(selected: list[str], paths: ProjectPaths, force: bool) -> None:
     action_order = {"rebuild": 0, "incremental": 1, "skip": 2}
     for name in sorted(plan, key=lambda n: (action_order.get(plan[n][0], 9), n)):
         action, reason = plan[name]
-        print(f"  {action:<13} {name:<35}  ({reason})")
+        print(f"  {action_colored(action):<22} {name:<35}  ({reason})")
     print()
 
 
@@ -132,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ── Status / check-dates (no build) ──────────────────────────────────
     if args.status or args.check_dates:
-        _print_status_table(check_factor_dates(paths=paths))
+        print_status_table(check_factor_dates(paths=paths))
         return 0
 
     # ── List (no build) ──────────────────────────────────────────────────

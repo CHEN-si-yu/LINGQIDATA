@@ -1,0 +1,20 @@
+[2026-05-22 01:31:17] [incremental] 1 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-05-22 01:31:17] [incremental] Datasets: ['history_1min']
+[2026-05-22 01:31:17] 
+============================================================
+[2026-05-22 01:31:17] [history_1min] Starting incremental update
+[2026-05-22 01:31:17] [history_1min] Found unprocessed daily dump file: 2026-05-21
+[2026-05-22 01:31:17] [history_1min] Last date: 2026-05-20 | Fetching: 2026-05-17 ~ 2026-05-22
+[2026-05-22 01:31:17] [history_1min] Will process 5 trading days via daily_dump/1min
+[2026-05-22 01:31:18] [history_1min] [1/5] 2026-05-18: filtered 712,878 non-target stocks (612,381 rows remain)
+[2026-05-22 01:58:37] [history_1min] [1/5] 2026-05-18: 612,381 rows, +0 new | tokens=280.0
+[2026-05-22 01:58:37] [history_1min] [2/5] 2026-05-19: filtered 711,673 non-target stocks (612,381 rows remain)
+[2026-05-22 02:28:45] [history_1min] [2/5] 2026-05-19: 612,381 rows, +20244 new | tokens=280.0
+[2026-05-22 02:28:45] [history_1min] [3/5] 2026-05-20: filtered 712,637 non-target stocks (612,381 rows remain)
+[2026-05-22 02:58:55] [history_1min] [3/5] 2026-05-20: 612,381 rows, +20244 new | tokens=280.0
+[2026-05-22 02:58:55] [history_1min] [4/5] 2026-05-21: filtered 713,119 non-target stocks (612,622 rows remain)
+[2026-05-22 03:28:44] [history_1min] [4/5] 2026-05-21: 612,622 rows, +0 new | tokens=280.0
+[2026-05-22 03:28:44] [daily_dump] POST https://data.diemeng.chat/api/stock/daily_dump  date=2026-05-22  level=1min
+[2026-05-22 03:28:45] [history_1min] [5/5] 2026-05-22 FAILED: API Error: code=400, msg=当日数据尚未收盘，收盘后再生成并下载完整缓存
+[2026-05-22 03:28:45] [history_1min] Done: 40,488 new rows total (4 local reads, 0 API calls)
+[2026-05-22 03:28:47]   [consolidate] [history_1min] Reading 2542 stock files...

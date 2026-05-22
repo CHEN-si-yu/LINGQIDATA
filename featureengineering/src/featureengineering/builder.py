@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 from .dataset import DataRepository
 from .factor_loader import ensure_builtin_factors_loaded
+from .report import print_post_build_report
 
 from .registry import FACTOR_REGISTRY, FactorContext, FactorSpec, get_factor
 from .settings import ProjectPaths, configure_paths
@@ -944,24 +945,6 @@ def build_all(
             logger.info(f"  {r.factor_name:<35} {r.elapsed:>8.1f}s  ({r.action})")
 
     # Print factor date report after every build
-    date_info = check_factor_dates(paths=configured_paths)
-    if date_info:
-        counts = {"ok": 0, "stale": 0, "future": 0, "error": 0}
-        effective_end = next(iter(date_info.values()))["effective_end"]
-        print(f"\n{'='*64}")
-        print(f"Factor last-date report  (effective end: {effective_end})")
-        print(f"{'='*64}")
-        print(f"{'Factor':<35} {'Last date':>10}  Status")
-        print(f"{'-'*35} {'-'*10}  {'-'*6}")
-        for name, info in date_info.items():
-            last = info["last_date"] or "---"
-            status = info["status"]
-            marker = {"ok": "", "stale": "!", "future": ">>", "error": "ERR"}.get(status, "?")
-            print(f"{name:<35} {last:>10}  {marker:<4} {status}")
-            counts[status] = counts.get(status, 0) + 1
-        print(f"{'='*64}")
-        total = sum(counts.values())
-        print(f"Total: {total}  |  ok: {counts['ok']}  stale: {counts['stale']}  "
-              f"future: {counts['future']}  error: {counts['error']}")
+    print_post_build_report(check_factor_dates(paths=configured_paths))
 
     return results

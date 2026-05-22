@@ -2,9 +2,9 @@
   "version": 1,
   "build_id": "20260520_140330",
   "started_at": "2026-05-20T06:03:30.259122+00:00",
-  "updated_at": "2026-05-20T06:21:50.623190+00:00",
+  "updated_at": "2026-05-21T02:48:54.563986+00:00",
   "force": false,
-  "status": "running",
+  "status": "completed_with_errors",
   "phase1": {
     "status": "completed",
     "total": 148,
@@ -604,5 +604,6 @@
       "action": "skip",
       "time": "2026-05-20T06:06:43.189942+00:00"
     }
-  }
+  },
+  "finished_at": "2026-05-21T02:48:54.563598+00:00"
 }
