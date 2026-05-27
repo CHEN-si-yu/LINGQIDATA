@@ -186,3 +186,38 @@ def factor_dt_top_net_rate(context: FactorContext):
         top5 = top5.droplevel([0])
     top5.name = "dt_top_net_rate"
     return cross_sectional_rank(top5)
+
+
+# ── Limit-up turnover tightness ────────────────────────────────────────
+
+
+@register_factor(
+    name="limit_up_turnover_tightness",
+    description="封板换手紧密度因子，涨停封板金额/流通市值的截面排名。",
+    category="event",
+    thesis="封板换手率衡量涨停板上的实际筹码交换深度——低封板换手率意味着卖方惜售、封板坚决（正向，强势持续），高封板换手率意味着大量筹码在涨停价获利了结（负向，封板松动预警）。该指标与consecutive_days互补：一个看封板质量，一个看封板数量。",
+    dependencies=("limit_up.parquet",),
+)
+def factor_limit_up_turnover_tightness(context: FactorContext):
+    limit_up = context.load("limit_up.parquet")
+    return cross_sectional_rank(-limit_up["sealed_turnover_ratio"])
+
+
+# ── Top list concentration ─────────────────────────────────────────────
+
+
+@register_factor(
+    name="top_list_concentration",
+    description="龙虎榜成交集中度因子，(龙虎榜成交额/流通市值)截面排名。",
+    category="event",
+    thesis="龙虎榜成交额占流通市值的比例衡量上榜期间的筹码集中转移深度——高占比意味着定价权从连续竞价转移到龙虎榜大资金手中。与top_list_turnover_intensity互补：一个看龙虎榜成交占总成交比（换手率维度），一个看龙虎榜成交占流通市值比（筹码转移维度）。",
+    dependencies=("top_list.parquet", "finance.parquet"),
+)
+def factor_top_list_concentration(context: FactorContext):
+    top_list = context.load("top_list.parquet")
+    finance = context.load("finance.parquet")
+    l_amount = top_list["l_amount"]
+    circ_mv = finance["circ_mv"]
+    common = l_amount.index.intersection(circ_mv.index)
+    concentration = l_amount.loc[common] / circ_mv.loc[common].replace(0, np.nan)
+    return cross_sectional_rank(concentration)

@@ -1,609 +1,833 @@
 {
   "version": 1,
-  "build_id": "20260520_140330",
-  "started_at": "2026-05-20T06:03:30.259122+00:00",
-  "updated_at": "2026-05-21T02:48:54.563986+00:00",
+  "build_id": "20260527_085529",
+  "started_at": "2026-05-27T00:55:29.052043+00:00",
+  "updated_at": "2026-05-27T01:11:20.398371+00:00",
   "force": false,
-  "status": "completed_with_errors",
+  "status": "completed",
   "phase1": {
     "status": "completed",
-    "total": 148,
-    "done": 148,
-    "errors": [
-      "dragon_tiger_amount_rate",
-      "dragon_tiger_buy_sell_ratio",
-      "dragon_tiger_net_rate",
-      "margin_balance_change",
-      "margin_buy_intensity_5d",
-      "margin_buy_strength",
-      "margin_leverage_ratio",
-      "margin_short_pressure",
-      "top_list_turnover_intensity"
-    ]
-  },
-  "phase2": {
-    "status": "running",
-    "total": 22,
-    "done": 0,
+    "total": 204,
+    "done": 201,
     "errors": []
   },
   "completed": {
+    "acceleration_value_composite": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.215487+00:00"
+    },
+    "accruals_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.230838+00:00"
+    },
+    "amihud_illiq_20": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.239952+00:00"
+    },
     "amount_ratio_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.555886+00:00"
+      "time": "2026-05-27T01:09:26.248558+00:00"
     },
     "amplitude_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.584845+00:00"
+      "time": "2026-05-27T01:09:26.257215+00:00"
     },
     "ar_turn": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.595500+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.266161+00:00"
     },
     "assets_impair_risk": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.605197+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.275810+00:00"
+    },
+    "assets_to_eqt": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.283359+00:00"
     },
     "assets_turn": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.615211+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.291848+00:00"
     },
     "assets_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.623294+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.302839+00:00"
     },
     "atr_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.633706+00:00"
+      "time": "2026-05-27T01:09:26.313795+00:00"
+    },
+    "avg_holding_mv": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.322808+00:00"
     },
     "bias_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.642277+00:00"
+      "time": "2026-05-27T01:09:26.331422+00:00"
     },
     "big_order_divergence": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.650699+00:00"
+      "time": "2026-05-27T01:09:26.340686+00:00"
     },
     "bp": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.658728+00:00"
+      "time": "2026-05-27T01:09:26.350348+00:00"
     },
     "bp_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.674846+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.359309+00:00"
+    },
+    "bp_x_roe": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.366789+00:00"
+    },
+    "bps_rank": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.375237+00:00"
     },
     "breakout_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.684762+00:00"
+      "time": "2026-05-27T01:09:26.383714+00:00"
     },
     "cash_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.692981+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.392496+00:00"
     },
     "cash_to_assets": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.400649+00:00"
+    },
+    "chip_concentration": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.702837+00:00"
+      "time": "2026-05-27T01:09:26.413529+00:00"
+    },
+    "chip_cost_skew": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.424527+00:00"
+    },
+    "chip_position": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.432616+00:00"
+    },
+    "close_position_intraday_20": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.441693+00:00"
+    },
+    "contract_assets_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.450978+00:00"
     },
     "contract_liab_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.459044+00:00"
+    },
+    "cost_displacement": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.711232+00:00"
+      "time": "2026-05-27T01:09:26.467393+00:00"
+    },
+    "cost_skew_momentum_5d": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.476083+00:00"
     },
     "credit_impair_risk": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.720068+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.484200+00:00"
     },
     "current_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.729334+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.492215+00:00"
     },
     "debt_to_assets": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.742860+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.500831+00:00"
+    },
+    "deferred_tax_liab_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.509734+00:00"
     },
     "depr_amort_to_revenue": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.763685+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.518214+00:00"
     },
     "downside_vol_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.786896+00:00"
+      "time": "2026-05-27T01:09:26.526923+00:00"
     },
     "dp_ttm": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.796504+00:00"
+      "time": "2026-05-27T01:09:26.534738+00:00"
     },
     "dragon_tiger_amount_rate": {
-      "action": "error",
-      "time": "2026-05-20T06:06:41.809558+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.542387+00:00"
     },
     "dragon_tiger_buy_sell_ratio": {
-      "action": "error",
-      "time": "2026-05-20T06:06:41.836877+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.549977+00:00"
     },
     "dragon_tiger_net_rate": {
-      "action": "error",
-      "time": "2026-05-20T06:06:41.847334+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.557427+00:00"
     },
     "dt_org_count": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.857083+00:00"
+      "time": "2026-05-27T01:09:26.564899+00:00"
     },
     "dt_top_net_rate": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.866683+00:00"
+      "time": "2026-05-27T01:09:26.572568+00:00"
     },
     "dv_composite": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.875870+00:00"
+      "time": "2026-05-27T01:09:26.580371+00:00"
+    },
+    "ebit_ps_rank": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.588021+00:00"
     },
     "ebit_to_interest": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.882400+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.595691+00:00"
+    },
+    "ebitda_to_ev": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.603273+00:00"
+    },
+    "ebt_yoy": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.611042+00:00"
+    },
+    "effective_tax_by_ebt": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.619227+00:00"
+    },
+    "eps_rank": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.627310+00:00"
     },
     "equity_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.890444+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.635111+00:00"
     },
     "expense_control": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.898766+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.643027+00:00"
     },
     "fcf_yield": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.907350+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.652992+00:00"
     },
     "fcf_yield_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.924207+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.661538+00:00"
     },
     "financing_dependency": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.932447+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.669697+00:00"
     },
     "fix_asset_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.940065+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.677585+00:00"
     },
     "float_mv_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.948316+00:00"
+      "time": "2026-05-27T01:09:26.685844+00:00"
+    },
+    "gap_fill_5d_reversal": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.693356+00:00"
     },
     "gap_ratio_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:41.959092+00:00"
+      "time": "2026-05-27T01:09:26.702290+00:00"
+    },
+    "garp_composite": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.710483+00:00"
     },
     "goodwill_risk": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.970189+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.718316+00:00"
     },
     "gross_margin": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:41.978642+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.726292+00:00"
     },
     "gross_margin_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.002727+00:00"
-    },
-    "gross_margin_stability_8q": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.010079+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.736705+00:00"
     },
     "holder_num_change": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.017964+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.745219+00:00"
+    },
+    "holder_num_change_yoy": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.752975+00:00"
+    },
+    "holder_num_percentile": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.760297+00:00"
+    },
+    "index_inclusion_recency": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.770231+00:00"
+    },
+    "index_membership_count": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.777743+00:00"
+    },
+    "index_weight_change": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.784819+00:00"
+    },
+    "index_weight_diversification": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.793436+00:00"
+    },
+    "index_weight_hs300": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.801595+00:00"
     },
     "intan_assets_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.809058+00:00"
+    },
+    "interest_coverage_change_4q": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.817749+00:00"
+    },
+    "intraday_ret": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.027408+00:00"
+      "time": "2026-05-27T01:09:26.826311+00:00"
     },
     "inv_turn": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.034699+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.836711+00:00"
     },
     "inventory_pressure": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.043195+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.845624+00:00"
     },
     "invest_income_reliance": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.050173+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.853926+00:00"
     },
     "investment_intensity": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.057395+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.862481+00:00"
     },
     "label_ret_10d": {
       "action": "rebuild",
-      "time": "2026-05-20T06:06:42.066389+00:00"
+      "time": "2026-05-27T01:09:26.871001+00:00"
     },
     "label_ret_1d": {
       "action": "rebuild",
-      "time": "2026-05-20T06:06:42.074286+00:00"
+      "time": "2026-05-27T01:09:26.878981+00:00"
     },
     "label_ret_20d": {
       "action": "rebuild",
-      "time": "2026-05-20T06:06:42.082098+00:00"
+      "time": "2026-05-27T01:09:26.887863+00:00"
     },
     "label_ret_5d": {
       "action": "rebuild",
-      "time": "2026-05-20T06:06:42.089177+00:00"
+      "time": "2026-05-27T01:09:26.895678+00:00"
+    },
+    "lease_leverage": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.904877+00:00"
     },
     "limit_down_open_times": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.095520+00:00"
+      "time": "2026-05-27T01:09:26.912846+00:00"
     },
     "limit_down_pct_chg": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.102834+00:00"
+      "time": "2026-05-27T01:09:26.920703+00:00"
     },
     "limit_up_consecutive": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.110046+00:00"
+      "time": "2026-05-27T01:09:26.933982+00:00"
     },
     "limit_up_consecutive_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.116868+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:26.942086+00:00"
     },
     "limit_up_open_count_neg": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.123353+00:00"
+      "time": "2026-05-27T01:09:26.950850+00:00"
     },
     "limit_up_sealed_amount": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.133634+00:00"
+      "time": "2026-05-27T01:09:26.959748+00:00"
     },
     "limit_up_sealed_flow_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.141952+00:00"
+      "time": "2026-05-27T01:09:26.967817+00:00"
+    },
+    "limit_up_turnover_tightness": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:26.976574+00:00"
     },
     "log_circ_mv": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.150456+00:00"
+      "time": "2026-05-27T01:09:26.987506+00:00"
     },
     "log_total_mv": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.168742+00:00"
+      "time": "2026-05-27T01:09:26.995300+00:00"
+    },
+    "long_term_debt_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.002649+00:00"
     },
     "ma_convergence_20_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.177805+00:00"
+      "time": "2026-05-27T01:09:27.010707+00:00"
     },
     "margin_balance_change": {
-      "action": "error",
-      "time": "2026-05-20T06:06:42.185761+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.018248+00:00"
     },
     "margin_buy_intensity_5d": {
-      "action": "error",
-      "time": "2026-05-20T06:06:42.193531+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.025738+00:00"
     },
     "margin_buy_strength": {
-      "action": "error",
-      "time": "2026-05-20T06:06:42.201095+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.033728+00:00"
     },
     "margin_leverage_ratio": {
-      "action": "error",
-      "time": "2026-05-20T06:06:42.209001+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.041275+00:00"
+    },
+    "margin_net_open": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.048662+00:00"
+    },
+    "margin_of_safety": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.056477+00:00"
     },
     "margin_short_pressure": {
-      "action": "error",
-      "time": "2026-05-20T06:06:42.218824+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.064287+00:00"
     },
     "max_drawdown_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.233010+00:00"
+      "time": "2026-05-27T01:09:27.072528+00:00"
     },
     "mf_big_order_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.253607+00:00"
+      "time": "2026-05-27T01:09:27.080171+00:00"
     },
     "mf_big_small_divergence": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.262965+00:00"
+      "time": "2026-05-27T01:09:27.088006+00:00"
     },
     "mf_net_inflow_5d": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.271337+00:00"
+      "time": "2026-05-27T01:09:27.095854+00:00"
     },
     "mf_net_inflow_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.281069+00:00"
+      "time": "2026-05-27T01:09:27.103394+00:00"
     },
     "mf_net_inflow_trend_5d": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.290617+00:00"
+      "time": "2026-05-27T01:09:27.111424+00:00"
     },
     "mf_small_order_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.298765+00:00"
+      "time": "2026-05-27T01:09:27.119440+00:00"
+    },
+    "minority_interest_ratio": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.127677+00:00"
     },
     "mom_10": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.307416+00:00"
+      "time": "2026-05-27T01:09:27.137428+00:00"
     },
     "mom_120_skip5": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.316384+00:00"
+      "time": "2026-05-27T01:09:27.145640+00:00"
     },
     "mom_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.344646+00:00"
+      "time": "2026-05-27T01:09:27.153231+00:00"
     },
     "mom_20_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.353624+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.161447+00:00"
     },
     "mom_20_vol_adj": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.364657+00:00"
+      "time": "2026-05-27T01:09:27.168982+00:00"
     },
     "mom_5": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.415027+00:00"
+      "time": "2026-05-27T01:09:27.176427+00:00"
     },
     "mom_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.424044+00:00"
+      "time": "2026-05-27T01:09:27.184215+00:00"
     },
     "mom_60_vol_adj": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.432329+00:00"
+      "time": "2026-05-27T01:09:27.192570+00:00"
+    },
+    "mom_x_winner": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.200501+00:00"
+    },
+    "momentum_quality_trend": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.208508+00:00"
     },
     "ncf_act_to_revenue": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.217472+00:00"
+    },
+    "net_mf_vol_intensity": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.448029+00:00"
+      "time": "2026-05-27T01:09:27.225838+00:00"
     },
     "netprofit_margin": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.455987+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.238661+00:00"
     },
     "netprofit_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.476677+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.246529+00:00"
     },
     "non_oper_profit_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.484515+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.254388+00:00"
+    },
+    "npta": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.262831+00:00"
+    },
+    "ocf_coverage": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.270107+00:00"
     },
     "ocf_to_profit": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.491907+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.278025+00:00"
+    },
+    "ocfps_rank": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.285073+00:00"
+    },
+    "op_yoy": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.292264+00:00"
+    },
+    "operating_leverage": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.299376+00:00"
     },
     "operating_profit_purity": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.501144+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.307445+00:00"
     },
     "or_yoy": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.315300+00:00"
+    },
+    "overnight_gap": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.509511+00:00"
+      "time": "2026-05-27T01:09:27.322981+00:00"
+    },
+    "overnight_intraday_divergence": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.330615+00:00"
     },
     "pct_chg_vol_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.525399+00:00"
+      "time": "2026-05-27T01:09:27.338766+00:00"
     },
     "pe_ttm": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.532647+00:00"
+      "time": "2026-05-27T01:09:27.347122+00:00"
     },
     "pe_ttm_percentile": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.558654+00:00"
+      "time": "2026-05-27T01:09:27.355627+00:00"
     },
     "pledge_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.565837+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.365681+00:00"
+    },
+    "pledge_ratio_change": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.374083+00:00"
+    },
+    "pledge_risk": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.382226+00:00"
     },
     "price_position_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.587266+00:00"
+      "time": "2026-05-27T01:09:27.390954+00:00"
     },
     "price_volume_corr_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.596113+00:00"
+      "time": "2026-05-27T01:09:27.399780+00:00"
     },
     "price_volume_corr_20_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.603396+00:00"
-    },
-    "q_eps": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.611385+00:00"
-    },
-    "q_gsprofit_margin": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.618991+00:00"
-    },
-    "q_netprofit_margin": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.627474+00:00"
-    },
-    "q_netprofit_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.658079+00:00"
-    },
-    "q_ocf_to_sales": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.667777+00:00"
-    },
-    "q_profit_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.688287+00:00"
-    },
-    "q_roe": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.712486+00:00"
-    },
-    "q_sales_yoy": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.721049+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.409003+00:00"
     },
     "quality_composite": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.745497+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.416946+00:00"
+    },
+    "quality_volatility_composite": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.426089+00:00"
     },
     "quick_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.769993+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.434495+00:00"
     },
     "rd_intensity": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.442686+00:00"
+    },
+    "realized_skewness_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.778713+00:00"
+      "time": "2026-05-27T01:09:27.451208+00:00"
     },
     "receivable_pressure": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.787280+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.460422+00:00"
     },
     "ret_kurt_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.796916+00:00"
+      "time": "2026-05-27T01:09:27.469782+00:00"
     },
     "ret_skew_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.806432+00:00"
+      "time": "2026-05-27T01:09:27.479526+00:00"
+    },
+    "return_accel_nonoverlap_20_60": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.488816+00:00"
     },
     "return_stability_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.815247+00:00"
+      "time": "2026-05-27T01:09:27.497658+00:00"
     },
     "reversal_1": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.829546+00:00"
+      "time": "2026-05-27T01:09:27.506633+00:00"
     },
     "reversal_10": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.837696+00:00"
+      "time": "2026-05-27T01:09:27.515030+00:00"
     },
     "reversal_5": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.847035+00:00"
+      "time": "2026-05-27T01:09:27.523789+00:00"
     },
     "reversal_5_vol_adj": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.854874+00:00"
+      "time": "2026-05-27T01:09:27.531556+00:00"
     },
     "roa": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.863333+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.539372+00:00"
     },
     "roa_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.883954+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.547779+00:00"
     },
     "roe": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.892596+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.555461+00:00"
     },
     "roe_dt": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.900755+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.563341+00:00"
+    },
+    "roe_momentum_4q": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.571942+00:00"
     },
     "roe_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.910232+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.581085+00:00"
     },
     "roe_waa": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.918918+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.589387+00:00"
     },
     "roic": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.945821+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.598813+00:00"
     },
     "rsi_14": {
       "action": "skip",
-      "time": "2026-05-20T06:06:42.958191+00:00"
+      "time": "2026-05-27T01:09:27.607774+00:00"
     },
     "salescash_to_or": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.974013+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.617365+00:00"
     },
     "sector_amount_rank": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.983110+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.625894+00:00"
     },
     "sector_diversification": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:42.993827+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.634563+00:00"
     },
     "sector_mv_rank": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.643357+00:00"
+    },
+    "serial_corr_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.001521+00:00"
+      "time": "2026-05-27T01:09:27.652408+00:00"
     },
     "shadow_lower_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.023353+00:00"
+      "time": "2026-05-27T01:09:27.660971+00:00"
     },
     "shadow_upper_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.032581+00:00"
+      "time": "2026-05-27T01:09:27.669058+00:00"
+    },
+    "short_sell_intensity": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.677016+00:00"
     },
     "short_term_debt_ratio": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:43.041497+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.684953+00:00"
     },
     "sp_ttm": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.052351+00:00"
+      "time": "2026-05-27T01:09:27.696023+00:00"
     },
     "sp_ttm_neutral": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.706106+00:00"
+    },
+    "tail_risk_dd_5d": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.061564+00:00"
+      "time": "2026-05-27T01:09:27.716610+00:00"
+    },
+    "tax_rate_change_4q": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.724695+00:00"
+    },
+    "tax_to_ebt": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.732320+00:00"
+    },
+    "top_list_concentration": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.741463+00:00"
     },
     "top_list_turnover_intensity": {
-      "action": "error",
-      "time": "2026-05-20T06:06:43.070288+00:00"
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.750208+00:00"
+    },
+    "tr_yoy": {
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.758695+00:00"
     },
     "ts_mom_accel_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.079836+00:00"
+      "time": "2026-05-27T01:09:27.767265+00:00"
     },
     "ts_price_self_rank_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.088184+00:00"
+      "time": "2026-05-27T01:09:27.775427+00:00"
     },
     "ts_vol_regime_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.097699+00:00"
+      "time": "2026-05-27T01:09:27.783682+00:00"
     },
     "ts_volume_zscore_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.105832+00:00"
+      "time": "2026-05-27T01:09:27.793211+00:00"
     },
     "turnover_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.114747+00:00"
+      "time": "2026-05-27T01:09:27.803588+00:00"
     },
     "turnover_20_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:43.123846+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.813150+00:00"
     },
     "turnover_f_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.132014+00:00"
+      "time": "2026-05-27T01:09:27.821868+00:00"
     },
     "turnover_vol_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.139773+00:00"
+      "time": "2026-05-27T01:09:27.831774+00:00"
     },
     "volatility_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.147736+00:00"
+      "time": "2026-05-27T01:09:27.842278+00:00"
     },
     "volatility_20_neutral": {
-      "action": "skip",
-      "time": "2026-05-20T06:06:43.157231+00:00"
+      "action": "incremental",
+      "time": "2026-05-27T01:09:27.851034+00:00"
     },
     "volatility_60": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.167315+00:00"
+      "time": "2026-05-27T01:09:27.860376+00:00"
+    },
+    "volatility_term_structure": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.869517+00:00"
+    },
+    "volume_adjusted_momentum_20": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.879019+00:00"
     },
     "volume_ratio": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.179718+00:00"
+      "time": "2026-05-27T01:09:27.889252+00:00"
     },
     "volume_ratio_20": {
       "action": "skip",
-      "time": "2026-05-20T06:06:43.189942+00:00"
+      "time": "2026-05-27T01:09:27.897117+00:00"
+    },
+    "volume_surge_3d": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.904486+00:00"
+    },
+    "winner_rate": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.915487+00:00"
+    },
+    "winner_rate_change_5d": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.925620+00:00"
+    },
+    "winner_rate_reversal_divergence": {
+      "action": "skip",
+      "time": "2026-05-27T01:09:27.933546+00:00"
+    },
+    "chip_below_momentum": {
+      "action": "skip",
+      "time": "2026-05-27T01:10:05.174112+00:00"
+    },
+    "chip_peak_distance": {
+      "action": "skip",
+      "time": "2026-05-27T01:10:42.867260+00:00"
+    },
+    "chip_peak_ratio": {
+      "action": "skip",
+      "time": "2026-05-27T01:11:20.377124+00:00"
     }
   },
-  "finished_at": "2026-05-21T02:48:54.563598+00:00"
+  "finished_at": "2026-05-27T01:11:20.397989+00:00"
 }

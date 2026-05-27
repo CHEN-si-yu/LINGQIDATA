@@ -201,3 +201,53 @@ def factor_big_order_divergence(context: FactorContext):
     common = rank_big.index.intersection(rank_pct.index)
     divergence = rank_big.loc[common] - rank_pct.loc[common]
     return cross_sectional_rank(divergence)
+
+
+# ── Margin net open interest ─────────────────────────────────────────────
+
+@register_factor(
+    name="margin_net_open",
+    description="融资净开仓强度因子，(融资买入额-融资偿还额)/融资余额截面排名。",
+    category="fund_flow",
+    thesis="融资净开仓是杠杆资金日内净流向的度量——净买入>净偿还=资金净流入。该比率标准化后可跨股票比较杠杆资金的边际参与意愿。",
+    dependencies=("margin_detail.parquet",),
+)
+def factor_margin_net_open(context: FactorContext):
+    margin = context.load("margin_detail.parquet")
+    net_open = (margin["rzmre"] - margin["rzche"]) / margin["rzye"].replace(0, np.nan)
+    return cross_sectional_rank(net_open)
+
+
+# ── Short selling intensity ──────────────────────────────────────────────
+
+@register_factor(
+    name="short_sell_intensity",
+    description="融券卖出强度因子，(融券卖出量-融券偿还量)/融券余量截面排名（高=做空增加，排后）。",
+    category="fund_flow",
+    thesis="融券净卖出代表空头力量的边际变化——净卖出增加意味着更多投资者在借券做空，是负面信号。与margin_short_pressure互补：一个看空头余额占比（存量），一个看空头行为变化（流量）。",
+    dependencies=("margin_detail.parquet", "daily_adj.parquet"),
+)
+def factor_short_sell_intensity(context: FactorContext):
+    margin = context.load("margin_detail.parquet")
+    daily_adj = context.load("daily_adj.parquet")
+    rqmcl = margin["rqmcl"]
+    vol = daily_adj["vol"]
+    common = rqmcl.index.intersection(vol.index)
+    intensity = rqmcl.loc[common] / vol.loc[common].replace(0, np.nan)
+    return cross_sectional_rank(-intensity)
+
+
+# ── Volume-based fund flow ─────────────────────────────────────────────
+
+
+@register_factor(
+    name="net_mf_vol_intensity",
+    description="成交量基础主力净流入因子，(主力净流入量/总成交量)截面排名。",
+    category="fund_flow",
+    thesis="所有现有主力资金流因子均基于成交金额，但金额受股价高低影响大——高价股在金额排名中天然占优。成交量基础的主力净流入率从'股数'维度衡量主力行为，消除价格偏差后更公平地跨股票比较主力参与度。与mf_net_inflow_ratio互补：一个看金额权重，一个看量权重。",
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_net_mf_vol_intensity(context: FactorContext):
+    ff = context.load("main_fund_flow.parquet")
+    ratio = ff["net_mf_vol"] / _total_amount(ff)
+    return cross_sectional_rank(ratio)

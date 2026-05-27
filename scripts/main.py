@@ -23,8 +23,7 @@ from fetch_top_list import fetch_top_list
 from fetch_cyq_chips import fetch_cyq_chips
 from fetch_cyq_perf import fetch_cyq_perf
 from fetch_minute import fetch_history
-from fetch_kline import fetch_kline_weekly, fetch_kline_monthly
-from fetch_kline import fetch_kline_adj_weekly, fetch_kline_adj_monthly
+
 from fetch_holder_number import fetch_holder_number
 from fetch_pledge_stat import fetch_pledge_stat
 from fetch_margin_detail import fetch_margin_detail

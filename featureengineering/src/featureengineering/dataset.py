@@ -328,6 +328,7 @@ class DataRepository:
         pool = pool[["code", "industry", "area"]].reset_index(drop=True)
         pool = pool.rename(columns={"code": "Code"})
         allowed = self.allowed_codes
+        pool = pool.drop_duplicates(subset=["Code"])
         if allowed:
             pool = pool[pool["Code"].isin(allowed)]
         result = pool.sort_values("Code").reset_index(drop=True)

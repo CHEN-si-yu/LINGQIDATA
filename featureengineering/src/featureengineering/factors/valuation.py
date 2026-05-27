@@ -197,3 +197,31 @@ def factor_pe_ttm(context: FactorContext):
     finance = context.load("finance.parquet")
     pe = finance["pe_ttm"].where(finance["pe_ttm"] > 0, np.nan)
     return cross_sectional_rank(-pe)
+
+
+# ── Enterprise value based ───────────────────────────────────────────────
+
+@register_factor(
+    name="ebitda_to_ev",
+    description="企业价值倍数因子，EBITDA/(总市值+总负债-现金)截面排名。",
+    category="valuation",
+    thesis="EBITDA/EV剔除了资本结构和折旧政策的影响，比PE更适合跨行业比较。高EBITDA/EV意味着企业相对其经营盈利能力被低估，是Greenblatt神奇公式的核心维度之一。",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_ebitda_to_ev(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebitda"]
+    )
+    bs = context.load_financial(
+        "balancesheet.parquet", value_cols=["total_liab", "money_cap"]
+    )
+    finance = context.load("finance.parquet")
+    ebitda = fin["ebitda"]
+    total_mv = finance["total_mv"]
+    total_liab = bs["total_liab"]
+    cash = bs["money_cap"]
+    common = ebitda.index.intersection(total_mv.index).intersection(
+        total_liab.index).intersection(cash.index)
+    ev = total_mv.loc[common] + total_liab.loc[common] - cash.loc[common]
+    ratio = ebitda.loc[common] / ev.replace(0, np.nan)
+    return cross_sectional_rank(ratio)

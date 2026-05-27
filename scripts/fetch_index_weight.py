@@ -137,7 +137,7 @@ def _resolve_index_codes(codes_arg):
 
 def fetch_index_weight(start_date="2019-01-01", end_date=None, output=None,
                        index_codes=None, resume=True, workers=4, cleanup=True,
-                       full_history=False):
+                       full_history=True):
     """Fetch index constituent weights (monthly) for the given index codes.
 
     Parameters

@@ -163,17 +163,8 @@ def _read_single_file_max_date(filepath: Path) -> str | None:
 
 
 def _read_factor_max_date(factor_base_path: Path) -> str | None:
-    """Read the maximum Date across base and incremental factor files."""
-    from .storage import INCR_SUFFIX
-
-    best = _read_single_file_max_date(factor_base_path)
-
-    incr_path = factor_base_path.parent / f"{factor_base_path.stem}{INCR_SUFFIX}.fea"
-    incr_max = _read_single_file_max_date(incr_path)
-    if incr_max is not None and (best is None or incr_max > best):
-        best = incr_max
-
-    return best
+    """Read the maximum Date from the factor file."""
+    return _read_single_file_max_date(factor_base_path)
 
 
 def _check_source_dates(dependencies: tuple[str, ...], source_root: Path) -> dict[str, str | None]:
@@ -219,11 +210,8 @@ def decide_build_action(
         if limiting_source_date is None or max_d < limiting_source_date:
             limiting_source_date = max_d
 
-    if limiting_source_date is None:
-        return "skip", "one or more source dependencies have no detectable max date"
-
     # Never treat source data as available beyond the effective end date
-    if limiting_source_date > effective_end:
+    if limiting_source_date is not None and limiting_source_date > effective_end:
         limiting_source_date = effective_end
 
     factor_max = _read_factor_max_date(factor_path)
@@ -235,8 +223,14 @@ def decide_build_action(
     if factor_max > effective_end:
         return "rebuild", f"factor has future date {factor_max} > effective end {effective_end}"
 
-    if factor_max >= limiting_source_date:
-        return "skip", f"factor max {factor_max} >= limiting source date {limiting_source_date}"
+    # Skip only when the factor has reached the effective end date.
+    # Previously compared against limiting_source_date (oldest dependency
+    # date), which caused factors with slow-updating sources (financial
+    # statements, index_weight, etc.) to never catch up to new trading
+    # days.  Using effective_end ensures incremental mode produces the
+    # same date coverage as a FORCE rebuild.
+    if factor_max >= effective_end:
+        return "skip", f"factor max {factor_max} >= effective end {effective_end}"
 
     # Factor is behind — need incremental rebuild
     return "incremental", factor_max
@@ -651,6 +645,7 @@ def _build_factor_worker(
         _write_done_marker(name, action, paths.manifest_output_dir)
 
     except Exception as e:
+        logger.exception("%s: failed", name)
         error_msg = str(e)
         fp = paths.factor_output_dir / f"{spec.name}.fea"
         mp = paths.manifest_output_dir / f"{spec.name}.json"
@@ -837,6 +832,7 @@ def build_many_parallel(
                         try:
                             worker_result = fut.result()
                         except Exception as e:
+                            logger.exception("%s: worker failed", name)
                             worker_result = {
                                 "factor_name": name,
                                 "factor_path": "",
@@ -850,6 +846,8 @@ def build_many_parallel(
                             }
 
                         wr = worker_result
+                        if wr.get("error"):
+                            logger.error("%s: %s", wr["factor_name"], wr["error"])
                         elapsed = wr.get("elapsed", 0.0)
 
                         results.append(BuildResult(

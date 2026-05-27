@@ -74,14 +74,14 @@ def parse_args():
 args = parse_args()
 
 # ============================================================
-# V2 paths (Linux)
+# V3 paths (Linux)
 # ============================================================
 root_path = r'/root/shared-nvme/lingqiData/Model/V3'
-fac_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
-fac_name = r'fac20260517'
-label_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
+fac_path = r'/root/shared-nvme/lingqiData/trainingdata/V3/'
+fac_name = r'fac20260523'
+label_path = r'/root/shared-nvme/lingqiData/trainingdata/V3/'
 label_name = r'label'
-liquid_path = r'/root/shared-nvme/lingqiData/trainingdata/V2/'
+liquid_path = r'/root/shared-nvme/lingqiData/trainingdata/V3/'
 liquid_name = r'trade_amt'
 
 
