@@ -48,6 +48,30 @@ class FactorContext:
             lookback_days=self._lookback_days,
         )
 
+    def load_factor(self, name: str) -> pd.Series:
+        """Load a pre-computed factor from its .fea file as a (Date, Code) Series.
+
+        Class 4 (factor-coupling) factors use this to read existing factor values
+        and build derived signals from their interactions.
+        """
+        return self.repo.load_factor_panel(
+            name,
+            min_date=self.start_date,
+            max_date=self.end_date,
+            lookback_days=self._lookback_days,
+        )
+
+    def load_factors(self, names: list[str]) -> pd.DataFrame:
+        """Load multiple factors and return as a DataFrame with one column per factor.
+
+        All factors are aligned on (Date, Code) index.
+        """
+        series_list = {}
+        for name in names:
+            s = self.load_factor(name)
+            series_list[name] = s
+        return pd.DataFrame(series_list)
+
 
 FACTOR_REGISTRY: dict[str, FactorSpec] = {}
 

@@ -2,6 +2,11 @@
 """
 incremental_update.py — Daily incremental data updater for lingqiData.
 
+Before running any updates, probes the cyq_chips and cyq_perf canary
+endpoints to verify the server has published today's data.  If either
+is missing, the script waits (polling every 5 min, up to 2 hours) so
+that a partial update doesn't have to be re-run.
+
 Reads existing parquet files, determines the last available date for each
 dataset, fetches only new data from the diemeng.chat API, and merges it into
 the existing files.  Designed to be run daily via cron / Task Scheduler.
@@ -15,6 +20,9 @@ Usage:
     python incremental_update.py --overlap 5         # 5-day overlap window
     python incremental_update.py --no-per-stock      # skip per-stock datasets
     python incremental_update.py --monitor           # log rate-limit stats every 10s
+    python incremental_update.py --no-wait           # skip canary check, run now
+    python incremental_update.py --wait-interval 600 # poll every 10 min
+    python incremental_update.py --max-wait 14400    # wait up to 4 hours
 
 Strategy per dataset type:
     - daily-frequency (OHLCV, fund flow, etc.): read max trade_date,
@@ -52,6 +60,19 @@ OVERLAP_DAYS = 3  # days of overlap to catch data corrections
 DEFAULT_WORKERS = 6
 TODAY = date.today().strftime("%Y-%m-%d")
 
+# ── Pre-flight canary check ───────────────────────────────────────────────
+# Before running any updates, we probe these two endpoints with a sample
+# stock to verify the server has published today's data.  If either is
+# missing today's date, the full update would produce incomplete results
+# and need to be re-run — so we wait instead.
+CANARY_ENDPOINTS = [
+    "stock/cyq_chips",
+    "stock/cyq_perf",
+]
+CANARY_STOCK = "600000.SH"          # sample stock for the probe request
+DEFAULT_WAIT_INTERVAL = 300         # 5 minutes between probes
+DEFAULT_MAX_WAIT = 7200             # 2 hours before giving up
+
 # ── Concurrency gate ─────────────────────────────────────────────────────
 # The global RateLimiter controls long-term throughput (280 req/min), but
 # its token bucket starts empty and refills in bursts — when many threads
@@ -84,7 +105,140 @@ def _effective_today():
     return now.strftime("%Y-%m-%d")
 
 
-EFFECTIVE_TODAY = _effective_today()
+def _last_trading_day():
+    """Return the last trading day ≤ today from the calendar.
+
+    Falls back to _effective_today() if calendar.parquet doesn't exist.
+    This ensures that on weekends/holidays the expected latest date is
+    the most recent actual trading day, not today's calendar date.
+    """
+    cal_path = Path(DATA_DIR) / "calendar.parquet"
+    if cal_path.exists():
+        try:
+            cal = pd.read_parquet(cal_path)
+            trading_days = cal[cal["is_open"] == 1]["date"]
+            today_str = date.today().strftime("%Y-%m-%d")
+            last = trading_days[trading_days <= today_str].max()
+            if pd.notna(last):
+                return str(last)[:10]
+        except Exception:
+            pass
+    return _effective_today()
+
+
+EFFECTIVE_TODAY = _last_trading_day()
+
+
+# ── Pre-flight canary probe ──────────────────────────────────────────────
+def _probe_canary_endpoint(endpoint, target_date, api_key):
+    """Check whether *endpoint* has rows for *target_date*.
+
+    Queries with a window of [target_date - 1, target_date + 1] so that
+    open/closed interval differences on the server side don't cause
+    false negatives.
+
+    Returns (has_data, row_count).
+    """
+    yesterday = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (datetime.strptime(target_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    url = f"{BASE_URL}/{endpoint}"
+    headers = {"apiKey": api_key, "Content-Type": "application/json"}
+    payload = {
+        "start_time": yesterday,
+        "end_time": tomorrow,
+        "stock_code": CANARY_STOCK,
+        "page": 0,
+        "page_size": 10000,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("code") != 200:
+            raise RuntimeError(f"API Error: code={result.get('code')}, msg={result.get('msg')}")
+        rows = result.get("data", {}).get("list", [])
+        for row in rows:
+            for key in ("trade_date", "date", "trade_time", "end_date"):
+                val = row.get(key)
+                if val is not None:
+                    if str(val)[:10] == target_date:
+                        return True, len(rows)
+        return False, len(rows)
+    except Exception as e:
+        log_print(f"  [preflight] Canary probe {endpoint} FAILED: {e}")
+        return False, 0
+
+
+def _all_canaries_ready(target_date=None):
+    """Return (all_ready, details_dict) after probing every canary endpoint."""
+    if target_date is None:
+        target_date = EFFECTIVE_TODAY
+
+    api_key = load_api_key()
+    details = {}
+    all_ready = True
+
+    for ep in CANARY_ENDPOINTS:
+        has_data, count = _probe_canary_endpoint(ep, target_date, api_key)
+        details[ep] = {"ready": has_data, "rows": count}
+        if not has_data:
+            all_ready = False
+
+    return all_ready, details
+
+
+def _wait_for_server(target_date=None, interval=DEFAULT_WAIT_INTERVAL,
+                     max_wait=DEFAULT_MAX_WAIT, dry_run=False):
+    """Block until all canary endpoints have data for *target_date*.
+
+    Returns True if ready, False if *max_wait* expired.
+    """
+    if target_date is None:
+        target_date = EFFECTIVE_TODAY
+
+    log_print(f"[preflight] Probing canary endpoints for {target_date}...")
+    log_print(f"[preflight] Endpoints: {', '.join(CANARY_ENDPOINTS)}")
+    log_print(f"[preflight] Wait interval={interval}s, max wait={max_wait}s")
+
+    if dry_run:
+        ready, details = _all_canaries_ready(target_date)
+        for ep, info in details.items():
+            status = "READY" if info["ready"] else "NOT READY"
+            log_print(f"  [preflight] [dry-run] {ep}: {status} ({info['rows']} rows)")
+        return ready
+
+    start = time.time()
+    attempt = 0
+
+    while True:
+        attempt += 1
+        elapsed = time.time() - start
+
+        ready, details = _all_canaries_ready(target_date)
+
+        for ep, info in details.items():
+            status = "READY" if info["ready"] else "WAITING"
+            log_print(f"  [preflight] attempt {attempt} | {ep}: {status} "
+                      f"({info['rows']} rows returned)")
+
+        if ready:
+            log_print(f"[preflight] All canary endpoints have data for "
+                      f"{target_date}. Proceeding with update.")
+            return True
+
+        if elapsed >= max_wait:
+            log_print(f"[preflight] Timed out after {elapsed:.0f}s "
+                      f"(max={max_wait}s). Proceeding despite missing data.")
+            return False
+
+        remaining = max_wait - elapsed
+        log_print(f"[preflight] Server not yet updated. "
+                  f"Waiting {interval}s (elapsed: {elapsed:.0f}s, "
+                  f"remaining: {remaining:.0f}s)...")
+        time.sleep(interval)
+
 
 # ── Incremental state tracking ──────────────────────────────────────────
 STATE_FILE = Path(DATA_DIR) / ".incr_state.json"
@@ -147,7 +301,7 @@ def _get_effective_overlap(name, base_overlap):
     if entry.get("pending") and entry.get("last_fetch_max"):
         try:
             last_actual = datetime.strptime(entry["last_fetch_max"], "%Y-%m-%d")
-            today_dt = datetime.strptime(TODAY, "%Y-%m-%d")
+            today_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
             gap = (today_dt - last_actual).days
             if gap > base_overlap:
                 return gap + base_overlap
@@ -330,11 +484,11 @@ def compute_incremental_range(filepath, default_start, overlap_days=OVERLAP_DAYS
     """
     path = Path(filepath)
     if not path.exists():
-        return None, default_start, TODAY, None
+        return None, default_start, EFFECTIVE_TODAY, None
 
     date_col, max_str = get_max_date(path)
     if max_str is None:
-        return date_col, default_start, TODAY, None
+        return date_col, default_start, EFFECTIVE_TODAY, None
 
     max_dt = datetime.strptime(max_str, "%Y-%m-%d")
     # Step back by overlap_days, but never go before default_start
@@ -344,7 +498,7 @@ def compute_incremental_range(filepath, default_start, overlap_days=OVERLAP_DAYS
         new_start_dt = default_dt
 
     new_start = new_start_dt.strftime("%Y-%m-%d")
-    return date_col, new_start, TODAY, None
+    return date_col, new_start, EFFECTIVE_TODAY, None
 
 
 # ── Generic API helpers (for per-stock incremental) ───────────────────────
@@ -860,7 +1014,8 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
                              end_date, date_col, workers, dry_run,
                              extra_payload=None, backfill_fn=None,
                              backfill_kwargs=None, batch_size=_PER_STOCK_BATCH_SIZE,
-                             stock_code_as_list=True, dedup_keys=None):
+                             stock_code_as_list=True, dedup_keys=None,
+                             consolidate=True):
     """Update per-stock parquet files using multi-stock batched API calls.
 
     Existing stocks are updated incrementally via batched API calls
@@ -1107,7 +1262,8 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
     done_file.write_text(TODAY)
 
     # Consolidate: merge all per-stock files into a single parquet under DATA_DIR
-    if not dry_run:
+    # Skip when consolidate=False (e.g. cyq_chips — downstream reads per-stock files directly)
+    if not dry_run and consolidate:
         _consolidate_per_stock_dataset(
             name=name,
             out_dir=out_dir,
@@ -1262,13 +1418,15 @@ def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
     log_print(f"[{name}] Will process {len(dates_to_fetch)} trading days "
               f"via daily_dump/{level}")
 
-    # ── Phase 3: process each date (local-first, filter to target stocks) ──
+    # ── Phase 3: load all daily dumps, group by stock, merge each file ONCE ──
     limiter = rate_limiter()
     total_added = 0
     new_max_date = last_date
     local_reads = 0
     api_calls = 0
 
+    # Step 3a: Collect all daily dump data into memory
+    all_parts = []
     for i, date_str in enumerate(dates_to_fetch):
         t0 = time.perf_counter()
         try:
@@ -1308,25 +1466,90 @@ def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
             if "trade_date" in df.columns:
                 df = df.drop(columns=["trade_date"])
 
-            t_merge = time.perf_counter()
-            merge_results, _ = _merge_per_stock_batch(
-                df, out_dir, date_col, cache_ns=name, dedup_keys=dedup_keys,
-                workers=workers,
-            )
-            _add_timing(name, "merge", time.perf_counter() - t_merge,
-                       rows=len(df), stocks=len(merge_results))
-
-            date_added = sum(r[3] for r in merge_results)
-            total_added += date_added
+            all_parts.append(df)
             if date_str > new_max_date:
                 new_max_date = date_str
 
-            log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] {date_str}: "
-                      f"{len(df):,} rows, +{date_added} new | "
-                      f"tokens={limiter.stats['tokens_available']}")
         except Exception as e:
             log_print(f"[{name}] [{i+1}/{len(dates_to_fetch)}] {date_str} "
                       f"FAILED: {e}")
+
+    if not all_parts:
+        log_print(f"[{name}] No new data to process")
+        _record_state(name, new_max_date)
+        done_file = out_dir / ".done"
+        done_file.write_text(TODAY)
+        return
+
+    # Step 3b: Combine all dates, then split by stock_code
+    full_df = pd.concat(all_parts, ignore_index=True)
+    del all_parts
+
+    n_stocks_in_data = full_df["stock_code"].nunique()
+    log_print(f"[{name}] Loaded {len(full_df):,} rows across "
+              f"{n_stocks_in_data} stocks "
+              f"({local_reads} local reads, {api_calls} API calls)")
+
+    # Step 3c: Each stock file is opened ONCE, all new days appended, then written
+    t_merge = time.perf_counter()
+    stock_groups = [(code, group.copy())
+                    for code, group in full_df.groupby("stock_code")]
+    del full_df
+
+    n_stocks = len(stock_groups)
+    results = []
+    lock = threading.Lock()
+
+    def _merge_one_stock(code, new_data):
+        """Open the per-stock file once, append all new rows, dedup, write."""
+        out_file = out_dir / f"{code}.parquet"
+        existing = _safe_read_parquet(out_file) if out_file.exists() else pd.DataFrame()
+        old_rows = len(existing)
+
+        if existing.empty:
+            merged = new_data
+        else:
+            merged = pd.concat([existing, new_data], ignore_index=True)
+            if date_col and date_col in merged.columns:
+                merged = merged.drop_duplicates(subset=[date_col], keep="last")
+            else:
+                merged = merged.drop_duplicates(keep="last")
+
+        merged = merged.sort_values(date_col).reset_index(drop=True)
+
+        # Atomic write via temp file
+        tmp = out_file.with_suffix(".parquet.tmp")
+        merged.to_parquet(tmp, index=False)
+        tmp.replace(out_file)
+
+        return code, old_rows, len(merged), len(merged) - old_rows
+
+    if n_stocks <= 4 or workers <= 1:
+        for code, group in stock_groups:
+            try:
+                res = _merge_one_stock(code, group)
+                results.append(res)
+            except Exception as e:
+                log_print(f"  [warn] Merge failed for {code}: {e}")
+    else:
+        from tqdm import tqdm
+        with ThreadPoolExecutor(max_workers=min(workers, n_stocks)) as pool:
+            futures = {pool.submit(_merge_one_stock, code, group): code
+                       for code, group in stock_groups}
+            for fut in tqdm(as_completed(futures), total=n_stocks,
+                           desc="  merge", unit="stock",
+                           ncols=100, smoothing=0.1):
+                code = futures[fut]
+                try:
+                    res = fut.result()
+                    with lock:
+                        results.append(res)
+                except Exception as e:
+                    log_print(f"  [warn] Merge failed for {code}: {e}")
+
+    total_added = sum(r[3] for r in results)
+    _add_timing(name, "merge", time.perf_counter() - t_merge,
+               rows=sum(r[2] for r in results), stocks=len(results))
 
     log_print(f"[{name}] Done: {total_added:,} new rows total "
               f"({local_reads} local reads, {api_calls} API calls)")
@@ -1337,16 +1560,6 @@ def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
     # Done marker
     done_file = out_dir / ".done"
     done_file.write_text(TODAY)
-
-    # Consolidate: merge all per-stock files into a single parquet
-    if not dry_run:
-        _consolidate_per_stock_dataset(
-            name=name,
-            out_dir=out_dir,
-            date_col=date_col,
-            workers=workers,
-        )
-
 
 def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
                           sort_cols, default_start, workers, dry_run,
@@ -1386,18 +1599,18 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
     inc_start = inc_start_dt.strftime("%Y-%m-%d")
 
     # Check if already up to date
-    end_dt = datetime.strptime(TODAY, "%Y-%m-%d")
+    end_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
     if max_dt >= end_dt:
         log_print(f"[{name}] Up to date (max={max_str})")
         _record_state(name, max_str)
         return {"name": name, "status": "uptodate", "max_date": max_str}
 
     log_print(f"[{name}] Existing max date: {max_str} | "
-              f"Fetching: {inc_start} ~ {TODAY}")
+              f"Fetching: {inc_start} ~ {EFFECTIVE_TODAY}")
 
     if dry_run:
-        log_print(f"[{name}] DRY-RUN: would fetch {inc_start} ~ {TODAY}")
-        return {"name": name, "status": "dry_run", "range": f"{inc_start}~{TODAY}"}
+        log_print(f"[{name}] DRY-RUN: would fetch {inc_start} ~ {EFFECTIVE_TODAY}")
+        return {"name": name, "status": "dry_run", "range": f"{inc_start}~{EFFECTIVE_TODAY}"}
 
     # Fetch new data to a TEMP file so the original is never overwritten
     tmp_output = str(path.parent / f"_incr_{name}.tmp.parquet")
@@ -1406,7 +1619,7 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
         new_df = _call_fetch(
             fetch_fn,
             start_date=inc_start,
-            end_date=TODAY,
+            end_date=EFFECTIVE_TODAY,
             workers=workers,
             cleanup=True,
             resume=False,
@@ -1756,6 +1969,7 @@ DATASETS = [
         "backfill_module": "fetch_cyq_chips",
         "backfill_fn_name": "fetch_cyq_chips",
         "end_exclusive": True,
+        "consolidate": False,
     },
     {
         "name": "cyq_perf",
@@ -1797,7 +2011,9 @@ def _build_registry_index():
 # ── Main orchestrator ─────────────────────────────────────────────────────
 def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                 workers=DEFAULT_WORKERS, parallel=False, dry_run=False,
-                skip_per_stock=False, skip_reference=False, monitor=False):
+                skip_per_stock=False, skip_reference=False, monitor=False,
+                no_wait=False, wait_interval=DEFAULT_WAIT_INTERVAL,
+                max_wait=DEFAULT_MAX_WAIT):
     """Run incremental updates for the specified datasets.
 
     Parameters
@@ -1820,7 +2036,25 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
         Skip reference datasets (calendar, stock_list).
     monitor : bool
         Log rate-limit stats every 10s via a background thread.
+    no_wait : bool
+        Skip the pre-flight canary check and run immediately.
+    wait_interval : int
+        Seconds between canary probes (default 300).
+    max_wait : int
+        Maximum seconds to wait for server data (default 7200).
     """
+    # ── Pre-flight: wait until server has today's data ──
+    if not no_wait:
+        server_ready = _wait_for_server(
+            target_date=None, interval=wait_interval,
+            max_wait=max_wait, dry_run=dry_run,
+        )
+        if not server_ready and not dry_run:
+            log_print("[preflight] Server data is incomplete, "
+                      "but proceeding after timeout.")
+    else:
+        log_print("[preflight] Skipped (--no-wait)")
+
     global OVERLAP_DAYS
     OVERLAP_DAYS = overlap_days
 
@@ -1899,7 +2133,7 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                         out_subdir=d["out_subdir"],
                         level=d["daily_dump_level"],
                         start_date=d["start"],
-                        end_date=TODAY,
+                        end_date=EFFECTIVE_TODAY,
                         date_col=d["date_col"],
                         dedup_keys=d.get("dedup"),
                         workers=workers,
@@ -1916,10 +2150,10 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                     bf_mod = __import__(bf_module, fromlist=[bf_fn_name])
                     backfill_fn = getattr(bf_mod, bf_fn_name)
                 if d.get("end_exclusive"):
-                    end_dt_excl = datetime.strptime(TODAY, "%Y-%m-%d") + timedelta(days=1)
+                    end_dt_excl = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d") + timedelta(days=1)
                     per_stock_end = end_dt_excl.strftime("%Y-%m-%d")
                 else:
-                    per_stock_end = TODAY
+                    per_stock_end = EFFECTIVE_TODAY
                 update_per_stock_dataset(
                     name=name,
                     out_subdir=d["out_subdir"],
@@ -1935,6 +2169,7 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                     batch_size=d.get("batch_size", _PER_STOCK_BATCH_SIZE),
                     stock_code_as_list=d.get("stock_code_as_list", True),
                     dedup_keys=d.get("dedup"),
+                    consolidate=d.get("consolidate", True),
                 )
                 return {"name": name, "status": "updated" if not dry_run else "dry_run"}
 
@@ -1952,7 +2187,7 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                     new_df = _call_fetch(
                         fn,
                         start_date=d["start"],
-                        end_date=TODAY,
+                        end_date=EFFECTIVE_TODAY,
                         workers=1,
                         cleanup=True,
                         resume=False,
@@ -2110,6 +2345,9 @@ Examples:
   python incremental_update.py --overlap 5              # 5-day overlap window
   python incremental_update.py --no-per-stock           # Skip cyq_chips/minute
   python incremental_update.py --monitor                # Log rate-limit stats every 10s
+  python incremental_update.py --no-wait                # Skip canary check
+  python incremental_update.py --wait-interval 600      # Poll canaries every 10 min
+  python incremental_update.py --max-wait 14400         # Wait up to 4 hours
   python incremental_update.py --list                   # List all known datasets
         """,
     )
@@ -2132,6 +2370,14 @@ Examples:
                         help="Skip reference datasets (calendar, stock_list)")
     parser.add_argument("--monitor", action="store_true",
                         help="Log rate-limit stats every 10s via a background thread")
+    parser.add_argument("--no-wait", action="store_true",
+                        help="Skip the pre-flight canary check (run immediately)")
+    parser.add_argument("--wait-interval", type=int, default=DEFAULT_WAIT_INTERVAL,
+                        help=f"Seconds between canary probes "
+                             f"(default: {DEFAULT_WAIT_INTERVAL})")
+    parser.add_argument("--max-wait", type=int, default=DEFAULT_MAX_WAIT,
+                        help=f"Maximum seconds to wait for server data "
+                             f"(default: {DEFAULT_MAX_WAIT})")
     parser.add_argument("--list", action="store_true",
                         help="List all known datasets and exit")
 
@@ -2160,6 +2406,9 @@ Examples:
         skip_per_stock=args.no_per_stock,
         skip_reference=args.no_reference,
         monitor=args.monitor,
+        no_wait=args.no_wait,
+        wait_interval=args.wait_interval,
+        max_wait=args.max_wait,
     )
 
 

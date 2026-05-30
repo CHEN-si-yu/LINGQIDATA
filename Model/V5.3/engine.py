@@ -53,6 +53,30 @@ def get_basic_name(fac_name='fac20260523', label_name='label',
     return name
 
 
+def load_feature_map(basic_name, model_test_path):
+    """Load the ordered factor list used during training.
+
+    Reads from model_test/{basic_name}/*-feature_map.fea, which is saved
+    by model.py at training time. Returns an ordered list of factor names
+    matching the model checkpoint's input_dim, or None if not found.
+    """
+    import glob as _glob
+    test_dir = os.path.join(model_test_path, basic_name)
+    candidates = _glob.glob(os.path.join(test_dir, '*-feature_map.fea'))
+    if not candidates:
+        return None
+    feature_map_path = candidates[0]
+    factor_order = []
+    with open(feature_map_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if '=' in line:
+                name, idx = line.rsplit('=', 1)
+                factor_order.append((int(idx), name))
+    factor_order.sort(key=lambda x: x[0])
+    return [name for _, name in factor_order]
+
+
 # ============================================================
 # V5 Model architecture with Residual Connections
 # ============================================================
@@ -255,7 +279,8 @@ def predict_date(model, date, all_data, factor_list):
 # ============================================================
 
 def predict_dates(dates, fac_path, model_train_base,
-                  basic_name=None, season='2026q2'):
+                  basic_name=None, season='2026q2',
+                  model_test_path=None):
     """
     Predict specific dates using ensemble of all folds' best checkpoints.
 
@@ -264,6 +289,9 @@ def predict_dates(dates, fac_path, model_train_base,
         fac_path: full path to factor .fea file
         model_train_base: path to model_train directory
         basic_name, season: model location under model_train_base
+        model_test_path: path to model_test directory (for feature map).
+            If None, derived from model_train_base by replacing 'model_train'
+            with 'model_test'.
 
     Returns a DataFrame (index=date, columns=Code), or None if dates is empty.
     """
@@ -273,8 +301,27 @@ def predict_dates(dates, fac_path, model_train_base,
     if basic_name is None:
         basic_name = get_basic_name()
 
+    # Derive model_test_path from model_train_base if not provided
+    if model_test_path is None:
+        model_test_path = model_train_base.replace('model_train', 'model_test')
+
     all_data = pd.read_feather(fac_path)
     all_data = all_data.set_index('date').sort_index()
+
+    # Load training-time factor list; fall back to all columns if not found
+    train_factors = load_feature_map(basic_name, model_test_path)
+    if train_factors is not None:
+        missing = [f for f in train_factors if f not in all_data.columns]
+        if missing:
+            print(f"[predict] WARNING: {len(missing)} training factors "
+                  f"not in current factor data: {missing[:5]}...")
+        available = [f for f in train_factors if f in all_data.columns]
+        all_data = all_data[['Code'] + available]
+        print(f"[predict] Using {len(available)}/{len(train_factors)} "
+              f"training-time factors")
+    else:
+        print("[predict] No feature_map found, using all factor columns")
+
     all_data = all_data.loc[:, all_data.replace(0, np.nan)
                                     .dropna(how="all", axis=1)
                                     .columns]
@@ -338,7 +385,8 @@ def _load_trading_dates(calendar_path):
 
 
 def predict_missing_dates(model_score, fac_path, model_train_base,
-                          calendar_path, basic_name=None, season='2026q2'):
+                          calendar_path, basic_name=None, season='2026q2',
+                          model_test_path=None):
     """
     Given an existing model_score DataFrame (index=date, columns=Code),
     find factor data dates beyond model_score's last date that are also
@@ -346,6 +394,9 @@ def predict_missing_dates(model_score, fac_path, model_train_base,
 
     Returns a DataFrame of new scores, or None if no missing dates.
     """
+    if model_test_path is None:
+        model_test_path = model_train_base.replace('model_train', 'model_test')
+
     last_date = str(model_score.index.max())
 
     all_data = pd.read_feather(fac_path)
@@ -369,7 +420,8 @@ def predict_missing_dates(model_score, fac_path, model_train_base,
 
     return predict_dates(missing_dates, fac_path=fac_path,
                          model_train_base=model_train_base,
-                         basic_name=basic_name, season=season)
+                         basic_name=basic_name, season=season,
+                         model_test_path=model_test_path)
 
 
 # ============================================================
@@ -610,11 +662,26 @@ def main():
     basic_name = get_basic_name(args.fac_name, args.label_name,
                                 args.dropout, args.dropout_rate)
     model_dir = os.path.join(args.model_train_base, basic_name, args.season)
+    model_test_path = args.model_train_base.replace('model_train', 'model_test')
 
     fac_file = args.fac_path
     print(f"[INFO] Factor data: {fac_file}")
     all_data = pd.read_feather(fac_file)
     all_data = all_data.set_index('date').sort_index()
+
+    # Load training-time factor list
+    train_factors = load_feature_map(basic_name, model_test_path)
+    if train_factors is not None:
+        missing = [f for f in train_factors if f not in all_data.columns]
+        if missing:
+            print(f"[INFO] WARNING: {len(missing)} training factors "
+                  f"not in current factor data")
+        available = [f for f in train_factors if f in all_data.columns]
+        all_data = all_data[['Code'] + available]
+        print(f"[INFO] Using {len(available)}/{len(train_factors)} "
+              f"training-time factors")
+    else:
+        print("[INFO] No feature_map found, using all factor columns")
 
     all_data = all_data.loc[:, all_data.replace(0, np.nan)
                                     .dropna(how="all", axis=1)

@@ -11,6 +11,7 @@ import re
 import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -775,6 +776,15 @@ def build_many_batched_parallel(
                         rows=rd.get("rows", 0),
                         non_null_rows=rd.get("non_null_rows", 0),
                     ))
+            except BrokenProcessPool:
+                logger.error("Group %s: process pool broken (OOM kill likely) — "
+                             "cancelling remaining groups", deps)
+                for f in futures:
+                    try:
+                        f.cancel()
+                    except Exception:
+                        pass
+                break
             except Exception:
                 logger.exception("Group %s: worker failed", deps)
 

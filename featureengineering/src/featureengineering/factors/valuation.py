@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
+from ..utils import cross_sectional_rank, safe_divide
 
 
 # ── Value ───────────────────────────────────────────────────────────────
@@ -184,21 +184,6 @@ def factor_dv_composite(context: FactorContext):
     return composite.rename("dv_composite")
 
 
-# ── PE TTM: finance 扩展 ─────────────────────────────────────────────────
-
-@register_factor(
-    name="pe_ttm",
-    description="滚动市盈率因子截面排名（低PE排前=价值股偏好）。",
-    category="valuation",
-    thesis="低PE是价值投资最经典的指标之一，低估值股票长期具有更高的预期收益率。与现有pe_ttm_percentile（历史分位）互补：一个看绝对值、一个看相对自身历史位置。",
-    dependencies=("finance.parquet",),
-)
-def factor_pe_ttm(context: FactorContext):
-    finance = context.load("finance.parquet")
-    pe = finance["pe_ttm"].where(finance["pe_ttm"] > 0, np.nan)
-    return cross_sectional_rank(-pe)
-
-
 # ── Enterprise value based ───────────────────────────────────────────────
 
 @register_factor(
@@ -225,3 +210,138 @@ def factor_ebitda_to_ev(context: FactorContext):
     ev = total_mv.loc[common] + total_liab.loc[common] - cash.loc[common]
     ratio = ebitda.loc[common] / ev.replace(0, np.nan)
     return cross_sectional_rank(ratio)
+
+
+# ── Supplementary valuation factors ───────────────────────────────────────
+
+
+@register_factor(
+    name="pb_percentile_5y",
+    description="PB 5年历史分位因子 (低位排前, 负向)。",
+    category="valuation",
+    thesis="PB历史分位低意味着估值处于历史低位区间，均值回复力量强于绝对估值水平",
+    dependencies=("finance.parquet",),
+)
+def factor_pb_percentile_5y(context: FactorContext):
+    finance = context.load("finance.parquet")
+    pb = finance["pb"]
+
+    def _percentile(s, window):
+        return s.rolling(window, min_periods=window // 2).apply(
+            lambda x: (x.iloc[-1] > x).mean(), raw=False
+        )
+
+    pct = pb.groupby(level="Code").transform(lambda s: _percentile(s, 1260))
+    return cross_sectional_rank(-pct)
+
+
+@register_factor(
+    name="ev_to_total_assets",
+    description="企业价值/总资产因子截面排名。",
+    category="valuation",
+    thesis="EV/Total Assets衡量整个企业相对于其资产基础的价值，越低越被低估",
+    dependencies=("finance.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_ev_to_total_assets(context: FactorContext):
+    bs = context.load_financial("balancesheet.parquet", value_cols=["total_liab", "money_cap", "total_assets"])
+    finance = context.load("finance.parquet")
+    total_mv = finance["total_mv"]
+    total_liab = bs["total_liab"]
+    cash = bs["money_cap"]
+    ta = bs["total_assets"]
+    common = total_mv.index.intersection(total_liab.index).intersection(cash.index).intersection(ta.index)
+    ev = total_mv.loc[common] + total_liab.loc[common] - cash.loc[common]
+    ratio = safe_divide(ev, ta.loc[common])
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="mv_to_ebitda",
+    description="市值/EBITDA比率因子截面排名 (低排前, 负向)。",
+    category="valuation",
+    thesis="MV/EBITDA是EV/EBITDA的简化版，适合快速筛选低估值股票",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
+)
+def factor_mv_to_ebitda(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["ebitda"])
+    finance = context.load("finance.parquet")
+    ebitda = fin["ebitda"]
+    total_mv = finance["total_mv"]
+    common = ebitda.index.intersection(total_mv.index)
+    ratio = safe_divide(total_mv.loc[common], ebitda.loc[common].abs() + 1e-8)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="pe_to_eps_growth",
+    description="PE/ESP增速因子 (PEG代理, 低排前, 负向)。",
+    category="valuation",
+    thesis="PEG=PE/增长率，低PEG意味着成长被低估。使用dt_eps_yoy作为增长率代理",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
+)
+def factor_pe_to_eps_growth(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["dt_eps_yoy"])
+    finance = context.load("finance.parquet")
+    eps_growth = fin["dt_eps_yoy"]
+    pe = finance["pe_ttm"]
+    common = eps_growth.index.intersection(pe.index)
+    growth_pos = eps_growth.loc[common].clip(lower=1.0)
+    peg = safe_divide(pe.loc[common], growth_pos)
+    return cross_sectional_rank(-peg)
+
+
+@register_factor(
+    name="revenue_to_ev",
+    description="营业收入/企业价值因子截面排名。",
+    category="valuation",
+    thesis="Revenue/EV是一个不受会计政策影响的估值指标，高比率意味着营收能力相对企业价值强",
+    dependencies=("income.parquet", "finance.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_revenue_to_ev(context: FactorContext):
+    inc = context.load_financial("income.parquet", value_cols=["total_revenue"])
+    bs = context.load_financial("balancesheet.parquet", value_cols=["total_liab", "money_cap"])
+    finance = context.load("finance.parquet")
+    revenue = inc["total_revenue"]
+    total_mv = finance["total_mv"]
+    total_liab = bs["total_liab"]
+    cash = bs["money_cap"]
+    common = revenue.index.intersection(total_mv.index).intersection(total_liab.index).intersection(cash.index)
+    ev = total_mv.loc[common] + total_liab.loc[common] - cash.loc[common]
+    ratio = safe_divide(revenue.loc[common], ev)
+    return cross_sectional_rank(ratio)
+
+
+@register_factor(
+    name="net_debt_to_ebitda",
+    description="净负债/EBITDA因子 (低排前, 负向)。",
+    category="valuation",
+    thesis="净负债/EBITDA是杠杆与盈利能力的综合度量，低比率意味着偿债能力强、财务健康",
+    dependencies=("financial_indicator.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_net_debt_to_ebitda(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["ebitda"])
+    bs = context.load_financial("balancesheet.parquet", value_cols=["total_liab", "money_cap"])
+    ebitda = fin["ebitda"]
+    total_liab = bs["total_liab"]
+    cash = bs["money_cap"]
+    common = ebitda.index.intersection(total_liab.index).intersection(cash.index)
+    net_debt = total_liab.loc[common] - cash.loc[common]
+    ratio = safe_divide(net_debt, ebitda.loc[common].abs() + 1e-8)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="pb_to_roe",
+    description="PB/ROE因子截面排名 (低排前, 负向)。",
+    category="valuation",
+    thesis="PB-ROE框架：高ROE理应高PB，低PB+高ROE=低估。PB/ROE越低越有投资价值",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
+)
+def factor_pb_to_roe(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["roe"])
+    finance = context.load("finance.parquet")
+    roe = fin["roe"]
+    pb = finance["pb"]
+    common = roe.index.intersection(pb.index)
+    pb_roe = safe_divide(pb.loc[common], roe.loc[common].abs() + 1e-8)
+    return cross_sectional_rank(-pb_roe)

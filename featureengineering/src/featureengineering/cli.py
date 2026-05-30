@@ -5,17 +5,17 @@ import sys
 from pathlib import Path
 
 from .builder import (
-    build_all,
     build_many,
+    build_many_parallel,
     check_factor_dates,
+    classify_factor,
     decide_build_action,
     get_factor,
     list_factors,
-    recommend_worker_count,
 )
 from .factor_loader import ensure_builtin_factors_loaded
 from .report import action_colored, print_status_table
-from .settings import configure_paths, ProjectPaths
+from .settings import configure_paths, log_environment_info, ProjectPaths
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,27 +25,25 @@ def build_parser() -> argparse.ArgumentParser:
     # ── Factor selection ─────────────────────────────────────────────────
     p.add_argument("--list", action="store_true", help="List available factors.")
     p.add_argument("--all", action="store_true", help="Build all registered factors.")
-    p.add_argument("--targets-only", action="store_true",
-                   help="Build only target label factors.")
-    p.add_argument("--skip-targets", action="store_true",
-                   help="Exclude target factors from build.")
-    p.add_argument("--factor", action="append", default=[],
-                   help="Build one specific factor. Repeatable.")
-    p.add_argument("--only-factor", type=str, default=None,
-                   help="Build exactly one factor and exit "
-                        "(shortcut for --factor NAME).")
+    p.add_argument("--fac-name", "--only-factor", "-f", type=str, default=None, dest="only_factor",
+                   help="Build exactly one factor and exit.")
+
+    # ── Class selection ───────────────────────────────────────────────────
+    p.add_argument("--only-class", type=str, default=None,
+                   help="Only build factors of the given class(es), "
+                        "comma-separated: 1,2,3,4  (e.g. --only-class 1,2)")
 
     # ── Build control ────────────────────────────────────────────────────
-    p.add_argument("--jobs", type=int, default=recommend_worker_count(),
-                   help="Parallel worker count.")
-    p.add_argument("--sequential", action="store_true",
-                   help="Disable multiprocessing and run sequentially.")
+    p.add_argument("--jobs", type=int, default=None,
+                   help="Parallel worker count (default: auto-detected).")
     p.add_argument("--force", action="store_true",
                    help="Force rebuild all factors (ignore date-based skip/incremental logic).")
     p.add_argument("--resume", action="store_true", default=True,
                    help="Resume from interrupted build via state file (default: on).")
     p.add_argument("--no-resume", action="store_false", dest="resume",
                    help="Start a fresh build, ignoring any prior state file.")
+    p.add_argument("--new", action="store_true", dest="use_new",
+                   help="(Now the default for Class 2 & 3 — kept for compatibility.)")
 
     # ── Inspection (no build) ────────────────────────────────────────────
     p.add_argument("--check-dates", action="store_true",
@@ -102,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         factor_output_dir=args.factor_output_dir,
         manifest_output_dir=args.manifest_output_dir,
     )
+    log_environment_info()
     ensure_builtin_factors_loaded()
 
     # ── Status / check-dates (no build) ──────────────────────────────────
@@ -110,9 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ── List (no build) ──────────────────────────────────────────────────
-    specs = list_factors()
-
     if args.list:
+        specs = list_factors()
         target_specs = [s for s in specs if s.category == "target"]
         feature_specs = [s for s in specs if s.category != "target"]
         print(f"\n{'='*60}")
@@ -125,24 +123,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ── Factor selection ─────────────────────────────────────────────────
+    specs = list_factors()
+
     if args.only_factor:
         factor_names = [args.only_factor]
-    elif args.targets_only:
-        factor_names = [s.name for s in specs if s.category == "target"]
-    elif args.all:
+    elif args.all or args.only_class is not None:
         factor_names = [s.name for s in specs]
     else:
-        factor_names = args.factor
-
-    if args.skip_targets:
-        factor_names = [n for n in factor_names
-                        if not n.startswith("label_ret_")]
-
-    if not factor_names:
-        p.error("Please provide --all, --targets-only, --only-factor, "
-                "or at least one --factor.")
+        p.error("Please provide --all, --only-class, or --only-factor.")
 
     factor_names = sorted(set(factor_names))
+
+    # ── Filter by class (--only-class 1,2,3) ────────────────────────────
+    if args.only_class is not None:
+        selected = {int(c.strip()) for c in args.only_class.split(",") if c.strip()}
+        invalid = selected - {1, 2, 3, 4}
+        if invalid:
+            p.error(f"Invalid class number(s): {sorted(invalid)}.  Must be 1, 2, 3, or 4.")
+
+        before = len(factor_names)
+        factor_names = [n for n in factor_names if classify_factor(n) in selected]
+        print(f"  --only-class {selected}: {before} -> {len(factor_names)} factors")
+        if not factor_names:
+            p.error(f"No factors match class filter {selected}.")
 
     # ── Plan mode (no build) ─────────────────────────────────────────────
     if args.plan:
@@ -150,18 +153,41 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ── Build ────────────────────────────────────────────────────────────
-    # Single factor or sequential → use build_many directly (sub-progress bar)
-    if len(factor_names) == 1 or args.sequential:
-        results = build_many(factor_names, paths=paths, force=args.force)
-    else:
-        results = build_all(
-            factor_names=factor_names,
-            max_workers=args.jobs,
-            sequential=False,
-            force=args.force,
-        )
+    # Class 2 & 3 always use unified single-pass builders.
+    # Separate factors by class so each data source is opened once.
+    c2_names = [n for n in factor_names if classify_factor(n) == 2]
+    c3_names = [n for n in factor_names if classify_factor(n) == 3]
+    other_names = [n for n in factor_names if classify_factor(n) not in (2, 3)]
 
-    for result in results:
+    all_results = []
+
+    if c2_names:
+        from .factors.chip_deep import build_cyq_chips_new
+        all_results.extend(build_cyq_chips_new(
+            factor_names=c2_names,
+            paths=paths,
+            force=args.force,
+            max_workers=args.jobs,
+        ))
+
+    if c3_names:
+        from .factors.intraday import build_intraday_new
+        all_results.extend(build_intraday_new(
+            factor_names=c3_names,
+            paths=paths,
+            force=args.force,
+            max_workers=args.jobs,
+        ))
+
+    if other_names:
+        if len(other_names) == 1:
+            all_results.extend(build_many(other_names, paths=paths, force=args.force))
+        else:
+            all_results.extend(build_many_parallel(
+                other_names, max_workers=args.jobs, paths=paths, force=args.force,
+            ))
+
+    for result in all_results:
         status = "OK" if result.action not in ("error",) else "ERR"
         print(f"[{status}] {result.factor_name} -> {result.factor_path}")
     return 0

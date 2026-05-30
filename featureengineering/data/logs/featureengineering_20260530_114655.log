@@ -1,0 +1,119 @@
+2026-05-30 11:46:55 [INFO   ] root: Log file  : /root/shared-nvme/lingqiData/featureengineering/data/logs/featureengineering_20260530_114655.log
+2026-05-30 11:46:55 [INFO   ] numexpr.utils: Note: detected 128 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+2026-05-30 11:46:55 [INFO   ] numexpr.utils: Note: NumExpr detected 128 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+2026-05-30 11:46:55 [INFO   ] numexpr.utils: NumExpr defaulting to 16 threads.
+2026-05-30 11:46:56 [INFO   ] root: Python    : 3.13.9
+2026-05-30 11:46:56 [INFO   ] root: pandas    : 2.3.3
+2026-05-30 11:46:56 [INFO   ] root: numpy     : 2.3.5
+2026-05-30 11:46:56 [INFO   ] build_factors: Factor build started — 4 stage(s)
+2026-05-30 11:46:56 [INFO   ] build_factors: 
+################################################################
+#  BUILD START
+################################################################
+2026-05-30 11:46:56 [INFO   ] build_factors: 
+################################################################
+#  STAGE 1/4: Class 1 (Panel)
+################################################################
+2026-05-30 11:46:56 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — launching subprocess
+2026-05-30 11:46:57 [INFO   ] featureengineering.builder: Build plan: 596 rebuild | 0 incremental | 0 skip
+2026-05-30 11:46:57 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=317374) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  self.pid = os.fork()
+
+2026-05-30 12:34:14 [INFO   ] featureengineering.builder: Build complete — 596 ok, 0 skip, 0 error | 21979 s wall | 0 total rows
+2026-05-30 12:34:15 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — OK (2839s)
+2026-05-30 12:34:15 [INFO   ] build_factors: 
+################################################################
+#  STAGE 2/4: Class 2 (cyq_chips)
+################################################################
+2026-05-30 12:34:15 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — launching subprocess
+2026-05-30 12:34:25 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=368245) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  self.pid = os.fork()
+
+2026-05-30 12:40:41 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — OK (387s)
+2026-05-30 12:40:41 [INFO   ] build_factors: 
+################################################################
+#  STAGE 3/4: Class 3 (intraday)
+################################################################
+2026-05-30 12:40:41 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — launching subprocess
+2026-05-30 12:40:43 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=375470) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  self.pid = os.fork()
+
+2026-05-30 12:52:04 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — OK (682s)
+2026-05-30 12:52:04 [INFO   ] build_factors: 
+################################################################
+#  STAGE 4/4: Class 4 (Coupling)
+################################################################
+2026-05-30 12:52:04 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — launching subprocess
+2026-05-30 12:52:05 [INFO   ] featureengineering.builder: Build plan: 101 rebuild | 0 incremental | 0 skip
+2026-05-30 12:52:05 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/multiprocessing/popen_fork.py:67: DeprecationWarning: This process (pid=385473) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  self.pid = os.fork()
+
+2026-05-30 12:53:58 [ERROR  ] featureengineering.builder: breakout_with_fund_flow: failed
+Traceback (most recent call last):
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/builder.py", line 655, in _build_factor_worker
+    raw_output = spec.compute(context)
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/factors/enhanced.py", line 675, in factor_breakout_with_fund_flow
+    mf = context.load_factor("net_mf_vol_intensity")
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/registry.py", line 57, in load_factor
+    return self.repo.load_factor_panel(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<2 lines>...
+        lookback_days=self._lookback_days,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/dataset.py", line 422, in load_factor_panel
+    raise FileNotFoundError(f"Factor file not found: {filepath}")
+FileNotFoundError: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:53:58 [ERROR  ] featureengineering.builder: breakout_with_fund_flow: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:53:58 [ERROR  ] featureengineering.builder: fund_flow_price_resonance: failed
+Traceback (most recent call last):
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/builder.py", line 655, in _build_factor_worker
+    raw_output = spec.compute(context)
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/factors/coupling.py", line 898, in factor_fund_flow_price_resonance
+    df = context.load_factors(["net_mf_vol_intensity", "mom_20"])
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/registry.py", line 71, in load_factors
+    s = self.load_factor(name)
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/registry.py", line 57, in load_factor
+    return self.repo.load_factor_panel(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<2 lines>...
+        lookback_days=self._lookback_days,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/dataset.py", line 422, in load_factor_panel
+    raise FileNotFoundError(f"Factor file not found: {filepath}")
+FileNotFoundError: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:53:59 [ERROR  ] featureengineering.builder: fund_flow_price_resonance: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:54:20 [ERROR  ] featureengineering.builder: sentiment_divergence_factor: failed
+Traceback (most recent call last):
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/builder.py", line 655, in _build_factor_worker
+    raw_output = spec.compute(context)
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/factors/enhanced.py", line 707, in factor_sentiment_divergence_factor
+    mf = context.load_factor("net_mf_vol_intensity")
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/registry.py", line 57, in load_factor
+    return self.repo.load_factor_panel(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        name,
+        ^^^^^
+    ...<2 lines>...
+        lookback_days=self._lookback_days,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/root/shared-nvme/lingqiData/featureengineering/src/featureengineering/dataset.py", line 422, in load_factor_panel
+    raise FileNotFoundError(f"Factor file not found: {filepath}")
+FileNotFoundError: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:54:20 [ERROR  ] featureengineering.builder: sentiment_divergence_factor: Factor file not found: /root/shared-nvme/lingqiData/featureengineering/data/factors/net_mf_vol_intensity.fea
+2026-05-30 12:54:39 [INFO   ] featureengineering.builder: Build complete — 98 ok, 0 skip, 3 error | 1100 s wall | 0 total rows
+2026-05-30 12:54:40 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — OK (156s)
+2026-05-30 12:54:40 [INFO   ] build_factors: Factor build finished — OK, total elapsed: 4064 s
+2026-05-30 12:54:40 [INFO   ] build_factors: 
+################################################################
+#  BUILD DONE — OK (total: 4064s)
+################################################################

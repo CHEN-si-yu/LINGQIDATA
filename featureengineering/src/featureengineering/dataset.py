@@ -60,6 +60,8 @@ def _normalize_index_frame(df: pd.DataFrame) -> pd.DataFrame:
             frame = frame.reset_index()
     elif {"trade_date", "stock_code"}.issubset(frame.columns):
         frame = frame.rename(columns={"trade_date": "date", "stock_code": "code"})
+    elif {"trade_date", "ths_code"}.issubset(frame.columns):
+        frame = frame.rename(columns={"trade_date": "date", "ths_code": "code"})
     elif {"date", "code"}.issubset(frame.columns):
         pass
     elif {"Date", "Code"}.issubset(frame.columns):
@@ -196,12 +198,13 @@ class DataRepository:
     def allowed_codes(self) -> set[str]:
         return _load_allowed_codes(self.paths.stock_pool_file)
 
-    def _read_parquet(self, path: Path) -> pd.DataFrame:
-        return pd.read_parquet(path)
+    def _read_parquet(self, path: Path, filters: list[tuple] | None = None) -> pd.DataFrame:
+        return pd.read_parquet(path, filters=filters)
 
-    def _read_parquet_columns(self, path: Path, columns: list[str]) -> pd.DataFrame:
+    def _read_parquet_columns(self, path: Path, columns: list[str],
+                              filters: list[tuple] | None = None) -> pd.DataFrame:
         """Read only specified columns from a parquet file (columnar access)."""
-        return pd.read_parquet(path, columns=columns)
+        return pd.read_parquet(path, columns=columns, filters=filters)
 
     def _filter_by_allowed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep only rows whose Code is in the allowed stock pool."""
@@ -231,6 +234,49 @@ class DataRepository:
 
     # ── daily panel loading ───────────────────────────────────────────
 
+    # Date column candidates for parquet predicate pushdown, in priority order.
+    _DATE_COL_CANDIDATES = ["trade_date", "end_date", "date", "ann_date", "f_ann_date"]
+
+    def _build_date_filters(
+        self,
+        path: Path,
+        min_date: str | None,
+        max_date: str | None,
+        lookback_days: int = 0,
+    ) -> tuple[list[tuple] | None, str | None]:
+        """Build parquet-level row filters for date range, if possible.
+
+        Reads the file schema to detect the date column.  Returns
+        ``(filters, date_col)`` where *filters* may be None if no
+        pushdown is possible (missing date column, no range supplied).
+        """
+        if min_date is None and max_date is None:
+            return None, None
+        import pyarrow.parquet as _pq
+        try:
+            schema = _pq.read_schema(path)
+        except Exception:
+            return None, None
+        date_col = None
+        for c in self._DATE_COL_CANDIDATES:
+            if c in schema.names:
+                date_col = c
+                break
+        if date_col is None:
+            return None, None
+        from datetime import datetime as _dt, timedelta as _td
+        filters: list[tuple] = []
+        if min_date is not None:
+            min_dt = _dt.strptime(min_date, "%Y%m%d") - _td(days=lookback_days)
+            # Source data uses YYYY-MM-DD format (verified against
+            # daily_adj.parquet, finance.parquet, etc.).
+            filters.append((date_col, ">=", min_dt.strftime("%Y-%m-%d")))
+        if max_date is not None:
+            # max_date is YYYYMMDD, convert to YYYY-MM-DD for the filter
+            max_dt = _dt.strptime(max_date, "%Y%m%d")
+            filters.append((date_col, "<=", max_dt.strftime("%Y-%m-%d")))
+        return filters, date_col
+
     def load_panel(
         self,
         relative_path: str,
@@ -240,16 +286,30 @@ class DataRepository:
     ) -> pd.DataFrame:
         """Load a daily-frequency parquet file and normalize to (Date, Code) panel.
 
-        When *min_date* or *max_date* are provided, the returned panel is
-        filtered to the specified date range (with *lookback_days* buffer
-        subtracted from *min_date* to provide context for rolling windows).
+        When *min_date* or *max_date* are provided, parquet predicate pushdown
+        is used to reduce I/O.  Filtered reads are **not** cached — only
+        full-file reads populate the LRU cache.
         """
         cache_key = relative_path
+        filepath = self.paths.source_root / relative_path
+
+        # Try parquet-level pushdown first
+        pq_filters, _ = self._build_date_filters(filepath, min_date, max_date, lookback_days)
+
+        if pq_filters is not None:
+            # Partial read — don't cache (the full file isn't in memory).
+            raw = self._read_parquet(filepath, filters=pq_filters)
+            normalized = _normalize_index_frame(raw)
+            result = self._filter_by_allowed(normalized)
+            # Still apply memory-side filter for belt-and-suspenders safety
+            return _filter_by_date_range(result, min_date, max_date, lookback_days=0)
+
+        # Full-file read path (cached)
         cached = self._cache_get(cache_key)
         if cached is None:
             if self.on_progress:
                 self.on_progress("load", 0, 1)
-            raw = self._read_parquet(self.paths.source_root / relative_path)
+            raw = self._read_parquet(filepath)
             normalized = _normalize_index_frame(raw)
             self._cache_put(cache_key, self._filter_by_allowed(normalized))
             if self.on_progress:
@@ -342,3 +402,50 @@ class DataRepository:
         """Return a Series mapping stock_code → industry."""
         pool = self.load_stock_pool()
         return pool.set_index("Code")["industry"]
+
+    # ── factor panel loading (Class 4 coupling factors) ──────────────────
+
+    def load_factor_panel(
+        self,
+        name: str,
+        min_date: str | None = None,
+        max_date: str | None = None,
+        lookback_days: int = 0,
+    ) -> pd.Series:
+        """Load a pre-computed factor from a .fea file and return as (Date, Code) Series.
+
+        The .fea file is in wide format (Date index, Code columns).  We convert
+        it to a (Date, Code)-indexed Series and filter on the requested date range.
+        """
+        filepath = self.paths.factor_output_dir / f"{name}.fea"
+        if not filepath.exists():
+            raise FileNotFoundError(f"Factor file not found: {filepath}")
+
+        df = pd.read_feather(filepath)
+
+        # Wide format: Date index (str YYYYMMDD), Code columns
+        if df.columns[0] != "Date" and "Date" not in df.columns:
+            # Assume the index is Date
+            pass
+        else:
+            if "Date" in df.columns:
+                df = df.set_index("Date")
+
+        df.index = df.index.astype(str).str.replace("-", "", regex=False).str.slice(0, 8)
+
+        # Stack to (Date, Code) MultiIndex
+        stacked = df.stack(future_stack=True)
+        stacked.index = stacked.index.set_names(["Date", "Code"])
+        stacked.name = name
+
+        # Filter by date range
+        if min_date is not None:
+            from datetime import datetime, timedelta
+            min_dt = datetime.strptime(min_date, "%Y%m%d")
+            lookback_dt = min_dt - timedelta(days=lookback_days)
+            cutoff = lookback_dt.strftime("%Y%m%d")
+            stacked = stacked.loc[stacked.index.get_level_values("Date") >= cutoff]
+        if max_date is not None:
+            stacked = stacked.loc[stacked.index.get_level_values("Date") <= max_date]
+
+        return stacked

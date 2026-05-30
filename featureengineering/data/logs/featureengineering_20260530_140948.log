@@ -1,0 +1,14 @@
+2026-05-30 14:09:48 [INFO   ] root: Log file  : /root/shared-nvme/lingqiData/featureengineering/data/logs/featureengineering_20260530_140948.log
+2026-05-30 14:09:48 [INFO   ] root: Python    : 3.13.9
+2026-05-30 14:09:48 [INFO   ] root: pandas    : 2.3.3
+2026-05-30 14:09:48 [INFO   ] root: numpy     : 2.3.5
+2026-05-30 14:09:48 [INFO   ] featureengineering.builder: Build plan: 101 rebuild | 0 incremental | 0 skip
+2026-05-30 14:09:55 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/concurrent/futures/process.py:266: ResourceWarning: unclosed <socket.socket fd=10, family=1, type=1, proto=0>
+  del call_item
+
+2026-05-30 14:09:55 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/concurrent/futures/process.py:266: ResourceWarning: unclosed <socket.socket fd=10, family=1, type=1, proto=0>
+  del call_item
+
+2026-05-30 14:09:55 [WARNING] py.warnings: /root/shared-nvme/anaconda/lib/python3.13/multiprocessing/process.py:327: ResourceWarning: unclosed <socket.socket fd=6, family=1, type=1, proto=0>
+  traceback.print_exc()
+

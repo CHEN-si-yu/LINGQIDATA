@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
+from ..utils import cross_sectional_rank, safe_divide
 from ..utils import rolling_group_max, rolling_group_min, rolling_group_mean, rolling_group_std
 
 
@@ -812,3 +812,405 @@ def factor_return_accel_nonoverlap_20_60(context: FactorContext):
     )
     accel = mom_20 - old_mom_60
     return cross_sectional_rank(accel)
+
+# ── Parkinson (High-Low) volatility ────────────────────────────────────────
+
+@register_factor(
+    name="high_low_volatility_20",
+    description="Parkinson波动率因子，20日基于最高最低价的波动率估计截面排名（高波排后）。",
+    category="price",
+    thesis="Parkinson(1980)波动率使用日内高低价范围，比收盘价波动率效率高5.2倍——在同窗口下能更精确地捕捉真实波动。高HL波动率=价格振幅大=不确定性高，预期收益为负。与volatility_20互补：一个用极差估计波动，一个用收盘收益率估计。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_high_low_volatility_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    high = daily_adj["high"]
+    low = daily_adj["low"]
+
+    # Parkinson estimator: sqrt(1/(4*ln(2)*n) * sum(ln(H/L)^2))
+    hl_ratio = high / low.replace(0, np.nan)
+    hl_ratio = hl_ratio.where(hl_ratio > 0, np.nan)  # guard against log(<=0)
+    hl_ratio_log = np.log(hl_ratio)
+    hl_sq = hl_ratio_log ** 2
+    parkinson_raw = np.sqrt(hl_sq.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).mean()
+    ) / (4.0 * np.log(2)))
+    return cross_sectional_rank(-parkinson_raw)
+
+
+# ── Volume Price Trend (VPT) ───────────────────────────────────────────────
+
+@register_factor(
+    name="volume_price_trend",
+    description="量价趋势(VPT)因子，累积量价趋势的14日动量截面排名。",
+    category="price",
+    thesis="VPT将价格变化与成交量结合——价升量增=资金主动买入、趋势确认，价升量缩=上涨动力不足。VPT的短期动量捕捉资金流向与价格趋势的共振信号。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volume_price_trend(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    vol = daily_adj["vol"]
+
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    vpt_daily = (ret * vol).replace([np.inf, -np.inf], np.nan)
+    vpt_cum = vpt_daily.groupby(level="Code").transform(lambda s: s.cumsum())
+    vpt_mom = vpt_cum.groupby(level="Code").transform(lambda s: s.pct_change(14))
+    return cross_sectional_rank(vpt_mom)
+
+
+# ── OBV (On-Balance Volume) momentum ───────────────────────────────────────
+
+@register_factor(
+    name="obv_momentum_20",
+    description="OBV动量因子，能量潮(On-Balance Volume)20日动量的截面排名。",
+    category="price",
+    thesis="OBV是有方向的成交量——价格上涨日累加成交量，下跌日减去成交量。OBV动量变化往往领先于价格变化，是经典的'量在价先'技术信号。Granville(1963)原始OBV的现代化截面应用。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_obv_momentum_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    vol = daily_adj["vol"]
+
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    obv_daily = (np.sign(ret) * vol).replace([np.inf, -np.inf], np.nan)
+    obv_cum = obv_daily.groupby(level="Code").transform(lambda s: s.cumsum())
+    obv_mom = obv_cum.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    return cross_sectional_rank(obv_mom)
+
+
+# ── Turnover volatility (liquidity risk) ───────────────────────────────────
+
+@register_factor(
+    name="turnover_std_20",
+    description="换手率波动率因子，20日换手率标准差截面排名（高换手波动排后=流动性风险）。",
+    category="price",
+    thesis="换手率剧烈波动意味着流动性不稳定——要么是资金突击进出、要么是筹码松动。与turnover_20互补：一个看换手水平，一个看换手稳定性。高换手波动代表流动性风险溢价。",
+    dependencies=("finance.parquet",),
+)
+def factor_turnover_std_20(context: FactorContext):
+    finance = context.load("finance.parquet")
+    turnover = finance["turnover_rate"]
+    to_vol = turnover.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).std()
+    )
+    return cross_sectional_rank(-to_vol)
+
+
+# ── Supplementary momentum ───────────────────────────────────────────────
+
+
+@register_factor(
+    name="mom_3",
+    description="3日动量因子截面排名。",
+    category="price",
+    thesis="超短期动量(3日)捕捉资金追击强度，A股散户交易占比高导致超短期惯性显著",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_3(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(3))
+    return cross_sectional_rank(ret)
+
+
+@register_factor(
+    name="mom_15",
+    description="15日动量因子截面排名。",
+    category="price",
+    thesis="15日动量填充短期和中期之间的空白，约3周交易周期",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_15(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(15))
+    return cross_sectional_rank(ret)
+
+
+@register_factor(
+    name="mom_40",
+    description="40日动量因子截面排名。",
+    category="price",
+    thesis="40日动量约2个月周期，捕捉中短期趋势延续",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_40(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(40))
+    return cross_sectional_rank(ret)
+
+
+@register_factor(
+    name="mom_240",
+    description="240日动量因子截面排名 (年度动量)。",
+    category="price",
+    thesis="240日年度动量捕捉长期趋势，机构重仓股的年度动量效应显著",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_240(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(240))
+    return cross_sectional_rank(ret)
+
+
+@register_factor(
+    name="mom_20_minus_mom_60",
+    description="20日-60日动量差异因子 (趋势加速/减速)。",
+    category="price",
+    thesis="近期动量与中期动量的差异衡量趋势边际变化，正值意味着趋势加速",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_20_minus_mom_60(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    mom_20 = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    mom_60 = close.groupby(level="Code").transform(lambda s: s.pct_change(60))
+    return cross_sectional_rank(mom_20 - mom_60)
+
+
+# ── Supplementary volatility ──────────────────────────────────────────────
+
+
+@register_factor(
+    name="volatility_5",
+    description="5日波动率因子 (高波排后, 负向)。",
+    category="price",
+    thesis="5日超短期波动率捕捉最近的波动冲击，极端波动后常有均值回复",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volatility_5(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+    vol = ret.groupby(level="Code").transform(
+        lambda s: s.rolling(5, min_periods=3).std()
+    )
+    return cross_sectional_rank(-vol)
+
+
+@register_factor(
+    name="volatility_120",
+    description="120日波动率因子 (高波排后, 负向)。",
+    category="price",
+    thesis="长期波动率衡量半年度风险水平，长期高波动往往意味着基本面不确定性",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volatility_120(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+    vol = ret.groupby(level="Code").transform(
+        lambda s: s.rolling(120, min_periods=60).std()
+    )
+    return cross_sectional_rank(-vol)
+
+
+@register_factor(
+    name="up_volatility_20",
+    description="20日上行波动率因子 (高上行波排后, 负向)。",
+    category="price",
+    thesis="上行半方差只衡量正收益的波动，高上行波动可能意味着投机性炒作",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_up_volatility_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+
+    def _up_std(s, window):
+        pos = s.where(s > 0, 0.0)
+        return pos.rolling(window, min_periods=max(1, window // 2)).std()
+
+    up_vol = ret.groupby(level="Code").transform(lambda s: _up_std(s, 20))
+    return cross_sectional_rank(-up_vol)
+
+
+@register_factor(
+    name="down_volatility_20",
+    description="20日下行波动率因子 (高下行波排后, 负向)。",
+    category="price",
+    thesis="下行半方差衡量下跌风险，高下行波动意味着更大的潜在亏损",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_down_volatility_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+
+    def _down_std(s, window):
+        neg = s.where(s < 0, 0.0)
+        return neg.rolling(window, min_periods=max(1, window // 2)).std()
+
+    down_vol = ret.groupby(level="Code").transform(lambda s: _down_std(s, 20))
+    return cross_sectional_rank(-down_vol)
+
+
+@register_factor(
+    name="up_down_vol_ratio_20",
+    description="20日上下行波动率比率因子 (上行/下行比高排前)。",
+    category="price",
+    thesis="上行波动远大于下行波动是正面信号，意味着上涨爆发力强而下跌可控",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_up_down_vol_ratio_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+
+    def _up_std(s, window):
+        pos = s.where(s > 0, 0.0)
+        return pos.rolling(window, min_periods=max(1, window // 2)).std()
+
+    def _down_std(s, window):
+        neg = s.where(s < 0, 0.0)
+        return neg.rolling(window, min_periods=max(1, window // 2)).std()
+
+    up_vol = ret.groupby(level="Code").transform(lambda s: _up_std(s, 20))
+    down_vol = ret.groupby(level="Code").transform(lambda s: _down_std(s, 20))
+    ratio = safe_divide(up_vol, down_vol + 1e-8)
+    return cross_sectional_rank(ratio)
+
+
+# ── Supplementary reversal ────────────────────────────────────────────────
+
+
+@register_factor(
+    name="reversal_3",
+    description="3日反转因子截面排名 (负向：强者反转)。",
+    category="price",
+    thesis="3日反转捕捉超短期均值回复，A股T+1制度下3日是自然的短线周期",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_reversal_3(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(3))
+    return cross_sectional_rank(-ret)
+
+
+@register_factor(
+    name="reversal_20",
+    description="20日反转因子截面排名 (负向：赢家反转)。",
+    category="price",
+    thesis="A股20日周期存在显著的短期反转效应，短期赢家随后跑输",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_reversal_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    return cross_sectional_rank(-ret)
+
+
+# ── Volume indicators ─────────────────────────────────────────────────────
+
+
+@register_factor(
+    name="volume_momentum_5",
+    description="5日成交量动量因子 (量增排前)。",
+    category="price",
+    thesis="成交量短期增长意味着关注度提升，量先于价是A股常见规律",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volume_momentum_5(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    vol = daily_adj["vol"]
+    ma_5 = rolling_group_mean(vol, 5)
+    ma_20 = rolling_group_mean(vol, 20)
+    ratio = safe_divide(ma_5, ma_20 + 1e-8)
+    return cross_sectional_rank(ratio)
+
+
+@register_factor(
+    name="volume_trend_consistency_20",
+    description="20日价量一致性因子 (量价同向天数占比)。",
+    category="price",
+    thesis="量价配合(涨放量、跌缩量)是健康趋势的标志，量价背离预示趋势衰竭",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volume_trend_consistency_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    vol = daily_adj["vol"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    vol_chg = vol.groupby(level="Code").pct_change()
+    # Consistency: (price up & vol up) or (price down & vol down)
+    consistent = ((ret > 0) & (vol_chg > 0)) | ((ret < 0) & (vol_chg < 0))
+    consist_ratio = consistent.astype(float).groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).mean()
+    )
+    return cross_sectional_rank(consist_ratio)
+
+
+# ── MA distance ───────────────────────────────────────────────────────────
+
+
+@register_factor(
+    name="distance_from_ma_5",
+    description="收盘价/5日均线-1因子截面排名。",
+    category="price",
+    thesis="短期偏离均线过大存在回归压力，但强势股可维持正偏离",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_distance_from_ma_5(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ma_5 = rolling_group_mean(close, 5)
+    return cross_sectional_rank(safe_divide(close - ma_5, ma_5 + 1e-8))
+
+
+@register_factor(
+    name="distance_from_ma_120",
+    description="收盘价/120日均线-1因子截面排名 (负向：远离均线=回归压力)。",
+    category="price",
+    thesis="价格大幅偏离半年线后均值回复力量增强，低偏离股更安全",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_distance_from_ma_120(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ma_120 = rolling_group_mean(close, 120)
+    return cross_sectional_rank(-safe_divide(close - ma_120, ma_120 + 1e-8).abs())
+
+
+# ── Overnight / gap ───────────────────────────────────────────────────────
+
+
+@register_factor(
+    name="overnight_gap_vol_20",
+    description="20日隔夜跳空波动率因子 (高波动排后, 负向)。",
+    category="price",
+    thesis="隔夜跳空波动大意味着信息不确定性高，可能存在信息不对称风险",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_overnight_gap_vol_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    open_p = daily_adj["open"]
+    prev_close = close.groupby(level="Code").shift(1)
+    overnight_ret = safe_divide(open_p - prev_close, prev_close + 1e-8)
+    gap_vol = overnight_ret.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).std()
+    )
+    return cross_sectional_rank(-gap_vol)
+
+
+# ── Return range ──────────────────────────────────────────────────────────
+
+
+@register_factor(
+    name="ret_range_20",
+    description="20日收益率极差因子 (max-min, 高极差排后, 负向)。",
+    category="price",
+    thesis="收益极差反映日度收益的分布范围，极大极差意味着极端波动风险",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_ret_range_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    ret = daily_adj.groupby(level="Code")["close"].transform(lambda s: s.pct_change(1))
+    r_max = ret.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).max()
+    )
+    r_min = ret.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).min()
+    )
+    return cross_sectional_rank(-(r_max - r_min))

@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -130,15 +131,19 @@ def _resolve_effective_end_date(source_root: Path) -> str:
 
 
 def _read_single_file_max_date(filepath: Path) -> str | None:
-    """Read the maximum Date index value from a single .fea file."""
+    """Read the maximum Date index value from a single .fea file.
+
+    Uses ``columns=[]`` to read only the index (no data columns),
+    avoiding a full-file load for wide factor matrices.
+    """
     if not filepath.exists():
         return None
+    import pandas as _pd
     try:
-        df = pq.read_table(filepath).to_pandas()
+        df = _pd.read_feather(filepath, columns=[])
     except Exception:
-        import pandas as pd
         try:
-            df = pd.read_feather(filepath)
+            df = _pd.read_feather(filepath)
         except Exception:
             return None
     if df.empty:
@@ -183,57 +188,35 @@ def decide_build_action(
     source_root: Path,
     force: bool = False,
 ) -> tuple[str, str | None]:
-    """Decide whether to skip, incremental-build, or rebuild a factor.
+    """Always return rebuild — incremental / skip logic is disabled."""
+    return "rebuild", "forced"
 
-    Returns (action, reason_or_new_start_date).
-    - "skip": factor is up to date
-    - "rebuild": need full rebuild
-    - "incremental": rebuild only from a new start date
+
+# ── Factor classification ────────────────────────────────────────────────────
+
+#: Dependency keys that determine which build strategy a factor uses.
+_CLASS_3_DEP = "history_1min"   # per-stock directory → unified intraday pass
+_CLASS_2_DEP = "cyq_chips"      # per-stock directory → unified cyq_chips pass
+_CLASS_4_DEP = "__factors__"    # factor-coupling: loads existing .fea files
+
+
+def classify_factor(name: str) -> int:
+    """Return 1, 2, 3, or 4 based on the factor's declared data dependencies.
+
+    - Class 1 — Panel:            loads from a single .parquet file, vectorised
+    - Class 2 — cyq_chips:        loads from cyq_chips/ per-stock directory
+    - Class 3 — history_1min:     loads from history_1min/ per-stock directory
+    - Class 4 — Coupling:         loads existing .fea factor files, combines them
     """
-    if force:
-        return "rebuild", "forced"
-
-    if not factor_path.exists():
-        return "rebuild", "no existing factor file"
-
-    # Effective end date: cap at the latest legitimately-available trading day
-    effective_end = _resolve_effective_end_date(source_root)
-
-    # Get source data max dates — use MIN (oldest) so all dependencies
-    # must be fresh. The factor is limited by its stalest dependency.
-    source_dates = _check_source_dates(deps, source_root)
-    limiting_source_date: str | None = None
-    for dep, max_d in source_dates.items():
-        if max_d is None:
-            limiting_source_date = None
-            break
-        if limiting_source_date is None or max_d < limiting_source_date:
-            limiting_source_date = max_d
-
-    # Never treat source data as available beyond the effective end date
-    if limiting_source_date is not None and limiting_source_date > effective_end:
-        limiting_source_date = effective_end
-
-    factor_max = _read_factor_max_date(factor_path)
-
-    if factor_max is None:
-        return "rebuild", "cannot determine factor max date"
-
-    # If factor has future data (from a buggy previous build), force rebuild
-    if factor_max > effective_end:
-        return "rebuild", f"factor has future date {factor_max} > effective end {effective_end}"
-
-    # Skip only when the factor has reached the effective end date.
-    # Previously compared against limiting_source_date (oldest dependency
-    # date), which caused factors with slow-updating sources (financial
-    # statements, index_weight, etc.) to never catch up to new trading
-    # days.  Using effective_end ensures incremental mode produces the
-    # same date coverage as a FORCE rebuild.
-    if factor_max >= effective_end:
-        return "skip", f"factor max {factor_max} >= effective end {effective_end}"
-
-    # Factor is behind — need incremental rebuild
-    return "incremental", factor_max
+    spec = get_factor(name)
+    deps = spec.dependencies
+    if _CLASS_3_DEP in deps:
+        return 3
+    if _CLASS_2_DEP in deps:
+        return 2
+    if _CLASS_4_DEP in deps:
+        return 4
+    return 1
 
 
 # ── Listing ─────────────────────────────────────────────────────────────────
@@ -282,7 +265,23 @@ def recommend_worker_count() -> int:
     I/O parallelism — the factor pool size controls only how many factors
     are computed concurrently, not how each factor uses CPU internally.
     """
-    return 3
+    n = 3
+    try:
+        # Linux /proc/meminfo is the most reliable across Python versions
+        with open("/proc/meminfo") as f:
+            meminfo = f.read()
+        import re
+        avail = re.search(r"MemAvailable:\s+(\d+)", meminfo)
+        if avail:
+            avail_kb = int(avail.group(1))
+            avail_gb = avail_kb / (1024 * 1024)
+            if avail_gb < 8:
+                n = 1
+            elif avail_gb < 16:
+                n = 2
+    except Exception:
+        pass
+    return n
 
 
 def _category_rank(category: str) -> tuple[int, str]:
@@ -333,6 +332,8 @@ def build_factor(
     If *factor_start_date* is provided, only rows after that date are kept
     (incremental mode). The caller handles merging with existing data.
     """
+    import time as _time_module
+
     spec = get_factor(name)
     repo = repo or DataRepository(paths=paths)
 
@@ -340,6 +341,7 @@ def build_factor(
     factor_frame = None
     rows = 0
     nn_rows = 0
+    error_msg = None
 
     # Compute context start date for date-aware loading
     _LOOKBACK = 252  # one calendar year, covers all rolling-window factors
@@ -355,6 +357,10 @@ def build_factor(
     if factor_start_date and _effective_end < factor_start_date:
         _effective_end = factor_start_date
 
+    logger.debug("%s [%s]: start%s",
+                 name, spec.category,
+                 f" (incremental from {factor_start_date})" if factor_start_date else "")
+
     try:
         context = FactorContext(repo=repo, start_date=context_start, end_date=_effective_end)
         raw_output = spec.compute(context)
@@ -366,6 +372,9 @@ def build_factor(
 
         rows = len(factor_frame)
         nn_rows = int(factor_frame.notna().sum().sum())
+
+        # Quick stats for the log
+        mem_mb = factor_frame.memory_usage(deep=True).sum() / (1024 * 1024) if rows else 0
 
         if spec.category == "target":
             factor_path, manifest_path = write_target(spec, factor_frame, paths=repo.paths)
@@ -379,13 +388,18 @@ def build_factor(
         action = "incremental" if factor_start_date else "rebuild"
         _write_done_marker(name, action, repo.paths.manifest_output_dir)
 
-    except Exception:
+    except Exception as exc:
+        error_msg = str(exc)
+        logger.error("%s [%s]: FAILED — %s", name, spec.category, error_msg, exc_info=True)
         factor_path = repo.paths.factor_output_dir / f"{spec.name}.fea"
         manifest_path = repo.paths.manifest_output_dir / f"{spec.name}.json"
         raise
 
     finally:
         elapsed = time.perf_counter() - t0
+        if error_msg is None:
+            logger.debug("%s [%s]: done — %d rows, %d non-null, %.1f s, %.1f MB",
+                         name, spec.category, rows, nn_rows, elapsed, mem_mb)
 
     action = "incremental" if factor_start_date else "rebuild"
     return BuildResult(
@@ -517,8 +531,8 @@ def build_many(
                     refresh=True,
                 )
                 sub_bar.refresh()
-            except Exception as e:
-                logger.error(f"{name}: {e}")
+            except Exception:
+                logger.exception("%s: build failed", name)
                 results.append(BuildResult(
                     factor_name=name,
                     factor_path=repo_temp.paths.factor_output_dir / f"{get_factor(name).name}.fea",
@@ -531,6 +545,16 @@ def build_many(
 
     sub_bar.close()
     results.sort(key=lambda item: item.factor_name)
+
+    # Summary log
+    ok = sum(1 for r in results if r.action not in ("skip", "error"))
+    skipped = sum(1 for r in results if r.action == "skip")
+    errors = sum(1 for r in results if r.action == "error")
+    total_elapsed = sum(r.elapsed for r in results)
+    total_rows = sum(r.rows for r in results)
+    logger.info("Build complete — %d ok, %d skip, %d error | %.0f s wall | %d total rows",
+                ok, skipped, errors, total_elapsed, total_rows)
+
     return results
 
 
@@ -826,11 +850,27 @@ def build_many_parallel(
 
                     # ── Collect completed futures ──
                     done = {f for f in pending if f.done()}
+                    pool_broken = False
                     for fut in done:
                         pending.discard(fut)
                         name = futures[fut]
                         try:
                             worker_result = fut.result()
+                        except BrokenProcessPool:
+                            logger.error("%s: process pool broken (OOM kill likely) — "
+                                         "marking remaining %d factors as failed", name, len(pending) + 1)
+                            pool_broken = True
+                            worker_result = {
+                                "factor_name": name,
+                                "factor_path": "",
+                                "manifest_path": "",
+                                "elapsed": 0.0,
+                                "action": "error",
+                                "category": "",
+                                "rows": 0,
+                                "non_null_rows": 0,
+                                "error": "Process pool terminated abruptly (likely out of memory)",
+                            }
                         except Exception as e:
                             logger.exception("%s: worker failed", name)
                             worker_result = {
@@ -877,6 +917,27 @@ def build_many_parallel(
                         except Exception:
                             pass
 
+                    # ── Handle broken pool: skip remaining futures without
+                    #     calling .result() to avoid cascading BrokenProcessPool ──
+                    if pool_broken:
+                        for remaining in list(pending):
+                            pending.discard(remaining)
+                            rname = futures[remaining]
+                            try:
+                                remaining.cancel()
+                            except Exception:
+                                pass
+                            results.append(BuildResult(
+                                factor_name=rname,
+                                factor_path=Path(""),
+                                manifest_path=Path(""),
+                                elapsed=0.0,
+                                action="error",
+                            ))
+                            logger.error("%s: skipped (pool already broken)", rname)
+                            bar.update(1)
+                        break
+
                     if pending:
                         import time as _time
                         _time.sleep(0.1)
@@ -897,52 +958,14 @@ def build_many_parallel(
             ))
 
     results.sort(key=lambda item: item.factor_name)
-    return results
 
-
-# ── Main entry ──────────────────────────────────────────────────────────────
-
-def build_all(
-    *,
-    factor_names: list[str] | None = None,
-    max_workers: int | None = None,
-    sequential: bool = False,
-    project_root: str | Path | None = None,
-    source_root: str | Path | None = None,
-    force: bool = False,
-) -> list[BuildResult]:
-    configured_paths = configure_paths(
-        project_root=project_root, source_root=source_root,
-    )
-    ensure_builtin_factors_loaded()
-
-    selected_factor_names = factor_names or [spec.name for spec in list_factors()]
-    selected_factor_names = sorted(set(selected_factor_names))
-
-    results: list[BuildResult]
-    if sequential or len(selected_factor_names) == 1:
-        results = build_many(selected_factor_names, paths=configured_paths, force=force)
-    else:
-        results = build_many_parallel(
-            selected_factor_names, max_workers=max_workers, paths=configured_paths, force=force,
-        )
-
-    # Summary
-    actions = {}
-    for r in results:
-        actions[r.action] = actions.get(r.action, 0) + 1
-    logger.info(f"Build summary: {actions}")
-
-    slowest = sorted(
-        [r for r in results if r.elapsed > 0],
-        key=lambda r: r.elapsed, reverse=True,
-    )[:5]
-    if slowest:
-        logger.info("Slowest factors:")
-        for r in slowest:
-            logger.info(f"  {r.factor_name:<35} {r.elapsed:>8.1f}s  ({r.action})")
-
-    # Print factor date report after every build
-    print_post_build_report(check_factor_dates(paths=configured_paths))
+    # Summary log
+    ok_count = sum(1 for r in results if r.action not in ("skip", "error"))
+    skip_count = sum(1 for r in results if r.action == "skip")
+    err_count = sum(1 for r in results if r.action == "error")
+    total_elapsed = sum(r.elapsed for r in results)
+    total_rows = sum(r.rows for r in results)
+    logger.info("Build complete — %d ok, %d skip, %d error | %.0f s wall | %d total rows",
+                ok_count, skip_count, err_count, total_elapsed, total_rows)
 
     return results

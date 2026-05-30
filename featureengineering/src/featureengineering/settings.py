@@ -2,10 +2,41 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import warnings
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 _LOGGING_CONFIGURED = False
+_FILE_LOGGING_CONFIGURED = False
+
+
+def log_environment_info() -> None:
+    """Log Python / package versions and log-file path once per run.
+
+    Idempotent across process trees via an environment variable so it is
+    safe to call from *both* ``build_factors.py`` and ``cli.main()`` —
+    only the first caller across all processes actually emits the lines.
+    """
+    if os.environ.get("FEATURE_ENGINEERING_ENV_LOGGED"):
+        return
+    os.environ["FEATURE_ENGINEERING_ENV_LOGGED"] = "1"
+
+    root = logging.getLogger()
+    log_path = os.environ.get("FEATURE_ENGINEERING_LOG_FILE", "")
+    if log_path:
+        root.info("Log file  : %s", log_path)
+    try:
+        import pandas as _pd
+        pd_ver = _pd.__version__
+    except Exception:
+        pd_ver = "N/A"
+    root.info("Python    : %s", sys.version.split()[0])
+    root.info("pandas    : %s", pd_ver)
+    root.info("numpy     : %s", np.__version__)
 
 
 def setup_logging(level: int = logging.INFO) -> None:
@@ -16,12 +47,12 @@ def setup_logging(level: int = logging.INFO) -> None:
     _LOGGING_CONFIGURED = True
 
     fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # stdout handler — INFO and above
-    stdout = logging.StreamHandler()
+    # stdout handler — INFO and above, keeps console output
+    stdout = logging.StreamHandler(sys.stdout)
     stdout.setLevel(logging.INFO)
     stdout.setFormatter(fmt)
 
@@ -29,25 +60,88 @@ def setup_logging(level: int = logging.INFO) -> None:
     root.setLevel(logging.DEBUG)
     root.addHandler(stdout)
 
+    # — numpy floating-point warnings → logger —
+    # We redirect them so the tqdm progress bars are not corrupted by
+    # stderr spam.  Factors that produce divide-by-zero / invalid-value
+    # are still visible in the log file for triage.
+    np.seterr(all="call")
+
+    def _np_err_handler(err, flag):
+        logging.getLogger("numpy").warning("NumPy %s: %s", flag, err)
+
+    np.seterrcall(_np_err_handler)
+
+    # — Python warnings (pandas FutureWarning, RuntimeWarning, etc.) → logger —
+    logging.captureWarnings(True)
+    warnings_logger = logging.getLogger("py.warnings")
+
+    # Show each unique warning once per run (not per site).
+    warnings.filterwarnings("default")
+    # Demote the noisy pct_change fill_method FutureWarning so it does not
+    # drown the log — it is already tracked in the code and doesn't block
+    # correct results.
+    warnings.filterwarnings(
+        "ignore",
+        message=".*fill_method.*pct_change.*",
+        category=FutureWarning,
+    )
+
 
 def _setup_file_logging(log_dir: Path) -> None:
-    """Add a file handler once the log directory is known."""
+    """Add a timestamped file handler once the log directory is known.
+
+    Log files are named ``featureengineering_YYYYMMDD_HHMMSS.log`` so
+    each run produces a separate, chronologically sortable file.
+    A symlink at ``featureengineering_latest.log`` always points
+    to the most recent file for quick access.
+
+    When running inside parallel workers the log-file path is read from
+    the ``FEATURE_ENGINEERING_LOG_FILE`` environment variable so every
+    worker writes to the same file as the main process.
+    """
+    global _FILE_LOGGING_CONFIGURED
+    if _FILE_LOGGING_CONFIGURED:
+        return
+    _FILE_LOGGING_CONFIGURED = True
+
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
     except (OSError, PermissionError):
-        return  # silently skip file logging if the directory is not writable
+        return
+
+    # Use the parent-provided log path when running inside a worker,
+    # otherwise create a new timestamped file.
+    shared_log = os.environ.get("FEATURE_ENGINEERING_LOG_FILE")
+    if shared_log:
+        log_file = Path(shared_log)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = log_dir / f"featureengineering_{timestamp}.log"
+        # Expose the log path so child processes (parallel workers) reuse it.
+        os.environ["FEATURE_ENGINEERING_LOG_FILE"] = str(log_file)
+
+    latest_link = log_dir / "featureengineering_latest.log"
+
     try:
-        file_handler = logging.FileHandler(log_dir / "featureengineering.log", encoding="utf-8")
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         ))
         root = logging.getLogger()
-        if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
-            root.addHandler(file_handler)
+        root.addHandler(file_handler)
     except (OSError, PermissionError):
         return
+
+    # Update / create the "latest" symlink for convenience (main process only)
+    if not shared_log:
+        try:
+            if latest_link.is_symlink() or latest_link.exists():
+                latest_link.unlink()
+            latest_link.symlink_to(log_file.name)
+        except OSError:
+            pass
 
 
 @dataclass(frozen=True)

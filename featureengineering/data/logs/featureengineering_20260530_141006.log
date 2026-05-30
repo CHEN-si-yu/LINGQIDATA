@@ -1,0 +1,6 @@
+2026-05-30 14:10:06 [INFO   ] root: Log file  : /root/shared-nvme/lingqiData/featureengineering/data/logs/featureengineering_20260530_141006.log
+2026-05-30 14:10:06 [INFO   ] root: Python    : 3.13.9
+2026-05-30 14:10:06 [INFO   ] root: pandas    : 2.3.3
+2026-05-30 14:10:06 [INFO   ] root: numpy     : 2.3.5
+2026-05-30 14:10:06 [INFO   ] featureengineering.builder: Build plan: 101 rebuild | 0 incremental | 0 skip
+2026-05-30 14:11:58 [INFO   ] featureengineering.builder: Build complete — 101 ok, 0 skip, 0 error | 1146 s wall | 0 total rows

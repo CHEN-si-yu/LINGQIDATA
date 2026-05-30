@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
+from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
 
 
 # ── Risk-adjusted momentum ──────────────────────────────────────────────
@@ -136,117 +136,8 @@ def factor_price_volume_corr_20(context: FactorContext):
     return cross_sectional_rank(corr)
 
 
-# ── Cross-factor composites (value × quality, momentum × chip) ─────────
-
-@register_factor(
-    name="bp_x_roe",
-    description="价值×质量交互因子，BP排名×ROE排名的等权复合截面排名。",
-    category="enhanced",
-    thesis="高BP+高ROE是Greenblatt神奇公式的精髓——又好又便宜。单独的高BP可能陷入价值陷阱（坏公司理应便宜），单独的高ROE可能过于昂贵，两者交集才是真正的投资机会。",
-    dependencies=("finance.parquet", "financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_bp_x_roe(context: FactorContext):
-    finance = context.load("finance.parquet")
-    bp = 1.0 / finance["pb"].replace(0, np.nan)
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["roe"]
-    )
-    with np.errstate(invalid="ignore"):
-        rank_bp = bp.groupby(level="Date").rank(pct=True)
-        rank_roe = fin["roe"].groupby(level="Date").rank(pct=True)
-    composite = (rank_bp + rank_roe) / 2.0
-    return composite.rename("bp_x_roe")
 
 
-@register_factor(
-    name="mom_x_winner",
-    description="动量×筹码交互因子，20日动量排名×获利盘比例排名的复合截面排名。",
-    category="enhanced",
-    thesis="动量策略最大的风险是追高被套——高动量但获利盘比例也高的股票面临获利了结压力。将动量与筹码验证结合：高动量+低获利盘（=筹码仍未充分获利、上涨空间大）才是更可靠的动量信号。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
-)
-def factor_mom_x_winner(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    perf = context.load("cyq_perf.parquet")
-    mom = daily_adj.groupby(level="Code")["close"].transform(
-        lambda s: s.pct_change(20)
-    )
-    winner_rate = -perf["winner_rate"]
-    common = mom.index.intersection(winner_rate.index)
-    with np.errstate(invalid="ignore"):
-        rank_mom = mom.loc[common].groupby(level="Date").rank(pct=True)
-        rank_winner = winner_rate.loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_mom + rank_winner) / 2.0
-    return composite.rename("mom_x_winner")
-
-
-@register_factor(
-    name="margin_of_safety",
-    description="安全边际因子，BP排名×经营现金流质量排名的等权复合截面排名。",
-    category="enhanced",
-    thesis="安全边际不仅仅是便宜（低PB），还要有现金利润支撑。高BP+高OCF质量=企业的账面净资产能产生真实现金回报，此时低估值才是真正安全的机会，而非会计意义上的价值陷阱。",
-    dependencies=("finance.parquet", "financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_margin_of_safety(context: FactorContext):
-    finance = context.load("finance.parquet")
-    bp = 1.0 / finance["pb"].replace(0, np.nan)
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["ocf_to_profit"]
-    )
-    common = bp.index.intersection(fin["ocf_to_profit"].index)
-    with np.errstate(invalid="ignore"):
-        rank_bp = bp.loc[common].groupby(level="Date").rank(pct=True)
-        rank_ocf = fin["ocf_to_profit"].loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_bp + rank_ocf) / 2.0
-    return composite.rename("margin_of_safety")
-
-
-# ── Overnight × intraday separation ─────────────────────────────────────
-
-@register_factor(
-    name="overnight_intraday_divergence",
-    description="隔夜-日内背离因子，20日隔夜累计收益-20日日内累计收益截面排名。",
-    category="enhanced",
-    thesis="隔夜收益反映机构主导的隔夜信息定价，日内收益反映散户主导的盘中交易。隔夜-日内背离度大（隔夜强/日内弱）代表机构吸筹而散户抛售，是聪明钱vs散户的分化信号。",
-    dependencies=("daily.parquet",),
-)
-def factor_overnight_intraday_divergence(context: FactorContext):
-    daily = context.load("daily.parquet")
-    overnight_ret = (daily["open"] - daily["pre_close"]) / daily["pre_close"].replace(0, np.nan)
-    intraday_ret = (daily["close"] - daily["open"]) / daily["open"].replace(0, np.nan)
-    cum_overnight = overnight_ret.groupby(level="Code").transform(
-        lambda s: s.rolling(20, min_periods=10).sum()
-    )
-    cum_intraday = intraday_ret.groupby(level="Code").transform(
-        lambda s: s.rolling(20, min_periods=10).sum()
-    )
-    divergence = cum_overnight - cum_intraday
-    return cross_sectional_rank(divergence)
-
-
-# ── GARP (Growth at Reasonable Price) ──────────────────────────────────
-
-
-@register_factor(
-    name="garp_composite",
-    description="合理价格增长因子，(rank(净利润增速)+rank(1/PE))/2截面排名。",
-    category="enhanced",
-    thesis="GARP策略寻找以合理价格增长的公司——避免纯粹高增长的高估值陷阱，也避免纯粹低估值无增长的价值陷阱。净利润增速与低PE的交集是机构选股的核心框架，在A股中该交集因子比单独的增长或估值因子更稳健。",
-    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
-)
-def factor_garp_composite(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["netprofit_yoy"],
-    )
-    fin_panel = context.load("finance.parquet")
-    pe_recip = 1.0 / fin_panel["pe_ttm"].replace(0, np.nan)
-    common = fin["netprofit_yoy"].index.intersection(pe_recip.index)
-    with np.errstate(invalid="ignore"):
-        rank_growth = fin["netprofit_yoy"].loc[common].groupby(level="Date").rank(pct=True)
-        rank_pe_inv = pe_recip.loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_growth + rank_pe_inv) / 2.0
-    return composite.rename("garp_composite")
 
 
 # ── Quality × Low volatility ───────────────────────────────────────────
@@ -368,3 +259,429 @@ def factor_winner_rate_reversal_divergence(context: FactorContext):
         rank_r = reversal.loc[common].groupby(level="Date").rank(pct=True)
     composite = (rank_w + rank_r) / 2.0
     return composite.rename("winner_rate_reversal_divergence")
+# ── Residual momentum ──────────────────────────────────────────────────────
+
+@register_factor(
+    name="residual_momentum_20",
+    description="残差动量因子，20日收益率对市场等权收益回归取残差截面排名。",
+    category="enhanced",
+    thesis="剔除市场Beta后的残差动量是更纯粹的个股alpha信号——在牛市中不被市场上涨掩盖，在熊市中不被系统性下跌拖累。与mom_20互补：残差动量过滤了系统性风险暴露。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_residual_momentum_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+
+    ret_1 = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    ret_20 = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
+
+    ret_1_panel = ret_1.unstack("Code")
+    ret_20_panel = ret_20.unstack("Code")
+    mkt_ret = ret_1_panel.mean(axis=1)
+
+    cov = ret_1_panel.rolling(60, min_periods=30).cov(mkt_ret, pairwise=False)
+    var = mkt_ret.rolling(60, min_periods=30).var()
+    beta_panel = cov.div(var, axis=0)
+
+    mkt_panel = pd.DataFrame(
+        {c: mkt_ret for c in ret_20_panel.columns}, index=ret_20_panel.index
+    )
+    residual_panel = ret_20_panel - beta_panel * mkt_panel
+    residual = residual_panel.stack().reorder_levels(["Date", "Code"]).sort_index()
+    return cross_sectional_rank(residual)
+
+
+# ── Intraday × overnight combo ─────────────────────────────────────────────
+
+@register_factor(
+    name="intraday_overnight_combo",
+    description="日内隔夜综合因子，intraday_reversal的截面排名 + overnight_gap的截面排名的等权均值。",
+    category="enhanced",
+    thesis="日内反转和隔夜缺口是A股两个独立的短期alpha来源——日内反转捕捉高频交易者行为偏差，隔夜缺口反映机构盘后信息优势。两者等权结合比单独使用稳定性更强。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_intraday_overnight_combo(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    open_price = daily_adj["open"]
+
+    # Intraday return = close/open - 1 (approximate intraday reversal signal)
+    denom = open_price.replace(0, np.nan)
+    intraday_ret = close / denom - 1.0
+    intraday_rank = intraday_ret.groupby(level="Date").rank(pct=True)
+
+    # Overnight gap = open/prev_close - 1
+    prev_close = close.groupby(level="Code").shift(1)
+    overnight_gap = open_price / prev_close.replace(0, np.nan) - 1.0
+    overnight_rank = overnight_gap.groupby(level="Date").rank(pct=True)
+
+    combo = (intraday_rank + overnight_rank) / 2.0
+    return cross_sectional_rank(combo)
+
+
+# ── Supplementary enhanced / composite factors ────────────────────────────
+
+
+@register_factor(
+    name="mom_20_sharpe",
+    description="20日动量夏普比因子 (动量/波动率) 截面排名。",
+    category="enhanced",
+    thesis="风险调整后的动量比原始动量更干净，去除高波动噪音，关注真正稳定的趋势",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_20_sharpe(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    mom = rolling_group_mean(ret, 20) * 252
+    vol = rolling_group_std(ret, 20) * np.sqrt(252)
+    sharpe = safe_divide(mom, vol + 1e-8)
+    return cross_sectional_rank(sharpe)
+
+
+@register_factor(
+    name="mom_60_sharpe",
+    description="60日动量夏普比因子 (动量/波动率) 截面排名。",
+    category="enhanced",
+    thesis="中期动量的风险调整版本，60日窗口的夏普比更稳定",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_mom_60_sharpe(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    mom = rolling_group_mean(ret, 60) * 252
+    vol = rolling_group_std(ret, 60) * np.sqrt(252)
+    sharpe = safe_divide(mom, vol + 1e-8)
+    return cross_sectional_rank(sharpe)
+
+
+@register_factor(
+    name="bp_x_mom_20",
+    description="BP x 20日动量交互因子 (价值+趋势双排名均值)。",
+    category="enhanced",
+    thesis="低估值+近期上涨=基本面反转确认，价值与趋势的互补性很强",
+    dependencies=("daily_adj.parquet", "finance.parquet"),
+)
+def factor_bp_x_mom_20(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    finance = context.load("finance.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    pb = finance["pb"]
+    bp = safe_divide(1.0, pb)
+    common = ret.index.intersection(bp.index)
+    bp_rank = bp.loc[common].groupby(level="Date").rank(pct=True)
+    mom_rank = ret.loc[common].groupby(level="Date").rank(pct=True)
+    combo = (bp_rank + mom_rank) / 2.0
+    return cross_sectional_rank(combo)
+
+
+@register_factor(
+    name="quality_x_value",
+    description="质量x价值综合因子 (ROE排名 x BP排名) 截面排名。",
+    category="enhanced",
+    thesis="高ROE+低PB是最经典的价值投资框架，GARP的极端形式",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
+)
+def factor_quality_x_value(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["roe"])
+    finance = context.load("finance.parquet")
+    roe = fin["roe"]
+    pb = finance["pb"]
+    bp = safe_divide(1.0, pb)
+    common = roe.index.intersection(bp.index)
+    roe_rank = roe.loc[common].groupby(level="Date").rank(pct=True)
+    bp_rank = bp.loc[common].groupby(level="Date").rank(pct=True)
+    combo = (roe_rank + bp_rank) / 2.0
+    return cross_sectional_rank(combo)
+
+
+@register_factor(
+    name="trend_quality_composite",
+    description="趋势质量复合因子 (动量+低波+量一致性三排名均值)。",
+    category="enhanced",
+    thesis="动量、低波、量价一致性三个维度结合，识别健康趋势股",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_trend_quality_composite(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    vol = daily_adj["vol"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+
+    mom = rolling_group_mean(ret, 20)
+    mom_rank = mom.groupby(level="Date").rank(pct=True)
+
+    vol_20 = rolling_group_std(ret, 20)
+    vol_rank = (-vol_20).groupby(level="Date").rank(pct=True)
+
+    vol_chg = vol.groupby(level="Code").pct_change()
+    consistent = ((ret > 0) & (vol_chg > 0)) | ((ret < 0) & (vol_chg < 0))
+    consist_ratio = consistent.astype(float).groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).mean()
+    )
+    consist_rank = consist_ratio.groupby(level="Date").rank(pct=True)
+
+    combo = (mom_rank + vol_rank + consist_rank) / 3.0
+    return cross_sectional_rank(combo)
+
+
+@register_factor(
+    name="low_risk_composite",
+    description="低风险综合因子 (低波+低回撤双排名均值)。",
+    category="enhanced",
+    thesis="结合低波动和低回撤两个风险管理维度，构建稳健的低风险组合",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_low_risk_composite(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    close = daily_adj["close"]
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+
+    vol_20 = rolling_group_std(ret, 20)
+    vol_rank = (-vol_20).groupby(level="Date").rank(pct=True)
+
+    cummax = close.groupby(level="Code").transform(
+        lambda s: s.rolling(60, min_periods=30).max()
+    )
+    dd = (close - cummax) / cummax
+    max_dd = dd.groupby(level="Code").transform(
+        lambda s: s.rolling(60, min_periods=30).min()
+    )
+    dd_rank = max_dd.groupby(level="Date").rank(pct=True)
+
+    combo = (vol_rank + dd_rank) / 2.0
+    return cross_sectional_rank(combo)
+
+
+@register_factor(
+    name="sentiment_momentum_composite",
+    description="情绪动量复合因子 (动量+量趋势+换手趋势三排名均值)。",
+    category="enhanced",
+    thesis="结合价格动量、成交量趋势和换手率变化的市场情绪综合度量",
+    dependencies=("daily_adj.parquet", "finance.parquet"),
+)
+def factor_sentiment_momentum_composite(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    finance = context.load("finance.parquet")
+    close = daily_adj["close"]
+    vol = daily_adj["vol"]
+    turnover = finance["turnover_rate"]
+
+    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
+    mom = rolling_group_mean(ret, 20)
+    mom_rank = mom.groupby(level="Date").rank(pct=True)
+
+    vol_ma_5 = rolling_group_mean(vol, 5)
+    vol_ma_20 = rolling_group_mean(vol, 20)
+    vol_trend = safe_divide(vol_ma_5 - vol_ma_20, vol_ma_20 + 1e-8)
+    vol_rank = vol_trend.groupby(level="Date").rank(pct=True)
+
+    to_ma_5 = rolling_group_mean(turnover, 5)
+    to_ma_20 = rolling_group_mean(turnover, 20)
+    to_trend = safe_divide(to_ma_5 - to_ma_20, to_ma_20 + 1e-8)
+    to_rank = to_trend.groupby(level="Date").rank(pct=True)
+
+    combo = (mom_rank + vol_rank + to_rank) / 3.0
+    return cross_sectional_rank(combo)
+
+
+# ── Value-Momentum composites ─────────────────────────────────────────────
+
+@register_factor(
+    name="bp_x_roe",
+    description="价值×质量交互因子，bp截面排名×roe截面排名（高=低估+高质量排前）。",
+    category="enhanced",
+    thesis="BP×ROE是经典的价值+质量交叉——避免'价值陷阱'（低BP但ROE差）和'质量溢价过高'（高ROE但估值太贵），同时满足便宜+优质的条件。",
+    dependencies=("__factors__", "bp", "roe"),
+)
+def factor_bp_x_roe(context: FactorContext):
+    bp = context.load_factor("bp")
+    roe = context.load_factor("roe")
+    common = bp.index.intersection(roe.index)
+    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
+    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(bp_r * roe_r)
+
+
+@register_factor(
+    name="mom_x_winner",
+    description="动量×筹码验证因子，mom_20截面排名×winner_rate截面排名（有筹码支撑的动量更可靠排前）。",
+    category="enhanced",
+    thesis="动量效应与筹码结构交叉验证——有获利盘支撑的动量趋势比纯价格动量更可靠，减少了追高被套的风险。",
+    dependencies=("__factors__", "mom_20", "winner_rate"),
+)
+def factor_mom_x_winner(context: FactorContext):
+    mom = context.load_factor("mom_20")
+    wr = context.load_factor("winner_rate")
+    common = mom.index.intersection(wr.index)
+    mom_r = mom.loc[common].groupby(level="Date").rank(pct=True)
+    wr_r = wr.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(mom_r * wr_r)
+
+
+@register_factor(
+    name="margin_of_safety",
+    description="安全边际因子，bp排名×(1-资产负债率排名)截面排名。",
+    category="enhanced",
+    thesis="BP(低估值)×低杠杆=安全边际——既便宜又财务稳健的公司在市场下行时有双重保护：估值支撑+财务不爆雷。",
+    dependencies=("__factors__", "bp", "debt_to_assets"),
+)
+def factor_margin_of_safety(context: FactorContext):
+    bp = context.load_factor("bp")
+    debt = context.load_factor("debt_to_assets")
+    common = bp.index.intersection(debt.index)
+    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
+    debt_r = debt.loc[common].groupby(level="Date").rank(pct=True)
+    safety = bp_r * (1 - debt_r)
+    return cross_sectional_rank(safety)
+
+
+@register_factor(
+    name="quality_momentum_composite",
+    description="质量动量综合因子，roe_momentum_4q排名×mom_20排名截面排名。",
+    category="enhanced",
+    thesis="盈利改善+价格动量同时发生=基本面和技术面共振——是最可靠的趋势信号，盈利驱动+价格验证。",
+    dependencies=("__factors__", "roe_momentum_4q", "mom_20"),
+)
+def factor_quality_momentum_composite(context: FactorContext):
+    roe_mom = context.load_factor("roe_momentum_4q")
+    mom = context.load_factor("mom_20")
+    common = roe_mom.index.intersection(mom.index)
+    roe_r = roe_mom.loc[common].groupby(level="Date").rank(pct=True)
+    mom_r = mom.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(roe_r * mom_r)
+
+
+@register_factor(
+    name="value_quality_volatility",
+    description="价值质量低波综合因子，(bp+roe-振幅)三维度截面排名。",
+    category="enhanced",
+    thesis="低估值+高质量+低波动的三维交叉——低估值提供安全边际、高质量提供盈利保障、低波动提供持有体验，是长线资金最偏好的组合特征。",
+    dependencies=("__factors__", "bp", "roe", "volatility_20"),
+)
+def factor_value_quality_volatility(context: FactorContext):
+    bp = context.load_factor("bp")
+    roe = context.load_factor("roe")
+    vol = context.load_factor("volatility_20")
+    common = bp.index.intersection(roe.index).intersection(vol.index)
+    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
+    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
+    vol_r = vol.loc[common].groupby(level="Date").rank(pct=True)
+    composite = bp_r + roe_r + (1 - vol_r)
+    return cross_sectional_rank(composite)
+
+
+@register_factor(
+    name="growth_at_reasonable_price",
+    description="GARP因子，or_yoy排名/(1+bp排名)截面排名（成长性/估值=性价比排前）。",
+    category="enhanced",
+    thesis="Growth At Reasonable Price(GARP)策略——寻找成长性好但估值合理(不过贵)的股票，是成长投资和价值投资的交汇点。",
+    dependencies=("__factors__", "bp", "or_yoy"),
+)
+def factor_growth_at_reasonable_price(context: FactorContext):
+    bp = context.load_factor("bp")
+    growth = context.load_factor("or_yoy")
+    common = bp.index.intersection(growth.index)
+    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
+    growth_r = growth.loc[common].groupby(level="Date").rank(pct=True)
+    garp = growth_r / (1 + bp_r)
+    return cross_sectional_rank(garp)
+
+
+@register_factor(
+    name="earnings_momentum_quality",
+    description="盈利动量质量因子，ROE动量×OCF/利润排名截面排名（盈利改善+现金流确认排前）。",
+    category="enhanced",
+    thesis="盈利改善但需要现金流的确认——ROE动量提升+高现金流质量的组合过滤了'纸面利润改善'，确保盈利改善是真正有现金支撑的。",
+    dependencies=("__factors__", "roe_momentum_4q", "ocf_to_profit"),
+)
+def factor_earnings_momentum_quality(context: FactorContext):
+    roe_mom = context.load_factor("roe_momentum_4q")
+    ocf_q = context.load_factor("ocf_to_profit")
+    common = roe_mom.index.intersection(ocf_q.index)
+    roe_r = roe_mom.loc[common].groupby(level="Date").rank(pct=True)
+    ocf_r = ocf_q.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(roe_r * ocf_r)
+
+
+@register_factor(
+    name="reversal_with_volume_confirmation",
+    description="放量反转确认因子，-mom_5排名×volume_ratio排名截面排名（放量反转=信号确认排前）。",
+    category="enhanced",
+    thesis="反转信号的可靠性需要成交量验证——缩量反转可能是噪音，放量反转(尤其是底部放量反弹)是趋势转变的强力确认。",
+    dependencies=("__factors__", "mom_5", "volume_ratio"),
+)
+def factor_reversal_with_volume_confirmation(context: FactorContext):
+    mom5 = context.load_factor("mom_5")
+    vol_ratio = context.load_factor("volume_ratio")
+    common = mom5.index.intersection(vol_ratio.index)
+    reversal = (1 - mom5.loc[common].groupby(level="Date").rank(pct=True))
+    vol_r = vol_ratio.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(reversal * vol_r)
+
+
+@register_factor(
+    name="quality_turnover_divergence",
+    description="质量换手背离因子，roe排名×(1-turnover_20排名)截面排名（高质量+低换手=筹码锁定排前）。",
+    category="enhanced",
+    thesis="高质量股票+低换手率=机构长线持有不交易——是'被遗忘的优质股'信号，低换手意味着市场关注度低但基本面好，有重估潜力。",
+    dependencies=("__factors__", "roe", "turnover_20"),
+)
+def factor_quality_turnover_divergence(context: FactorContext):
+    roe = context.load_factor("roe")
+    turnover = context.load_factor("turnover_20")
+    common = roe.index.intersection(turnover.index)
+    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
+    to_r = (1 - turnover.loc[common].groupby(level="Date").rank(pct=True))
+    return cross_sectional_rank(roe_r * to_r)
+
+
+@register_factor(
+    name="breakout_with_fund_flow",
+    description="突破+资金确认因子，mom_20排名×net_mf_amount_intensity排名截面排名。",
+    category="enhanced",
+    thesis="价格突破趋势+主力资金净流入=资金驱动型突破——价格突破得到主力资金的确认，趋势持续性更强。",
+    dependencies=("__factors__", "mom_20", "net_mf_amount_intensity"),
+)
+def factor_breakout_with_fund_flow(context: FactorContext):
+    mom = context.load_factor("mom_20")
+    mf = context.load_factor("net_mf_amount_intensity")
+    common = mom.index.intersection(mf.index)
+    mom_r = mom.loc[common].groupby(level="Date").rank(pct=True)
+    mf_r = mf.loc[common].groupby(level="Date").rank(pct=True)
+    return cross_sectional_rank(mom_r * mf_r)
+
+
+@register_factor(
+    name="liquidity_discount_factor",
+    description="流动性折价因子，(1-bp排名)×(1-turnover_20排名)截面排名（低估值+低流动性=流动性折价排前）。",
+    category="enhanced",
+    thesis="低估值的低流动性股票有双重折价——估值折价+流动性折价。当流动性改善时(如被纳入指数)，流动性折价修复会带来显著的alpha。",
+    dependencies=("__factors__", "bp", "turnover_20"),
+)
+def factor_liquidity_discount_factor(context: FactorContext):
+    bp = context.load_factor("bp")
+    turnover = context.load_factor("turnover_20")
+    common = bp.index.intersection(turnover.index)
+    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
+    low_liq = (1 - turnover.loc[common].groupby(level="Date").rank(pct=True))
+    return cross_sectional_rank(bp_r * low_liq)
+
+
+@register_factor(
+    name="sentiment_divergence_factor",
+    description="情绪背离因子，(资金流入排名-动量排名)截面排名（资金流入>动量=资金提前布局排前）。",
+    category="enhanced",
+    thesis="资金流向与价格动量的背离蕴含信息——资金流入领先于价格上涨(聪明钱提前布局)，资金流出但价格不跌(筹码吸收)。正向背离是alpha来源。",
+    dependencies=("__factors__", "mom_20", "net_mf_amount_intensity"),
+)
+def factor_sentiment_divergence_factor(context: FactorContext):
+    mom = context.load_factor("mom_20")
+    mf = context.load_factor("net_mf_amount_intensity")
+    common = mom.index.intersection(mf.index)
+    mom_r = mom.loc[common].groupby(level="Date").rank(pct=True)
+    mf_r = mf.loc[common].groupby(level="Date").rank(pct=True)
+    divergence = mf_r - mom_r
+    return cross_sectional_rank(divergence)

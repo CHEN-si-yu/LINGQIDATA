@@ -3,66 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
+from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
 
 
 # ── Profitability ───────────────────────────────────────────────────────
-
-@register_factor(
-    name="roe",
-    description="ROE因子，净资产收益率（日频前向填充版）截面排名。",
-    category="quality",
-    thesis="高ROE是巴菲特式质量投资的核心指标，长期稳定高ROE的公司享有估值溢价。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_roe(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["roe"]
-    )
-    return cross_sectional_rank(fin["roe"])
-
-
-@register_factor(
-    name="roa",
-    description="ROA因子，总资产收益率截面排名。",
-    category="quality",
-    thesis="ROA衡量资产使用效率，不受资本结构影响，比ROE更适合跨行业比较。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_roa(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["roa"]
-    )
-    return cross_sectional_rank(fin["roa"])
-
-
-@register_factor(
-    name="roic",
-    description="ROIC因子，投入资本回报率截面排名。",
-    category="quality",
-    thesis="ROIC衡量企业经营资本回报，高ROIC代表护城河与竞争优势。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_roic(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["roic"]
-    )
-    return cross_sectional_rank(fin["roic"])
-
-
-@register_factor(
-    name="roe_waa",
-    description="加权平均ROE因子截面排名。",
-    category="quality",
-    thesis="加权平均ROE考虑了权益变动时间加权，比简单ROE更精确。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_roe_waa(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["roe_waa"]
-    )
-    return cross_sectional_rank(fin["roe_waa"])
-
 
 @register_factor(
     name="roe_dt",
@@ -183,22 +127,6 @@ def factor_ocf_to_profit(context: FactorContext):
 
 
 @register_factor(
-    name="salescash_to_or",
-    description="销售收现/营业收入因子截面排名。",
-    category="quality",
-    thesis="销售收现比直接衡量营收的现金质量，高比率代表真金白银的确认收入。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_salescash_to_or(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["salescash_to_or"]
-    )
-    return cross_sectional_rank(fin["salescash_to_or"])
-
-
-# ── Efficiency ──────────────────────────────────────────────────────────
-
-@register_factor(
     name="assets_turn",
     description="总资产周转率因子截面排名。",
     category="quality",
@@ -273,29 +201,6 @@ def factor_assets_yoy(context: FactorContext):
 # ── Quality composite ───────────────────────────────────────────────────
 
 @register_factor(
-    name="quality_composite",
-    description="质量综合因子，ROE+ROA+毛利率+现金流质量四个维度的等权平均截面排名。",
-    category="quality",
-    thesis="多维度质量因子综合可提升对企业真实质量的识别能力，降低单一指标的误判风险。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_quality_composite(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["roe", "roa", "gross_margin", "ocf_to_profit"],
-    )
-    with np.errstate(invalid="ignore"):
-        rank_roe = fin["roe"].groupby(level="Date").rank(pct=True)
-        rank_roa = fin["roa"].groupby(level="Date").rank(pct=True)
-        rank_gm = fin["gross_margin"].groupby(level="Date").rank(pct=True)
-        rank_ocf = fin["ocf_to_profit"].groupby(level="Date").rank(pct=True)
-    composite = (rank_roe + rank_roa + rank_gm + rank_ocf) / 4.0
-    return composite.rename("quality_composite")
-
-
-# ── Solvency depth: financial_indicator 扩展 ──────────────────────────────
-
-@register_factor(
     name="ebit_to_interest",
     description="利息保障倍数因子，EBIT/利息支出截面排名。",
     category="quality",
@@ -348,22 +253,6 @@ def factor_ar_turn(context: FactorContext):
 
 
 # ── Per-share metrics ────────────────────────────────────────────────────
-
-@register_factor(
-    name="bps_rank",
-    description="每股净资产(BPS)因子截面排名。",
-    category="quality",
-    thesis="每股净资产是股票内在价值的账面锚定，高BPS代表更强的资产安全垫，在价值投资中与BP互补——一个看每股资产，一个看市价相对资产。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_bps_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["bps"]
-    )
-    return cross_sectional_rank(fin["bps"])
-
-
-# ── Cash flow solvency ───────────────────────────────────────────────────
 
 @register_factor(
     name="ocf_coverage",
@@ -444,22 +333,6 @@ def factor_tax_to_ebt(context: FactorContext):
 # ── Asset quality ────────────────────────────────────────────────────────
 
 @register_factor(
-    name="npta",
-    description="非不良资产/总资产因子，资产质量截面排名。",
-    category="quality",
-    thesis="NPTA衡量经不良调整后的资产质量，高值代表资产'含金量'高、不良风险低。与不良贷款率不同，NPTA覆盖了更广泛的风险资产类别。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_npta(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["npta"]
-    )
-    return cross_sectional_rank(fin["npta"])
-
-
-# ── REMOVED: q_gr_qoq — q_* fields are zero-filled 2019-2022.
-
-@register_factor(
     name="op_yoy",
     description="营业利润同比增速因子截面排名。",
     category="quality",
@@ -472,22 +345,6 @@ def factor_op_yoy(context: FactorContext):
     )
     return cross_sectional_rank(fin["op_yoy"])
 
-
-@register_factor(
-    name="ebit_ps_rank",
-    description="每股EBIT因子，息税前利润/总股本截面排名。",
-    category="quality",
-    thesis="每股EBIT剔除了利息和所得税的结构性差异，比EPS更适合跨资本结构比较。高EBITPS代表企业核心经营业务具有更强的每股盈利能力。",
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_ebit_ps_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet", value_cols=["ebit_ps"]
-    )
-    return cross_sectional_rank(fin["ebit_ps"])
-
-
-# ── Long-term growth trend ───────────────────────────────────────────────
 
 @register_factor(
     name="tr_yoy",
@@ -515,3 +372,689 @@ def factor_ebt_yoy(context: FactorContext):
         "financial_indicator.parquet", value_cols=["ebt_yoy"]
     )
     return cross_sectional_rank(fin["ebt_yoy"])
+
+# ── Gross profitability (Novy-Marx 2013) ───────────────────────────────────
+
+@register_factor(
+    name="gross_profitability",
+    description="毛利率资产比因子，毛利/总资产截面排名（Novy-Marx质量因子）。",
+    category="quality",
+    thesis="Novy-Marx(2013)发现毛利率/总资产(gross profitability)的预测力与BP相当且与BP正交——高毛利资产比的企业将更多收入转化为利润。这是Fama-French五因子模型之外最重要的异象之一，与roe/roa互补：GP看收入转化效率，ROE看股东回报。",
+    dependencies=("income.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_gross_profitability(context: FactorContext):
+    inc = context.load_financial(
+        "income.parquet",
+        value_cols=["revenue", "total_cogs"],
+    )
+    bs = context.load_financial(
+        "balancesheet.parquet",
+        value_cols=["total_assets"],
+    )
+    gp = inc["revenue"] - inc["total_cogs"]
+    gp_ratio = gp / bs["total_assets"].replace(0, np.nan)
+    return cross_sectional_rank(gp_ratio)
+
+
+# ── Asset growth (Cooper et al. 2008) ──────────────────────────────────────
+
+@register_factor(
+    name="asset_growth",
+    description="总资产增长率因子，总资产同比增长率截面排名（负向：高增长排后=资产扩张异象）。",
+    category="quality",
+    thesis="Cooper et al.(2008)资产增长异象——资产快速扩张的企业未来收益显著低于保守扩张的企业。高资产增长通常伴随过度投资、管理层empire-building和随后的均值回归。这是学术界验证最充分的负向alpha因子之一。",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_asset_growth(context: FactorContext):
+    bs = context.load_financial(
+        "balancesheet.parquet",
+        value_cols=["total_assets"],
+    )
+    assets = bs["total_assets"]
+    growth = assets.groupby(level="Code").transform(lambda s: s.pct_change(4))
+    return cross_sectional_rank(-growth)
+
+# ── Core profitability ──────────────────────────────────────────────────
+
+@register_factor(
+    name="roe",
+    description="ROE因子，净资产收益率（日频前向填充版）截面排名。",
+    category="quality",
+    thesis="高ROE是巴菲特式质量投资的核心指标，长期稳定高ROE的公司享有估值溢价。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roe(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roe"]
+    )
+    return cross_sectional_rank(fin["roe"])
+
+
+@register_factor(
+    name="roa",
+    description="ROA因子，总资产收益率截面排名。",
+    category="quality",
+    thesis="ROA衡量资产使用效率，不受资本结构影响，比ROE更适合跨行业比较。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roa(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roa"]
+    )
+    return cross_sectional_rank(fin["roa"])
+
+
+@register_factor(
+    name="roic",
+    description="ROIC因子，投入资本回报率截面排名。",
+    category="quality",
+    thesis="ROIC衡量企业经营资本回报，高ROIC代表护城河与竞争优势。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roic(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roic"]
+    )
+    return cross_sectional_rank(fin["roic"])
+
+
+@register_factor(
+    name="roe_waa",
+    description="加权平均ROE因子截面排名。",
+    category="quality",
+    thesis="加权平均ROE考虑了权益变动时间加权，比简单ROE更精确。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roe_waa(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roe_waa"]
+    )
+    return cross_sectional_rank(fin["roe_waa"])
+
+
+# ── Sales cash ratio ────────────────────────────────────────────────────
+
+@register_factor(
+    name="salescash_to_or",
+    description="销售收现/营业收入因子截面排名。",
+    category="quality",
+    thesis="销售收现比直接衡量营收的现金质量，高比率代表真金白银的确认收入。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_salescash_to_or(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["salescash_to_or"]
+    )
+    return cross_sectional_rank(fin["salescash_to_or"])
+
+
+# ── Quality composite ───────────────────────────────────────────────────
+
+@register_factor(
+    name="quality_composite",
+    description="质量综合因子，ROE+ROA+毛利率+现金流质量四个维度的等权平均截面排名。",
+    category="quality",
+    thesis="多维度质量因子综合可提升对企业真实质量的识别能力，降低单一指标的误判风险。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_quality_composite(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet",
+        value_cols=["roe", "roa", "gross_margin", "ocf_to_profit"],
+    )
+    with np.errstate(invalid="ignore"):
+        rank_roe = fin["roe"].groupby(level="Date").rank(pct=True)
+        rank_roa = fin["roa"].groupby(level="Date").rank(pct=True)
+        rank_gm = fin["gross_margin"].groupby(level="Date").rank(pct=True)
+        rank_ocf = fin["ocf_to_profit"].groupby(level="Date").rank(pct=True)
+    composite = (rank_roe + rank_roa + rank_gm + rank_ocf) / 4.0
+    return composite.rename("quality_composite")
+
+
+# ── BPS rank ────────────────────────────────────────────────────────────
+
+@register_factor(
+    name="bps_rank",
+    description="每股净资产(BPS)因子截面排名。",
+    category="quality",
+    thesis="每股净资产是股票内在价值的账面锚定，高BPS代表更强的资产安全垫，在价值投资中与BP互补——一个看每股资产，一个看市价相对资产。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_bps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["bps"]
+    )
+    return cross_sectional_rank(fin["bps"])
+
+
+# ── NPTA ────────────────────────────────────────────────────────────────
+
+@register_factor(
+    name="npta",
+    description="非不良资产/总资产因子，资产质量截面排名。",
+    category="quality",
+    thesis="NPTA衡量经不良调整后的资产质量，高值代表资产'含金量'高、不良风险低。与不良贷款率不同，NPTA覆盖了更广泛的风险资产类别。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_npta(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["npta"]
+    )
+    return cross_sectional_rank(fin["npta"])
+
+
+# ── EBIT per share ──────────────────────────────────────────────────────
+
+@register_factor(
+    name="ebit_ps_rank",
+    description="每股EBIT因子，息税前利润/总股本截面排名。",
+    category="quality",
+    thesis="每股EBIT剔除了利息和所得税的结构性差异，比EPS更适合跨资本结构比较。高EBITPS代表企业核心经营业务具有更强的每股盈利能力。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebit_ps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebit_ps"]
+    )
+    return cross_sectional_rank(fin["ebit_ps"])
+
+
+# ── Supplementary quality factors ──────────────────────────────────────────
+
+
+@register_factor(
+    name="gross_profit_to_assets",
+    description="毛利/总资产因子 (Novy-Marx GP/A, 高毛利润排前)。",
+    category="quality",
+    thesis="毛利/总资产(GP/A)是Novy-Marx(2013)提出的最干净的质量因子，不受会计操纵影响",
+    dependencies=("financial_indicator.parquet", "balancesheet.parquet", "calendar.parquet"),
+)
+def factor_gross_profit_to_assets(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["grossprofit_margin"])
+    bs = context.load_financial("balancesheet.parquet", value_cols=["total_assets"])
+    gp_margin = fin["grossprofit_margin"]
+    ta = bs["total_assets"]
+    common = gp_margin.index.intersection(ta.index)
+    gpa = safe_divide(gp_margin.loc[common] * 100, ta.loc[common])
+    return cross_sectional_rank(gpa)
+
+
+@register_factor(
+    name="debt_to_equity",
+    description="负债权益比因子 (低负债排前, 负向)。",
+    category="quality",
+    thesis="D/E比是国际通用的杠杆指标，低D/E意味着财务稳健、抗风险能力强",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_debt_to_equity(context: FactorContext):
+    bs = context.load_financial("balancesheet.parquet",
+        value_cols=["total_liab", "total_hldr_eqy_exc_min_int"])
+    de = safe_divide(bs["total_liab"], bs["total_hldr_eqy_exc_min_int"] + 1e-8)
+    return cross_sectional_rank(-de)
+
+
+@register_factor(
+    name="working_capital_to_assets",
+    description="营运资本/总资产因子 (高运营效率排前)。",
+    category="quality",
+    thesis="营运资本/总资产比率低意味着轻资产运营、资金效率高",
+    dependencies=("balancesheet.parquet", "calendar.parquet"),
+)
+def factor_working_capital_to_assets(context: FactorContext):
+    bs = context.load_financial("balancesheet.parquet",
+        value_cols=["total_cur_assets", "total_cur_liab", "total_assets"])
+    wc = bs["total_cur_assets"] - bs["total_cur_liab"]
+    ratio = safe_divide(wc, bs["total_assets"] + 1e-8)
+    return cross_sectional_rank(-ratio)
+
+
+@register_factor(
+    name="earnings_quality_composite",
+    description="盈余质量综合因子 (OCF/利润+低应计+毛利率稳定三排名均值)。",
+    category="quality",
+    thesis="OCF覆盖利润、低应计、毛利率稳定三维度综合判断盈余质量",
+    dependencies=("financial_indicator.parquet", "cashflow.parquet", "calendar.parquet"),
+)
+def factor_earnings_quality_composite(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet",
+        value_cols=["ocf_to_profit", "gross_margin", "netprofit_margin"])
+    ocf_to_ni = fin["ocf_to_profit"]
+    gm = fin["gross_margin"]
+
+    ocf_rank = ocf_to_ni.groupby(level="Date").rank(pct=True)
+    gm_std = gm.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).std()
+    )
+    gm_mean = gm.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).mean()
+    )
+    gm_cv = safe_divide(gm_std, gm_mean.abs() + 1e-8)
+    gm_stable_rank = (-gm_cv).groupby(level="Date").rank(pct=True)
+
+    common = ocf_rank.index.intersection(gm_stable_rank.index)
+    combo = (ocf_rank.loc[common] + gm_stable_rank.loc[common]) / 2.0
+    return cross_sectional_rank(combo)
+
+
+@register_factor(
+    name="ebitda_rank",
+    description="EBITDA截面排名。",
+    category="quality",
+    thesis="EBITDA是未经过折旧摊销和资本结构扭曲的经营利润，比净利润更适合跨行业比较企业的经营现金流产生能力。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebitda_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebitda"]
+    )
+    return cross_sectional_rank(fin["ebitda"])
+
+
+@register_factor(
+    name="ebit_rank",
+    description="EBIT截面排名。",
+    category="quality",
+    thesis="EBIT剔除了资本结构和税率差异，是可比性最强的盈利指标。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebit_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebit"]
+    )
+    return cross_sectional_rank(fin["ebit"])
+
+
+@register_factor(
+    name="bps_yoy",
+    description="每股净资产同比增速截面排名。",
+    category="quality",
+    thesis="BPS增长代表每股内含价值的持续积累，高BPS增速意味着公司持续为股东创造账面价值。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_bps_yoy(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["bps_yoy"]
+    )
+    return cross_sectional_rank(fin["bps_yoy"])
+
+
+@register_factor(
+    name="cfps_rank",
+    description="每股经营现金流截面排名。",
+    category="quality",
+    thesis="每股经营现金流反映真实的每股现金创造能力，与EPS互补验证盈利质量。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_cfps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["cfps"]
+    )
+    return cross_sectional_rank(fin["cfps"])
+
+
+@register_factor(
+    name="cfps_yoy",
+    description="每股经营现金流同比增速截面排名。",
+    category="quality",
+    thesis="每股现金流的增长趋势是盈利质量改善的最直接信号。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_cfps_yoy(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["cfps_yoy"]
+    )
+    return cross_sectional_rank(fin["cfps_yoy"])
+
+
+@register_factor(
+    name="fcfe_ps_rank",
+    description="每股股权自由现金流截面排名。",
+    category="quality",
+    thesis="FCFE per share衡量股东可支配的每股现金——扣除资本开支和债务偿付后剩余的自由现金归属股东部分。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_fcfe_ps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["fcfe_ps"]
+    )
+    return cross_sectional_rank(fin["fcfe_ps"])
+
+
+@register_factor(
+    name="fcff_ps_rank",
+    description="每股公司自由现金流截面排名。",
+    category="quality",
+    thesis="FCFF per share衡量公司整体（含债权人和股东）可支配的每股现金，不受资本结构影响。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_fcff_ps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["fcff_ps"]
+    )
+    return cross_sectional_rank(fin["fcff_ps"])
+
+
+@register_factor(
+    name="debt_to_equity_rank",
+    description="负债权益比（财务杠杆截面排名，高杠杆排后）。",
+    category="quality",
+    thesis="D/E比是国际通用的杠杆指标，与debt_to_assets互补——一个看负债相对权益的比例，一个看负债相对总资产的比例。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_debt_to_equity_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["debt_to_eqt"]
+    )
+    return cross_sectional_rank(-fin["debt_to_eqt"])
+
+
+@register_factor(
+    name="ca_to_assets",
+    description="流动资产/总资产（资产流动性截面排名）。",
+    category="quality",
+    thesis="流动资产占比高意味着资产变现能力强、流动性风险低，但过高可能意味着非流动资产投资不足。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ca_to_assets(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ca_to_assets"]
+    )
+    return cross_sectional_rank(fin["ca_to_assets"])
+
+
+@register_factor(
+    name="nca_to_assets",
+    description="非流动资产/总资产（反向：重资产排后）。",
+    category="quality",
+    thesis="非流动资产占比高意味着重资产模式——在产能过剩或技术迭代时重资产面临更大减值风险。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_nca_to_assets(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["nca_to_assets"]
+    )
+    return cross_sectional_rank(-fin["nca_to_assets"])
+
+
+@register_factor(
+    name="fa_turn",
+    description="固定资产周转率截面排名。",
+    category="quality",
+    thesis="固定资产周转率反映企业单位固定资产创造收入的能力，是资本密集型企业最关键的效率指标。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_fa_turn(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["fa_turn"]
+    )
+    return cross_sectional_rank(fin["fa_turn"])
+
+
+@register_factor(
+    name="ca_turn",
+    description="流动资产周转率截面排名。",
+    category="quality",
+    thesis="流动资产周转率衡量短期资产的运用效率，高周转=资金被有效利用而非闲置。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ca_turn(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ca_turn"]
+    )
+    return cross_sectional_rank(fin["ca_turn"])
+
+
+@register_factor(
+    name="cf_short_debt_cover",
+    description="经营现金流/流动负债（短期偿债现金流覆盖）截面排名。",
+    category="quality",
+    thesis="经营性现金流对短期债务的覆盖能力——高覆盖意味着企业可以用内生现金流偿还到期债务，无需借新还旧。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_cf_short_debt_cover(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["cash_to_liqdebt"]
+    )
+    return cross_sectional_rank(fin["cash_to_liqdebt"])
+
+
+@register_factor(
+    name="ocf_to_debt_rank",
+    description="经营现金流/总负债截面排名。",
+    category="quality",
+    thesis="经营现金流覆盖总负债的能力是长期信用质量的核心——高覆盖表明企业即使停止融资也能依靠经营现金持续偿还债务。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ocf_to_debt_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ocf_to_debt"]
+    )
+    return cross_sectional_rank(fin["ocf_to_debt"])
+
+
+@register_factor(
+    name="ocf_to_interest_debt",
+    description="经营现金流/有息负债截面排名。",
+    category="quality",
+    thesis="经营现金流对有息负债（银行贷款+应付债券）的覆盖——更精确衡量企业对刚性债务的偿还能力。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ocf_to_interest_debt(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ocf_to_interestdebt"]
+    )
+    return cross_sectional_rank(fin["ocf_to_interestdebt"])
+
+
+@register_factor(
+    name="ebitda_to_debt_rank",
+    description="EBITDA/总负债截面排名。",
+    category="quality",
+    thesis="EBITDA相对总负债的比例综合反映了税前经营利润对债务的覆盖——债权人视角的偿债安全边际。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebitda_to_debt_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebitda_to_debt"]
+    )
+    return cross_sectional_rank(fin["ebitda_to_debt"])
+
+
+@register_factor(
+    name="ocf_to_net_debt",
+    description="经营现金流/净负债截面排名。",
+    category="quality",
+    thesis="经营现金流覆盖净负债（总负债-现金）的能力——剔除可直接清偿的现金后，衡量真正的偿债缺口。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ocf_to_net_debt(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ocf_to_netdebt"]
+    )
+    return cross_sectional_rank(fin["ocf_to_netdebt"])
+
+
+@register_factor(
+    name="working_capital_rank",
+    description="营运资本截面排名。",
+    category="quality",
+    thesis="充足的营运资本是日常经营的润滑剂——正的营运资本意味着流动资产覆盖流动负债后的盈余，具备短期财务缓冲。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_working_capital_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["working_capital"]
+    )
+    return cross_sectional_rank(fin["working_capital"])
+
+
+@register_factor(
+    name="ocf_yoy_rank",
+    description="经营现金流同比增速截面排名。",
+    category="quality",
+    thesis="经营现金流增长是盈利质量改善的核心信号——现金增长比利润增长更难操纵、更可持续。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ocf_yoy_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ocf_yoy"]
+    )
+    return cross_sectional_rank(fin["ocf_yoy"])
+
+
+@register_factor(
+    name="roa2_yearly",
+    description="年化ROA（含非经常损益版本）截面排名。",
+    category="quality",
+    thesis="年化ROA比单季度ROA更稳定，过滤季节性波动。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roa2_yearly(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roa2_yearly"]
+    )
+    return cross_sectional_rank(fin["roa2_yearly"])
+
+
+@register_factor(
+    name="retained_earnings_ps",
+    description="每股留存收益截面排名。",
+    category="quality",
+    thesis="每股留存收益是企业在扣除分红后累计留存的每股金额——高留存意味着企业有大量内部积累可用于再投资或未来分红。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_retained_earnings_ps(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["retainedps"]
+    )
+    return cross_sectional_rank(fin["retainedps"])
+
+
+@register_factor(
+    name="surplus_reserve_ps",
+    description="每股盈余公积截面排名。",
+    category="quality",
+    thesis="盈余公积是强制或自愿从净利润中提取的留存——高盈余公积代表企业财务政策审慎、合规性强。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_surplus_reserve_ps(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["surplus_rese_ps"]
+    )
+    return cross_sectional_rank(fin["surplus_rese_ps"])
+
+
+@register_factor(
+    name="undistributed_profit_ps",
+    description="每股未分配利润截面排名。",
+    category="quality",
+    thesis="每股未分配利润是未来分红和股本转增的弹药库——高未分配利润意味着强大的分红潜力。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_undistributed_profit_ps(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["undist_profit_ps"]
+    )
+    return cross_sectional_rank(fin["undist_profit_ps"])
+
+
+@register_factor(
+    name="total_revenue_ps",
+    description="每股营业总收入截面排名。",
+    category="quality",
+    thesis="每股营收是公司业务规模的标准化度量——高每股营收代表公司具有规模效应。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_total_revenue_ps(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["total_revenue_ps"]
+    )
+    return cross_sectional_rank(fin["total_revenue_ps"])
+
+
+@register_factor(
+    name="revenue_ps_rank",
+    description="每股营业收入截面排名。",
+    category="quality",
+    thesis="每股营业收入剔除了非主营收入后的核心业务规模——比total_revenue_ps更纯地反映主营业务规模。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_revenue_ps_rank(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["revenue_ps"]
+    )
+    return cross_sectional_rank(fin["revenue_ps"])
+
+
+@register_factor(
+    name="tang_asset_to_debt",
+    description="有形资产/总负债（资产担保能力）截面排名。",
+    category="quality",
+    thesis="有形资产相对负债的比例是债权人最看重的担保能力指标——高比例意味着即使清算也有足够的资产覆盖债务。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_tang_asset_to_debt(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["tangibleasset_to_debt"]
+    )
+    return cross_sectional_rank(fin["tangibleasset_to_debt"])
+
+
+@register_factor(
+    name="tang_asset_to_net_debt",
+    description="有形资产/净负债截面排名。",
+    category="quality",
+    thesis="有形净资产覆盖净负债的能力——更严格的偿付能力测试，是信用质量的核心指标。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_tang_asset_to_net_debt(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["tangibleasset_to_netdebt"]
+    )
+    return cross_sectional_rank(fin["tangibleasset_to_netdebt"])
+
+
+@register_factor(
+    name="tang_asset_to_int_debt",
+    description="有形资产/有息负债截面排名。",
+    category="quality",
+    thesis="有形资产对有息负债的覆盖——银行信贷审批中最关注的偿债能力指标，高覆盖=低信用风险。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_tang_asset_to_int_debt(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["tangasset_to_intdebt"]
+    )
+    return cross_sectional_rank(fin["tangasset_to_intdebt"])
+
+
+@register_factor(
+    name="ebt_growth_momentum",
+    description="利润总额增速动量（diff(4) of ebt_yoy）截面排名。",
+    category="quality",
+    thesis="利润增速的二阶变化（加速度）——增速本身在加快意味着基本面的改善趋势在增强，是成长股的alpha来源。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_ebt_growth_momentum(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebt_yoy"]
+    )
+    growth = fin["ebt_yoy"]
+    accel = growth.groupby(level="Code").transform(lambda s: s.diff(4))
+    return cross_sectional_rank(accel)
+
+
+@register_factor(
+    name="or_growth_acceleration",
+    description="营收增速加速度（diff(4) of or_yoy）截面排名。",
+    category="quality",
+    thesis="营收增速的边际变化比增速水平更具前瞻性——营收增速在加快意味着需求端的加速渗透，是营收增长的质量维度。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_or_growth_acceleration(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["or_yoy"]
+    )
+    growth = fin["or_yoy"]
+    accel = growth.groupby(level="Code").transform(lambda s: s.diff(4))
+    return cross_sectional_rank(accel)
