@@ -266,6 +266,11 @@ def _process_chip_batch(
             continue
         if stock_df.empty:
             continue
+        # Normalize trade_date to YYYYMMDD so comparisons with min_trade_date
+        # work correctly regardless of the source file format (e.g. "2026-06-01").
+        stock_df["trade_date"] = (
+            stock_df["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+        )
         if min_trade_date is not None:
             stock_df = stock_df[stock_df["trade_date"] >= min_trade_date]
             if stock_df.empty:
@@ -330,7 +335,9 @@ def build_cyq_chips_unified(
                     if earliest_existing is None or fm < earliest_existing:
                         earliest_existing = fm
         if earliest_existing and earliest_existing < effective_end:
-            min_trade_date = earliest_existing
+            from datetime import datetime, timedelta
+            _lb_dt = datetime.strptime(earliest_existing, "%Y%m%d") - timedelta(days=45)
+            min_trade_date = _lb_dt.strftime("%Y%m%d")
 
     # ── Build file list ────────────────────────────────────────────────────
     all_files = sorted([f for f in os.listdir(chip_dir) if f.endswith(".parquet")])
@@ -413,15 +420,6 @@ def build_cyq_chips_unified(
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
-    # ── Pre-filter to new dates (incremental mode) ──────────────────────────
-    if not force and earliest_existing and min_trade_date is not None:
-        for col in list(raw_metrics.keys()):
-            s = raw_metrics[col]
-            if not s.empty:
-                raw_metrics[col] = s[
-                    s.index.get_level_values("Date") > earliest_existing
-                ]
-
     # ── Build final factor frames ───────────────────────────────────────────
     output: dict[str, pd.DataFrame] = {}
     for idx, name in enumerate(factor_names):
@@ -462,6 +460,18 @@ def build_cyq_chips_unified(
 
         frame = ensure_single_factor_frame(ranked, name)
         output[name] = frame
+
+    # ── Incremental: keep only new dates in output frames ──────────────────
+    if not force and earliest_existing and min_trade_date is not None:
+        for name in list(output.keys()):
+            frame = output.get(name)
+            if frame is None or frame.empty:
+                continue
+            frame = frame[frame.index > earliest_existing]
+            if frame.empty:
+                output[name] = pd.DataFrame()
+            else:
+                output[name] = frame
 
     return output
 
@@ -566,7 +576,11 @@ def build_cyq_chips_new(
                     if earliest_existing is None or fm < earliest_existing:
                         earliest_existing = fm
         if earliest_existing and earliest_existing < effective_end:
-            min_trade_date = earliest_existing
+            # Backdate by 45 calendar days to provide enough lookback for
+            # momentum factors (diff(5), diff(20)) and other time-series ops.
+            from datetime import datetime, timedelta
+            _lb_dt = datetime.strptime(earliest_existing, "%Y%m%d") - timedelta(days=45)
+            min_trade_date = _lb_dt.strftime("%Y%m%d")
 
     mode_str = "incremental" if min_trade_date else "full rebuild"
     print(f"  Mode: {mode_str}" + (f"  (since {min_trade_date})" if min_trade_date else ""))
@@ -672,17 +686,6 @@ def build_cyq_chips_new(
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
-    # Incremental filter — only when truly in incremental mode (new data exists).
-    # earliest_existing alone is not enough; it may be set from residual .fea
-    # files while min_trade_date stays None (no new source data → full rebuild).
-    if not force and earliest_existing and min_trade_date is not None:
-        for col in list(raw_metrics.keys()):
-            s = raw_metrics[col]
-            if not s.empty:
-                raw_metrics[col] = s[
-                    s.index.get_level_values("Date") > earliest_existing
-                ]
-
     # Build close_map_to_series for peak/distance factors
     close_mi_series = close_map_to_series(close_map) if close_map else pd.Series(dtype=float)
 
@@ -751,6 +754,20 @@ def build_cyq_chips_new(
         pbar_factor.update(1)
 
     pbar_factor.close()
+
+    # ── Incremental: keep only new dates in output frames ──────────────────
+    # Factor computation needs full lookback (momentum diff(5)/diff(20)), but
+    # we only write dates that don't already exist in the stored .fea files.
+    if not force and earliest_existing and min_trade_date is not None:
+        for name in list(output.keys()):
+            frame = output.get(name)
+            if frame is None or frame.empty:
+                continue
+            frame = frame[frame.index > earliest_existing]
+            if frame.empty:
+                output[name] = pd.DataFrame()
+            else:
+                output[name] = frame
 
     t_phase3_elapsed = time.perf_counter() - t_phase3
     rate_p3 = total_factors / t_phase3_elapsed if t_phase3_elapsed > 0 else 0

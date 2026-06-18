@@ -44,6 +44,83 @@ def _load_allowed_codes(path: Path) -> set[str]:
     return _ALLOWED_CODES
 
 
+
+def _fill_source_gaps(df, extend_to_date: str | None = None):
+    """Forward-fill internal date gaps in source data, and optionally extend
+    forward to *extend_to_date* using the daily_adj calendar (for margin_detail
+    T+1 alignment).
+    """
+    if df.empty:
+        return df
+    if not hasattr(df.index, "names") or list(df.index.names) != ["Date", "Code"]:
+        return df
+    from pathlib import Path as _Path
+    import pandas as _pd
+
+    ref_daily = _pd.read_parquet(
+        _Path("/root/autodl-fs/lingqiData/data/daily_adj.parquet"),
+        columns=["trade_date"],
+    )
+    ref_dates_raw = (
+        ref_daily["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    )
+    ref_dates = sorted(ref_dates_raw.unique())
+    current_dates = df.index.get_level_values("Date").unique()
+    current_min, current_max = current_dates.min(), current_dates.max()
+
+    # ── 1. fill internal gaps ──────────────────────────────────────────
+    ref_in_range = [d for d in ref_dates if current_min <= d <= current_max]
+    missing = sorted(set(ref_in_range) - set(current_dates))
+
+    result = df
+    codes = df.index.get_level_values("Code").unique()
+    current_dates_sorted = sorted(current_dates)
+
+    if missing:
+        fill_parts = []
+        for miss_d in missing:
+            prev = None
+            for d in reversed(current_dates_sorted):
+                if d < miss_d:
+                    prev = d
+                    break
+            if prev is None:
+                continue
+            prev_data = result.loc[prev]
+            new_idx = _pd.MultiIndex.from_product(
+                [[miss_d], codes], names=["Date", "Code"]
+            )
+            new_data = prev_data.reindex(codes)
+            new_data.index = new_idx
+            fill_parts.append(new_data)
+        if fill_parts:
+            fill_df = _pd.concat(fill_parts)
+            fill_df = fill_df.reorder_levels(["Date", "Code"]).sort_index()
+            result = _pd.concat([result, fill_df])
+            result = result[~result.index.duplicated(keep="last")]
+            result = result.sort_index()
+
+    # ── 2. extend forward to extend_to_date ────────────────────────────
+    if extend_to_date is not None:
+        current_max_str = result.index.get_level_values("Date").max()
+        if current_max_str < extend_to_date:
+            ext_dates = [
+                d for d in ref_dates if current_max_str < d <= extend_to_date
+            ]
+            if ext_dates:
+                last_data = result.loc[current_max_str]
+                for ext_d in ext_dates:
+                    new_idx = _pd.MultiIndex.from_product(
+                        [[ext_d], codes], names=["Date", "Code"]
+                    )
+                    new_data = last_data.reindex(codes)
+                    new_data.index = new_idx
+                    result = _pd.concat([result, new_data])
+                    last_data = new_data
+                result = result.sort_index()
+
+    return result
+
 def _normalize_index_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize a flat parquet DataFrame into a (Date, Code) MultiIndex panel.
 
@@ -292,9 +369,11 @@ class DataRepository:
         """
         cache_key = relative_path
         filepath = self.paths.source_root / relative_path
+        is_margin = "margin_detail" in relative_path
+        margin_extra = 1 if is_margin else 0
 
         # Try parquet-level pushdown first
-        pq_filters, _ = self._build_date_filters(filepath, min_date, max_date, lookback_days)
+        pq_filters, _ = self._build_date_filters(filepath, min_date, max_date, lookback_days + margin_extra)
 
         if pq_filters is not None:
             # Partial read — don't cache (the full file isn't in memory).
@@ -302,7 +381,11 @@ class DataRepository:
             normalized = _normalize_index_frame(raw)
             result = self._filter_by_allowed(normalized)
             # Still apply memory-side filter for belt-and-suspenders safety
-            return _filter_by_date_range(result, min_date, max_date, lookback_days=0)
+            result = _filter_by_date_range(result, min_date, max_date, lookback_days=margin_extra)
+            result = _fill_source_gaps(result, extend_to_date=max_date if is_margin else None)
+            if is_margin:
+                result = result.groupby(level="Code").shift(1)
+            return result
 
         # Full-file read path (cached)
         cached = self._cache_get(cache_key)
@@ -317,7 +400,11 @@ class DataRepository:
             full = self._cache[cache_key]
         else:
             full = cached
-        return _filter_by_date_range(full, min_date, max_date, lookback_days)
+        full = _filter_by_date_range(full, min_date, max_date, lookback_days + margin_extra)
+        full = _fill_source_gaps(full, extend_to_date=max_date if is_margin else None)
+        if is_margin:
+            full = full.groupby(level="Code").shift(1)
+        return full
 
     # ── report-frequency financial loading ────────────────────────────
 
@@ -347,6 +434,8 @@ class DataRepository:
         lookback_days : int
             Extra days subtracted from *min_date* for rolling-window context.
         """
+        is_margin = "margin_detail" in relative_path
+        margin_extra = 1 if is_margin else 0
         cols_tag = "" if value_cols is None else f"_{'_'.join(sorted(value_cols))}"
         cache_key = f"__financial__{relative_path}{cols_tag}_{date_col}"
         cached = self._cache_get(cache_key)
@@ -372,7 +461,11 @@ class DataRepository:
             ))
 
         full = self._cache[cache_key]
-        return _filter_by_date_range(full, min_date, max_date, lookback_days)
+        full = _filter_by_date_range(full, min_date, max_date, lookback_days + margin_extra)
+        full = _fill_source_gaps(full, extend_to_date=max_date if is_margin else None)
+        if is_margin:
+            full = full.groupby(level="Code").shift(1)
+        return full
 
     # ── stock pool ─────────────────────────────────────────────────────
 

@@ -6,6 +6,13 @@ import pandas as pd
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
+_PLEDGE_LAG = 45
+
+def _load_pledge(context, value_cols):
+    """Load pledge_stat.parquet with reporting lag to prevent future data leakage."""
+    df = context.load_financial("pledge_stat.parquet", value_cols=value_cols, date_col="end_date")
+    return df.groupby(level="Code").shift(_PLEDGE_LAG).groupby(level="Code").ffill()
+
 
 # ── Balance sheet factors ───────────────────────────────────────────────
 
@@ -226,11 +233,7 @@ def factor_holder_num_change(context: FactorContext):
     dependencies=("pledge_stat.parquet", "calendar.parquet"),
 )
 def factor_pledge_ratio(context: FactorContext):
-    ps = context.load_financial(
-        "pledge_stat.parquet",
-        value_cols=["pledge_ratio"],
-        date_col="end_date",
-    )
+    ps = _load_pledge(context, ["pledge_ratio"])
     return cross_sectional_rank(-ps["pledge_ratio"])
 
 
@@ -449,11 +452,7 @@ def factor_holder_num_percentile(context: FactorContext):
     dependencies=("pledge_stat.parquet", "calendar.parquet"),
 )
 def factor_pledge_ratio_change(context: FactorContext):
-    ps = context.load_financial(
-        "pledge_stat.parquet",
-        value_cols=["pledge_ratio"],
-        date_col="end_date",
-    )
+    ps = _load_pledge(context, ["pledge_ratio"])
     pledge = ps["pledge_ratio"]
     chg = pledge.groupby(level="Code").transform(lambda s: s.diff(2))
     return cross_sectional_rank(-chg)

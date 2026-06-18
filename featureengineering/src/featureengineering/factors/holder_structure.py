@@ -16,7 +16,7 @@ from ..utils import cross_sectional_rank
 def factor_holder_num_acceleration(context: FactorContext):
     """Compute second-order QoQ change of holder_num. Negative accel = speeding up concentration."""
     holder = context.load_financial(
-        "holder_number.parquet", value_cols=["holder_num"], date_col="end_date"
+        "holder_number.parquet", value_cols=["holder_num"], date_col="ann_date"
     )
     change = holder["holder_num"].groupby(level="Code").transform(lambda s: s.pct_change(1))
     accel = change.groupby(level="Code").transform(lambda s: s.diff(1))
@@ -33,7 +33,7 @@ def factor_holder_num_acceleration(context: FactorContext):
 def factor_holder_num_trend_4q(context: FactorContext):
     """Compute linear regression slope of holder_num over last 4 quarters. Rank negative slope."""
     holder = context.load_financial(
-        "holder_number.parquet", value_cols=["holder_num"], date_col="end_date"
+        "holder_number.parquet", value_cols=["holder_num"], date_col="ann_date"
     )
 
     def _trend_slope(y):
@@ -64,7 +64,7 @@ def factor_holder_num_trend_4q(context: FactorContext):
 def factor_holder_avg_mv(context: FactorContext):
     """Compute total_mv / holder_num = average market value per holder. Higher = more institutional."""
     holder = context.load_financial(
-        "holder_number.parquet", value_cols=["holder_num"], date_col="end_date"
+        "holder_number.parquet", value_cols=["holder_num"], date_col="ann_date"
     )
     finance = context.load("finance.parquet")
     total_mv = finance["total_mv"]
@@ -84,7 +84,7 @@ def factor_holder_avg_mv(context: FactorContext):
 def factor_holder_price_divergence(context: FactorContext):
     """Compute sign(price_change) * (-sign(holder_change)). Positive = whale accumulation signal."""
     holder = context.load_financial(
-        "holder_number.parquet", value_cols=["holder_num"], date_col="end_date"
+        "holder_number.parquet", value_cols=["holder_num"], date_col="ann_date"
     )
     daily_adj = context.load("daily_adj.parquet")
 
@@ -106,7 +106,7 @@ def factor_holder_price_divergence(context: FactorContext):
 def factor_holder_num_stability(context: FactorContext):
     """Compute rolling std of holder_num QoQ change over 4 quarters. Rank negative (unstable = bad)."""
     holder = context.load_financial(
-        "holder_number.parquet", value_cols=["holder_num"], date_col="end_date"
+        "holder_number.parquet", value_cols=["holder_num"], date_col="ann_date"
     )
     change = holder["holder_num"].groupby(level="Code").transform(lambda s: s.pct_change(1))
     stability = change.groupby(level="Code").transform(

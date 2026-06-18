@@ -20,6 +20,8 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 from typing import Any
 
 import numpy as np

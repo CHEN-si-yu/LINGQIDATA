@@ -65,6 +65,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     # stderr spam.  Factors that produce divide-by-zero / invalid-value
     # are still visible in the log file for triage.
     np.seterr(all="call")
+    np.seterr(under="ignore")  # underflow is harmless in financial calcs
 
     def _np_err_handler(err, flag):
         logging.getLogger("numpy").warning("NumPy %s: %s", flag, err)

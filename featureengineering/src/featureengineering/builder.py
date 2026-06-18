@@ -22,6 +22,7 @@ from .report import print_post_build_report
 from .registry import FACTOR_REGISTRY, FactorContext, FactorSpec, get_factor
 from .settings import ProjectPaths, configure_paths
 from .storage import (
+    write_target_incremental,
     ensure_single_factor_frame,
     write_factor,
     write_factor_incremental,
@@ -181,15 +182,174 @@ def _check_source_dates(dependencies: tuple[str, ...], source_root: Path) -> dic
     return result
 
 
+def _get_recent_trading_days(source_root: Path, n_days: int = 5, effective_end: str | None = None) -> list[str]:
+    """Return the last *n_days* trading days (YYYYMMDD) from the calendar.
+
+    Reads ``calendar.parquet`` and returns the most recent dates where
+    ``is_open == 1``, sorted ascending.
+
+    When *effective_end* is provided, dates beyond it are excluded so
+    the quality gate never compares against future trading days.
+    """
+    import pandas as pd
+
+    cal_path = source_root / "calendar.parquet"
+    if not cal_path.exists():
+        return []
+
+    try:
+        cal = pd.read_parquet(cal_path, columns=["date", "is_open"])
+    except Exception:
+        return []
+
+    trading = cal.loc[cal["is_open"].astype(bool), "date"]
+    if trading.empty:
+        return []
+
+    # Normalise to YYYYMMDD and take the last N
+    dates = (
+        trading.astype(str)
+        .str.replace("-", "", regex=False)
+        .str.slice(0, 8)
+        .sort_values()
+        .unique()
+        .tolist()
+    )
+    # Cap at effective_end so we don't compare against future dates
+    if effective_end is not None:
+        dates = [d for d in dates if d <= effective_end]
+    return dates[-n_days:]
+
+
+def _check_factor_recent_quality(
+    factor_path: Path,
+    source_root: Path,
+    n_days: int = 5,
+    effective_end: str | None = None,
+) -> str:
+    """Check whether recent trading days in a .fea file have valid data.
+
+    Returns one of:
+
+    - ``"ok"`` — all *n_days* recent trading days are present and have at
+      least some non-NaN values.
+    - ``"all_nan"`` — the recent trading days exist in the file but every
+      value across all stocks is NaN (upstream data gap).
+    - ``"missing_dates"`` — at least one of the recent trading days is
+      absent from the file entirely.
+    - ``"no_calendar"`` — the calendar file is unavailable; cannot check.
+    - ``"unreadable"`` — the .fea file exists but could not be read.
+    """
+    if not factor_path.exists():
+        return "missing"
+
+    recent = _get_recent_trading_days(source_root, n_days, effective_end=effective_end)
+    if not recent:
+        return "no_calendar"
+
+    import pandas as pd
+
+    try:
+        df = pd.read_feather(factor_path)
+    except Exception:
+        return "unreadable"
+
+    # Normalise the index to YYYYMMDD strings for comparison
+    idx = df.index.astype(str).str.replace("-", "", regex=False).str.slice(0, 8)
+
+    present = [d for d in recent if d in idx.values]
+    if len(present) < len(recent):
+        return "missing_dates"
+
+    # For the dates that are present, check whether ALL values are NaN.
+    # A factor where every stock is NaN on every recent day signals an
+    # upstream data gap (e.g. q_* fields before 2022) and should be
+    # rebuilt so the gap is visible rather than silently carried forward.
+    try:
+        recent_slice = df.loc[df.index.isin(present)]
+    except Exception:
+        # Index mismatch edge case — treat as unreadable
+        return "unreadable"
+
+    if recent_slice.empty:
+        return "missing_dates"
+
+    if recent_slice.notna().any(axis=None):
+        return "ok"
+
+    return "all_nan"
+
+
 def decide_build_action(
     factor_name: str,
     factor_path: Path,
     deps: tuple[str, ...],
     source_root: Path,
     force: bool = False,
+    quality_check_days: int = 0,
+    effective_end: str | None = None,
 ) -> tuple[str, str | None]:
-    """Always return rebuild — incremental / skip logic is disabled."""
-    return "rebuild", "forced"
+    """Decide whether to skip, incrementally update, or rebuild a factor.
+
+    Returns ``(action, reason)``:
+
+    - ``("skip", reason)`` — factor is already up to date; no work needed.
+    - ``("incremental", max_date)`` — factor exists but is behind; *max_date*
+      (YYYYMMDD) is passed as *factor_start_date* so only new rows are
+      computed and appended via :func:`write_factor_incremental`.
+    - ``("rebuild", reason)`` — no usable existing file, or *force* is set.
+
+    Parameters
+    ----------
+    effective_end:
+        Pre-computed effective end date (YYYYMMDD).  When None it is
+        resolved from *source_root* — pass a cached value when calling
+        in a tight loop to avoid repeated parquet reads.
+    """
+    if force:
+        return "rebuild", "forced"
+
+    # No existing file → full rebuild
+    if not factor_path.exists():
+        return "rebuild", "missing"
+
+    # Read the factor's current maximum date
+    factor_max_date = _read_factor_max_date(factor_path)
+    if factor_max_date is None:
+        return "rebuild", "unreadable"
+
+    # Latest date for which source data is available.
+    # Use the pre-computed value when calling in a tight loop, otherwise
+    # resolve from source data (reads daily_adj.parquet — expensive).
+    if effective_end is None:
+        effective_end = _resolve_effective_end_date(source_root)
+
+    # ── Quality gate: check recent trading days for NaN gaps ──────────
+    # A factor whose recent rows are all-NaN (e.g. upstream data not yet
+    # populated for q_* fields) must be rebuilt so the gap is visible
+    # rather than silently carried forward as stale data.
+    if quality_check_days > 0:
+        quality = _check_factor_recent_quality(
+            factor_path, source_root, n_days=quality_check_days,
+            effective_end=effective_end,
+        )
+        if quality == "all_nan":
+            return "rebuild", f"last_{quality_check_days}_trading_days_all_nan"
+        if quality == "unreadable":
+            return "rebuild", "unreadable"
+        if quality == "missing_dates":
+            # Recent calendar dates are absent from the factor — force rebuild
+            # so the factor is brought up to date (covers stale factors and
+            # factors whose quality check was previously fooled by future
+            # calendar dates).
+            return "rebuild", f"last_{quality_check_days}_trading_days_missing"
+
+    # Factor is already current
+    if factor_max_date >= effective_end:
+        return "skip", f"up to date ({factor_max_date} >= {effective_end})"
+
+    # Factor exists but is behind — only compute the new tail
+    return "incremental", factor_max_date
 
 
 # ── Factor classification ────────────────────────────────────────────────────
@@ -364,7 +524,7 @@ def build_factor(
     try:
         context = FactorContext(repo=repo, start_date=context_start, end_date=_effective_end)
         raw_output = spec.compute(context)
-        factor_frame = ensure_single_factor_frame(raw_output, spec.name)
+        factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
 
         # If incremental, slice to only new dates
         if factor_start_date:
@@ -377,7 +537,10 @@ def build_factor(
         mem_mb = factor_frame.memory_usage(deep=True).sum() / (1024 * 1024) if rows else 0
 
         if spec.category == "target":
-            factor_path, manifest_path = write_target(spec, factor_frame, paths=repo.paths)
+            if factor_start_date:
+                factor_path, manifest_path = write_target_incremental(spec, factor_frame, paths=repo.paths)
+            else:
+                factor_path, manifest_path = write_target(spec, factor_frame, paths=repo.paths)
         elif factor_start_date:
             factor_path, manifest_path = write_factor_incremental(
                 spec, factor_frame, paths=repo.paths
@@ -446,16 +609,21 @@ def build_many(
     plan = _flatten_build_plan(names)
     results: list[BuildResult] = []
 
-    # First pass: classify actions
+    # First pass: classify actions (effective_end cached to avoid
+    # re-reading daily_adj.parquet for every factor).
     repo_temp = DataRepository(paths=paths)
+    _effective_end = _resolve_effective_end_date(repo_temp.paths.source_root)
     action_map: dict[str, tuple[str, str | None]] = {}
-    for _, name in plan:
+    for i, (_, name) in enumerate(plan):
         spec = get_factor(name)
         factor_path = repo_temp.paths.factor_output_dir / f"{spec.name}.fea"
         action, reason = decide_build_action(
-            name, factor_path, spec.dependencies, repo_temp.paths.source_root, force=force,
+            name, factor_path, spec.dependencies, repo_temp.paths.source_root,
+            force=force, effective_end=_effective_end,
         )
         action_map[name] = (action, reason)
+        if (i + 1) % 50 == 0:
+            print(f"  [plan] scanned {i + 1}/{len(plan)} factors...", flush=True)
 
     skipped = sum(1 for a, _ in action_map.values() if a == "skip")
     incr = sum(1 for a, _ in action_map.values() if a == "incremental")
@@ -486,10 +654,13 @@ def build_many(
         sub_bar.refresh()
 
     with tqdm(total=len(plan), desc="Building factors", unit="factor", position=0) as bar:
+        completed = 0
+        total = len(plan)
         for category, name in plan:
             action, reason = action_map[name]
 
             if action == "skip":
+                completed += 1
                 bar.set_postfix_str(f"{name} (skip)")
                 results.append(BuildResult(
                     factor_name=name,
@@ -531,6 +702,12 @@ def build_many(
                     refresh=True,
                 )
                 sub_bar.refresh()
+                completed += 1
+                # Simple line-based progress — always visible, even through pipes
+                print(
+                    f"  [{completed}/{total}] {name} {result.action} ({elapsed:.1f}s)",
+                    flush=True,
+                )
             except Exception:
                 logger.exception("%s: build failed", name)
                 results.append(BuildResult(
@@ -540,6 +717,11 @@ def build_many(
                     elapsed=0.0,
                     action="error",
                 ))
+                completed += 1
+                print(
+                    f"  [{completed}/{total}] {name} ERROR",
+                    flush=True,
+                )
                 sub_bar.reset(total=0)
             bar.update(1)
 
@@ -566,11 +748,22 @@ def _build_factor_worker(
     source_root: str,
     shared_progress_state: Any | None,
     force: bool,
+    quality_check_days: int = 0,
+    effective_end: str | None = None,
 ) -> dict[str, Any]:
     """Worker function for ProcessPoolExecutor.
 
     Returns a dict of results because BuildResult may not be picklable
     across processes if paths differ.
+
+    When *quality_check_days* > 0 the worker inspects the last N trading
+    days of the existing .fea file **before** computing.  If every value
+    in those recent rows is NaN the worker switches from ``"skip"`` /
+    ``"incremental"`` to a full ``"rebuild"`` so upstream data gaps are
+    not silently carried forward.
+
+    When *effective_end* is provided it is used directly instead of
+    re-reading ``daily_adj.parquet`` (saves one parquet read per worker).
     """
     configure_paths(project_root=project_root, source_root=source_root)
     ensure_builtin_factors_loaded()
@@ -579,9 +772,12 @@ def _build_factor_worker(
     spec = get_factor(name)
     factor_path = paths.factor_output_dir / f"{spec.name}.fea"
 
-    # Decide action
+    # Decide action — include the quality gate in the worker so each
+    # core independently verifies local .fea integrity before computing.
     action, reason = decide_build_action(
-        name, factor_path, spec.dependencies, paths.source_root, force=force,
+        name, factor_path, spec.dependencies, paths.source_root,
+        force=force, quality_check_days=quality_check_days,
+        effective_end=effective_end,
     )
 
     if action == "skip":
@@ -629,8 +825,12 @@ def _build_factor_worker(
         start_dt = datetime.strptime(reason, "%Y%m%d") - timedelta(days=_LOOKBACK)
         context_start = start_dt.strftime("%Y%m%d")
 
-    # Determine the effective end date (6 PM cutoff + daily_adj max)
-    _effective_end = _resolve_effective_end_date(paths.source_root)
+    # Determine the effective end date — use the cached value when
+    # provided, otherwise resolve from source data.
+    if effective_end is not None:
+        _effective_end = effective_end
+    else:
+        _effective_end = _resolve_effective_end_date(paths.source_root)
     if action == "incremental" and reason and _effective_end < reason:
         _effective_end = reason
 
@@ -653,14 +853,17 @@ def _build_factor_worker(
         context = FactorContext(repo=repo, start_date=context_start, end_date=_effective_end)
         _set_stage("computing")
         raw_output = spec.compute(context)
-        factor_frame = ensure_single_factor_frame(raw_output, spec.name)
+        factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
 
         if action == "incremental" and reason:
             factor_frame = factor_frame.loc[factor_frame.index > reason]
 
         _set_stage("writing")
         if spec.category == "target":
-            fp, mp = write_target(spec, factor_frame, paths=paths)
+            if action == "incremental":
+                fp, mp = write_target_incremental(spec, factor_frame, paths=paths)
+            else:
+                fp, mp = write_target(spec, factor_frame, paths=paths)
         elif action == "incremental":
             fp, mp = write_factor_incremental(spec, factor_frame, paths=paths)
         else:
@@ -707,8 +910,22 @@ def build_many_parallel(
     max_workers: int | None = None,
     paths: ProjectPaths | None = None,
     force: bool = False,
+    quality_check_days: int = 0,
+    use_dashboard: bool = False,
 ) -> list[BuildResult]:
-    """Build factors in parallel with sub-progress display."""
+    """Build factors in parallel with sub-progress display.
+
+    Parameters
+    ----------
+    quality_check_days:
+        If > 0, each worker inspects the last *quality_check_days*
+        trading days of the existing .fea file.  When every value in
+        those rows is NaN the worker rebuilds from scratch instead of
+        skipping / incrementally updating.
+    use_dashboard:
+        When True, use the Rich-based live dashboard instead of tqdm
+        progress bars (requires the ``rich`` package).
+    """
     if not names:
         return []
 
@@ -717,46 +934,56 @@ def build_many_parallel(
     max_workers = max_workers or recommend_worker_count()
     plan = _flatten_build_plan(names)
 
-    # Pre-classify actions
-    action_map: dict[str, tuple[str, str | None]] = {}
-    for _, name in plan:
-        spec = get_factor(name)
-        factor_path = configured_paths.factor_output_dir / f"{spec.name}.fea"
-        action, reason = decide_build_action(
-            name, factor_path, spec.dependencies, configured_paths.source_root, force=force,
-        )
-        action_map[name] = (action, reason)
+    # ── Resolve effective end date ONCE for the whole batch ──────────
+    # _resolve_effective_end_date reads daily_adj.parquet — calling it
+    # per-factor (580×) would waste minutes with no output.  Cache it
+    # and pass to every worker so they don't recompute it either.
+    _effective_end = _resolve_effective_end_date(configured_paths.source_root)
+    logger.info("Effective end date: %s  |  %d factors to check",
+                _effective_end, len(plan))
+    print(f"  Effective end date: {_effective_end}", flush=True)
+    print(f"  Dispatching {len(plan)} factors to {max_workers} workers...", flush=True)
 
-    skipped = sum(1 for a, _ in action_map.values() if a == "skip")
-    incr = sum(1 for a, _ in action_map.values() if a == "incremental")
-    rebuild = sum(1 for a, _ in action_map.values() if a == "rebuild")
-    active = sum(1 for a, _ in action_map.values() if a != "skip")
-    logger.info(f"Build plan: {rebuild} rebuild | {incr} incremental | {skipped} skip")
-
-    if active == 0:
-        logger.info("All factors up to date, nothing to build.")
-        return [
-            BuildResult(
-                factor_name=name,
-                factor_path=configured_paths.factor_output_dir / f"{get_factor(name).name}.fea",
-                manifest_path=configured_paths.manifest_output_dir / f"{get_factor(name).name}.json",
-                elapsed=0.0,
-                action="skip",
-            )
-            for _, name in plan
-        ]
-
-    # Shared state for per-worker sub-progress.
-    # Each worker writes to shared_state[factor_name] = {stage, current, total, start}.
+    # ── Shared state for per-worker progress ─────────────────────────
     import multiprocessing
     manager = multiprocessing.Manager()
     shared_state = manager.dict()
 
-    active_names = [name for _, name in plan if action_map[name][0] != "skip"]
+    # ── Dashboard (rich-based live progress) ──────────────────────────
+    # Safety: when stdout is piped (e.g. parent streaming subprocess
+    # output line-by-line), the Rich Live ANSI cursor codes would block
+    # the parent's readline().  Force-disable in that case.
+    import sys as _sys2
+    if use_dashboard and not _sys2.stdout.isatty():
+        logger.info("Dashboard disabled — stdout is not a TTY (likely piped to parent)")
+        use_dashboard = False
 
+    dashboard = None
+    dashboard_slots: dict[str, int] = {}
+    _next_dash_slot = 0
+    if use_dashboard:
+        try:
+            from featureengineering.dashboard import FactorBuildDashboard
+            dashboard = FactorBuildDashboard(
+                total_factors=len(plan),
+                max_workers=max_workers,
+                title=f"Class 1 Panel — {len(plan)} factors",
+            )
+            dashboard.__enter__()
+        except Exception:
+            dashboard = None
+
+    # ── Submit ALL factors directly to workers ───────────────────────
+    # No sequential pre-classification — each worker independently
+    # checks its .fea file, decides skip/incremental/rebuild, and
+    # either returns immediately (skip) or computes the factor.
+    # This gives instant visibility: workers start within seconds and
+    # the user sees progress right away.
+    all_names = [name for _, name in plan]
     results: list[BuildResult] = []
+    remaining_names: list[str] = []  # captured names when pool breaks
 
-    if active_names:
+    if all_names:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
@@ -766,196 +993,179 @@ def build_many_parallel(
                     str(configured_paths.source_root),
                     shared_state,
                     force,
+                    quality_check_days,
+                    _effective_end,
                 ): name
-                for name in active_names
+                for name in all_names
             }
 
-            # One sub-bar per worker slot so every concurrent worker is visible.
-            num_slots = min(max_workers, len(active_names))
-            sub_bars: list[tqdm] = []
-            for i in range(num_slots):
-                sub_bars.append(tqdm(
-                    total=1, position=i + 1, desc=f"  [{i + 1}] ---",
-                    unit="step", leave=False,
-                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {postfix}",
-                ))
+            # ── Progress display ───────────────────────────────────
+            # Simple, clean output that works equally well through
+            # pipes and in a real terminal:
+            #  • One main tqdm bar for overall progress
+            #  • Per-factor line only for "interesting" actions
+            #    (rebuild, incremental, error) that take real time
+            #  • Periodic compact status heartbeat
+            #  • Rich dashboard (when TTY + --dashboard)
 
-            slot_factor: dict[int, str | None] = {i: None for i in range(num_slots)}
-            factor_slot: dict[str, int] = {}
-            available_slots: set[int] = set(range(num_slots))
+            _total = len(futures)
+            _counts: dict[str, int] = {"rebuild": 0, "incremental": 0,
+                                         "skip": 0, "error": 0}
+            _last_heartbeat = time.perf_counter()
 
-            with tqdm(total=len(futures), desc="Building factors", unit="factor", position=0) as bar:
+            with tqdm(total=_total, desc="Building", unit="f",
+                      position=0, leave=True,
+                      bar_format="{desc}: {percentage:3.0f}%|{bar}| "
+                                 "{n_fmt}/{total_fmt} "
+                                 "[{elapsed}<{remaining}]") as bar:
+
                 pending = set(futures.keys())
-                last_sub_display = time.time()
+                _next_heartbeat = 50  # first heartbeat after 50 completions
 
                 while pending:
-                    now = time.time()
-                    if now - last_sub_display > 0.5:
-                        # ── Assign slots to newly-seen factors ──
-                        try:
-                            st = dict(shared_state)
-                        except Exception:
-                            st = {}
-
-                        for key, info in st.items():
-                            if not isinstance(info, dict):
-                                continue
-                            f_name = key
-                            if f_name in factor_slot:
-                                continue
-                            stage = info.get("stage", "")
-                            if stage in ("done", "error"):
-                                continue
-                            if available_slots:
-                                slot = min(available_slots)
-                                available_slots.discard(slot)
-                                slot_factor[slot] = f_name
-                                factor_slot[f_name] = slot
-
-                        # ── Update each sub-bar ──
-                        for slot, sub_bar in enumerate(sub_bars):
-                            f_name = slot_factor[slot]
-                            if f_name is None:
-                                sub_bar.set_description(f"  [{slot + 1}] ---", refresh=True)
-                                sub_bar.n = 0
-                                sub_bar.total = 1
-                                sub_bar.refresh()
-                                continue
-
-                            info = st.get(f_name, {})
-                            stage = info.get("stage", "---")
-                            cur = info.get("current", 0)
-                            tot = info.get("total", 0)
-                            t_start = info.get("start", 0)
-                            elapsed = (now - t_start) if t_start else 0
-
-                            if stage in ("done", "error"):
-                                sub_bar.n = sub_bar.total
-                            elif tot > 0:
-                                sub_bar.total = tot
-                                sub_bar.n = min(cur, tot)
-                            else:
-                                sub_bar.total = 1
-                                sub_bar.n = 0
-
-                            sub_bar.set_description(
-                                _sub_bar_label(f_name, stage, cur, tot, elapsed),
-                                refresh=True,
-                            )
-                            sub_bar.refresh()
-
-                        n_pending = len(pending)
-                        bar.set_postfix_str(f"remaining: {n_pending}")
-                        last_sub_display = now
-
-                    # ── Collect completed futures ──
+                    # Collect any completed futures (non-blocking poll)
                     done = {f for f in pending if f.done()}
                     pool_broken = False
+
                     for fut in done:
                         pending.discard(fut)
                         name = futures[fut]
                         try:
                             worker_result = fut.result()
                         except BrokenProcessPool:
-                            logger.error("%s: process pool broken (OOM kill likely) — "
-                                         "marking remaining %d factors as failed", name, len(pending) + 1)
+                            logger.error("%s: pool broken (OOM kill likely) — "
+                                         "%d remaining failed", name, len(pending) + 1)
                             pool_broken = True
                             worker_result = {
-                                "factor_name": name,
-                                "factor_path": "",
-                                "manifest_path": "",
-                                "elapsed": 0.0,
-                                "action": "error",
-                                "category": "",
-                                "rows": 0,
-                                "non_null_rows": 0,
-                                "error": "Process pool terminated abruptly (likely out of memory)",
+                                "factor_name": name, "factor_path": "",
+                                "manifest_path": "", "elapsed": 0.0,
+                                "action": "error", "category": "",
+                                "rows": 0, "non_null_rows": 0,
+                                "error": "Process pool terminated abruptly",
                             }
                         except Exception as e:
                             logger.exception("%s: worker failed", name)
                             worker_result = {
-                                "factor_name": name,
-                                "factor_path": "",
-                                "manifest_path": "",
-                                "elapsed": 0.0,
-                                "action": "error",
-                                "category": "",
-                                "rows": 0,
-                                "non_null_rows": 0,
+                                "factor_name": name, "factor_path": "",
+                                "manifest_path": "", "elapsed": 0.0,
+                                "action": "error", "category": "",
+                                "rows": 0, "non_null_rows": 0,
                                 "error": str(e),
                             }
 
                         wr = worker_result
-                        if wr.get("error"):
-                            logger.error("%s: %s", wr["factor_name"], wr["error"])
-                        elapsed = wr.get("elapsed", 0.0)
+                        action = wr.get("action", "error")
+                        elapsed_w = wr.get("elapsed", 0.0)
 
                         results.append(BuildResult(
                             factor_name=wr["factor_name"],
                             factor_path=Path(wr.get("factor_path", "")),
                             manifest_path=Path(wr.get("manifest_path", "")),
-                            elapsed=elapsed,
-                            action=wr.get("action", "error"),
+                            elapsed=elapsed_w,
+                            action=action,
                         ))
                         bar.update(1)
+                        _counts[action] = _counts.get(action, 0) + 1
 
-                        # Free the worker's sub-bar slot
-                        if name in factor_slot:
-                            slot = factor_slot.pop(name)
-                            slot_factor[slot] = None
-                            available_slots.add(slot)
-                            sub_bars[slot].set_description(
-                                _sub_bar_label(name, "done", 1, 1, elapsed),
-                                refresh=True,
+                        # ── Dashboard update ──
+                        if dashboard is not None:
+                            dash_slot = dashboard_slots.pop(
+                                wr["factor_name"], None,
                             )
-                            sub_bars[slot].n = sub_bars[slot].total
-                            sub_bars[slot].refresh()
+                            dashboard.mark_done(
+                                wr["factor_name"], action, elapsed_w,
+                                slot=dash_slot,
+                            )
 
-                        # Mark done in shared state so slot assignment skips it
-                        try:
-                            shared_state[name] = {"stage": "done", "current": 1, "total": 1, "start": 0}
-                        except Exception:
-                            pass
+                        # ── Print interesting actions individually ──
+                        # Skip factors are instant — printing 500+
+                        # one-liners creates visual noise.  Only print
+                        # rebuild / incremental / error which are
+                        # actionable and take real time.
+                        if action != "skip":
+                            _n = bar.n
+                            tag = "ERR" if action == "error" else action[:4].upper()
+                            print(
+                                f"  [{_n}/{_total}] {wr['factor_name']} "
+                                f"{tag} ({elapsed_w:.1f}s)",
+                                flush=True,
+                            )
+                        elif wr.get("error"):
+                            logger.error("%s: %s", wr["factor_name"], wr["error"])
 
-                    # ── Handle broken pool: skip remaining futures without
-                    #     calling .result() to avoid cascading BrokenProcessPool ──
+                        # ── Periodic heartbeat ──
+                        if bar.n >= _next_heartbeat:
+                            _next_heartbeat = bar.n + 50
+                            print(
+                                f"  [{bar.n}/{_total}] "
+                                f"◆{_counts['rebuild']} rebuild  "
+                                f"▲{_counts['incremental']} incr  "
+                                f"✓{_counts['skip']} skip  "
+                                f"✗{_counts['error']} err",
+                                flush=True,
+                            )
+
+                        # ── Dashboard: refresh worker slots ──
+                        if dashboard is not None:
+                            try:
+                                st = dict(shared_state)
+                            except Exception:
+                                st = {}
+                            for f_name, info in st.items():
+                                if not isinstance(info, dict):
+                                    continue
+                                stage = info.get("stage", "")
+                                if stage in ("done", "error", ""):
+                                    continue
+                                cur = info.get("current", 0)
+                                tot = info.get("total", 0)
+                                t_start = info.get("start", 0)
+                                pct = cur / max(tot, 1) if tot > 0 else 0.0
+                                if f_name not in dashboard_slots:
+                                    dashboard_slots[f_name] = _next_dash_slot % max_workers
+                                    _next_dash_slot += 1
+                                dashboard.update_worker(
+                                    dashboard_slots[f_name],
+                                    name=f_name, stage=stage,
+                                    pct=pct,
+                                    elapsed=(time.perf_counter() - t_start) if t_start else 0,
+                                )
+
+                    # ── Handle broken pool ──
                     if pool_broken:
                         for remaining in list(pending):
                             pending.discard(remaining)
                             rname = futures[remaining]
+                            remaining_names.append(rname)
                             try:
                                 remaining.cancel()
                             except Exception:
                                 pass
-                            results.append(BuildResult(
-                                factor_name=rname,
-                                factor_path=Path(""),
-                                manifest_path=Path(""),
-                                elapsed=0.0,
-                                action="error",
-                            ))
-                            logger.error("%s: skipped (pool already broken)", rname)
-                            bar.update(1)
+                        logger.warning("Pool broken — %d factors will retry sequentially", len(remaining_names))
                         break
 
                     if pending:
                         import time as _time
-                        _time.sleep(0.1)
+                        _time.sleep(0.05)  # short sleep to avoid busy-wait
 
-                for sub_bar in sub_bars:
-                    sub_bar.close()
+    # ── Dashboard: finalise and print summary ────────────────────────
+    if dashboard is not None:
+        try:
+            dashboard.__exit__(None, None, None)
+        except Exception:
+            pass
+        dashboard.print_summary()
 
-    # Add skipped results
-    for _, name in plan:
-        if action_map[name][0] == "skip":
-            spec = get_factor(name)
-            results.append(BuildResult(
-                factor_name=name,
-                factor_path=configured_paths.factor_output_dir / f"{spec.name}.fea",
-                manifest_path=configured_paths.manifest_output_dir / f"{spec.name}.json",
-                elapsed=0.0,
-                action="skip",
-            ))
+    # ── Pool-broken fallback: sequential retry ─────────────────────────
+    if remaining_names:
+        import time as _time2
+        print(f"\n  ⚠ Pool broken (likely OOM) — retrying {len(remaining_names)} factors sequentially...\n", flush=True)
+        _time2.sleep(2)  # let the OS reclaim memory from killed workers
+        sequential_results = build_many(remaining_names, paths=configured_paths, force=force)
+        results.extend(sequential_results)
+        ok_seq = sum(1 for r in sequential_results if r.action not in ("error",))
+        err_seq = sum(1 for r in sequential_results if r.action == "error")
+        logger.info("Sequential fallback complete: %d ok, %d error", ok_seq, err_seq)
 
     results.sort(key=lambda item: item.factor_name)
 

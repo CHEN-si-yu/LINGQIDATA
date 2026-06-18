@@ -45,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--new", action="store_true", dest="use_new",
                    help="(Now the default for Class 2 & 3 — kept for compatibility.)")
 
+    # ── Quality & visualisation ──────────────────────────────────────────
+    p.add_argument("--dashboard", action="store_true",
+                   help="Enable Rich-based live dashboard for build progress.")
+    p.add_argument("--quality-check-days", type=int, default=0,
+                   metavar="N",
+                   help="Check last N trading days of existing .fea files. "
+                        "If all-NaN, rebuild from scratch (default: 0 = skip check). "
+                        "Recommended: 5 for daily builds.")
+
     # ── Inspection (no build) ────────────────────────────────────────────
     p.add_argument("--check-dates", action="store_true",
                    help="Scan all factor files and report their last date.")
@@ -70,12 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _print_plan(selected: list[str], paths: ProjectPaths, force: bool) -> None:
     """Print build plan: what each factor would do."""
+    from .builder import _resolve_effective_end_date
+    _effective_end = _resolve_effective_end_date(paths.source_root)
     plan: dict[str, tuple[str, str | None]] = {}
     for name in selected:
         spec = get_factor(name)
         fp = paths.factor_output_dir / f"{spec.name}.fea"
         plan[name] = decide_build_action(
             name, fp, spec.dependencies, paths.source_root, force=force,
+            effective_end=_effective_end,
         )
 
     counts: dict[str, int] = {}
@@ -185,9 +197,15 @@ def main(argv: list[str] | None = None) -> int:
         else:
             all_results.extend(build_many_parallel(
                 other_names, max_workers=args.jobs, paths=paths, force=args.force,
+                quality_check_days=args.quality_check_days,
+                use_dashboard=args.dashboard,
             ))
 
     for result in all_results:
         status = "OK" if result.action not in ("error",) else "ERR"
-        print(f"[{status}] {result.factor_name} -> {result.factor_path}")
+        path_str = str(result.factor_path)
+        if not path_str or path_str == ".":
+            print(f"[{status}] {result.factor_name} -> N/A (build failed)")
+        else:
+            print(f"[{status}] {result.factor_name} -> {path_str}")
     return 0

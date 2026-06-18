@@ -5,6 +5,13 @@ import numpy as np
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
+_PLEDGE_LAG = 45
+
+def _load_pledge(context, value_cols):
+    """Load pledge_stat.parquet with reporting lag to prevent future data leakage."""
+    df = context.load_financial("pledge_stat.parquet", value_cols=value_cols, date_col="end_date")
+    return df.groupby(level="Code").shift(_PLEDGE_LAG).groupby(level="Code").ffill()
+
 
 @register_factor(
     name="pledge_risk",
@@ -14,9 +21,7 @@ from ..utils import cross_sectional_rank
     dependencies=("pledge_stat.parquet", "calendar.parquet"),
 )
 def factor_pledge_risk(context: FactorContext):
-    pledge = context.load_financial(
-        "pledge_stat.parquet", value_cols=["pledge_ratio"], date_col="end_date"
-    )
+    pledge = _load_pledge(context, ["pledge_ratio"])
     return cross_sectional_rank(-pledge["pledge_ratio"])
 
 

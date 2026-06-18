@@ -58,6 +58,18 @@ def factor_label_ret_1d(context: FactorContext):
 
 
 @register_factor(
+    name="label_ret_3d",
+    description="T+1开盘买入、T+4开盘卖出，3日目标收益。",
+    category="target",
+    thesis="三日持股周期，介于超短线和周度之间，适合中高频截面策略。",
+    dependencies=("daily_adj.parquet",),
+)
+def factor_label_ret_3d(context: FactorContext):
+    daily_adj = context.load("daily_adj.parquet")
+    return _compute_label_ret(daily_adj, 3, "label_ret_3d")
+
+
+@register_factor(
     name="label_ret_5d",
     description="T+1开盘买入、T+6开盘卖出，5日目标收益。",
     category="target",

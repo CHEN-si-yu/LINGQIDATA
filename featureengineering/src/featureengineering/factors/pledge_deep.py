@@ -5,6 +5,21 @@ import numpy as np
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
+# pledge_stat.parquet lacks ann_date (only has end_date).  Quarterly reports
+# are not publicly available until weeks after period end.  We apply a 45
+# trading-day shift (~2 calendar months) to approximate the reporting lag and
+# prevent future data leakage.  Q4 annual reports can take up to 120 calendar
+# days, so a uniform 45-day lag is conservative for Q1/Q3, correct for Q2,
+# and partially mitigates Q4 leakage.
+_PLEDGE_LAG = 45  # trading days
+
+def _load_pledge(context, value_cols):
+    """Load pledge_stat.parquet with reporting lag applied."""
+    df = context.load_financial("pledge_stat.parquet", value_cols=value_cols, date_col="end_date")
+    # Shift by reporting lag so new quarterly data only becomes available after disclosure delay.
+    # After shift, ffill restores continuity using the previous quarter's data during the lag window.
+    return df.groupby(level="Code").shift(_PLEDGE_LAG).groupby(level="Code").ffill()
+
 
 @register_factor(
     name="pledge_ratio_momentum",
@@ -15,9 +30,7 @@ from ..utils import cross_sectional_rank
 )
 def factor_pledge_ratio_momentum(context: FactorContext):
     """Compute pledge_ratio QoQ change. Use diff since pledge_ratio is already a ratio."""
-    pledge = context.load_financial(
-        "pledge_stat.parquet", value_cols=["pledge_ratio"], date_col="end_date"
-    )
+    pledge = _load_pledge(context, ["pledge_ratio"])
     change = pledge["pledge_ratio"].groupby(level="Code").transform(lambda s: s.diff(1))
     return cross_sectional_rank(-change)
 
@@ -31,11 +44,7 @@ def factor_pledge_ratio_momentum(context: FactorContext):
 )
 def factor_pledge_concentration(context: FactorContext):
     """Compute pledge_count / total_share. More fragmented pledging = less concentrated risk."""
-    pledge = context.load_financial(
-        "pledge_stat.parquet",
-        value_cols=["pledge_count", "total_share"],
-        date_col="end_date",
-    )
+    pledge = _load_pledge(context, ["pledge_count", "total_share"])
     concentration = pledge["pledge_count"] / pledge["total_share"].replace(0, np.nan)
     return cross_sectional_rank(concentration)
 
@@ -49,11 +58,7 @@ def factor_pledge_concentration(context: FactorContext):
 )
 def factor_pledge_intensity(context: FactorContext):
     """Compute (unrest_pledge + rest_pledge) / total_share = alternative pledge coverage."""
-    pledge = context.load_financial(
-        "pledge_stat.parquet",
-        value_cols=["unrest_pledge", "rest_pledge", "total_share"],
-        date_col="end_date",
-    )
+    pledge = _load_pledge(context, ["unrest_pledge", "rest_pledge", "total_share"])
     total_pledged = pledge["unrest_pledge"] + pledge["rest_pledge"]
     intensity = total_pledged / pledge["total_share"].replace(0, np.nan)
     return cross_sectional_rank(intensity)
@@ -70,9 +75,7 @@ def factor_pledge_ratio_acceleration(context: FactorContext):
     """Compute 4-quarter change of pledge_ratio QoQ change (second derivative).
     Accelerating pledge ratio = worsening stress. Rank negative.
     """
-    pledge = context.load_financial(
-        "pledge_stat.parquet", value_cols=["pledge_ratio"], date_col="end_date"
-    )
+    pledge = _load_pledge(context, ["pledge_ratio"])
     change = pledge["pledge_ratio"].groupby(level="Code").transform(lambda s: s.diff(1))
     accel = change.groupby(level="Code").transform(lambda s: s.diff(4))
     return cross_sectional_rank(-accel)

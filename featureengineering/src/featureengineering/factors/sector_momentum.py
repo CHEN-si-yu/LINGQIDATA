@@ -51,6 +51,15 @@ def _load_stock_sector_map(context: FactorContext, sector_types: tuple[str, ...]
 
     Only includes sectors whose type is in *sector_types*.
     Cached at module level to avoid redundant I/O.
+
+    .. warning::
+       **数据泄露风险**: ``ths_constituent_stocks.parquet`` 不含日期字段，
+       为静态快照。板块/概念成分股会随时间变化（新增、剔除），
+       但此映射将所有历史日期统一应用当前快照，可能引入前瞻偏差。
+       对于 type='I'（行业板块）成分股变化较慢、影响有限；
+       对于 type='N'（概念板块）主题板块更动态、泄漏风险更高。
+       若数据源提供历史成分股快照，应改为按日期动态加载。
+       当前实现假设成分股变动对因子影响在可接受范围内。
     """
     cache = getattr(_load_stock_sector_map, "_cache", None)
     if cache is None:
@@ -182,7 +191,7 @@ def factor_sector_rel_strength_5d(context: FactorContext):
     # Subtract all-A index 5d return for excess return
     if _ALL_A_CODE in sector_ret_5.columns:
         all_a_ret_5 = sector_ret_5[_ALL_A_CODE]
-        sector_ret_5 = sector_ret_5.sub(all_a_ret_5, axis=0)
+        sector_ret_5 = sector_ret_5.sub(all_a_ret_5.fillna(0), axis=0)
 
     stock_metric = _map_sector_metric_to_stocks(sector_ret_5, sector_stocks)
 
@@ -229,7 +238,7 @@ def factor_sector_rel_strength_20d(context: FactorContext):
 
     if _ALL_A_CODE in sector_ret_20.columns:
         all_a_ret_20 = sector_ret_20[_ALL_A_CODE]
-        sector_ret_20 = sector_ret_20.sub(all_a_ret_20, axis=0)
+        sector_ret_20 = sector_ret_20.sub(all_a_ret_20.fillna(0), axis=0)
 
     stock_metric = _map_sector_metric_to_stocks(sector_ret_20, sector_stocks)
 
@@ -320,7 +329,7 @@ def factor_sector_vol_ratio(context: FactorContext):
     # Ratio against all-A index vol
     if _ALL_A_CODE in sector_vol_20.columns:
         all_a_vol_20 = sector_vol_20[_ALL_A_CODE]
-        vol_ratio = sector_vol_20.div(all_a_vol_20.replace(0, np.nan), axis=0)
+        vol_ratio = sector_vol_20.div(all_a_vol_20.replace(0, np.nan).fillna(1), axis=0)
         vol_ratio = vol_ratio.replace([np.inf, -np.inf], np.nan)
     else:
         # All-A index not available — use absolute sector vol as fallback
@@ -517,68 +526,6 @@ def factor_sector_amount_momentum_5d(context: FactorContext):
     return cross_sectional_rank(stock_metric)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 因子 8: concept_heat
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="concept_heat",
-    description=(
-        "概念热度因子：个股出现在多少THS概念板块（非行业分类，type != \"I\"）"
-        "的成分股列表中。概念覆盖越广泛，个股的概念属性越强、"
-        "叙事驱动型波动越高。"
-    ),
-    category="sector",
-    thesis=(
-        "A股市场概念炒作具有显著的板块联动效应。同时涉及多个热门概念的个股"
-        "更容易获得资金关注和情绪溢价，但也伴随更高的波动风险。"
-        "概念广度是衡量个股'故事性'的重要量化指标。"
-    ),
-    dependencies=(
-        "ths_constituent_stocks.parquet",
-        "ths_sector_categories.parquet",
-    ),
-)
-def factor_concept_heat(context: FactorContext):
-    src = context.repo.paths.source_root
-    cs = context.repo._read_parquet(src / "ths_constituent_stocks.parquet")
-    sc = context.repo._read_parquet(src / "ths_sector_categories.parquet")
-
-    # Non-industry sector types: concept / hot topic / narrative (type != "I")
-    concept_codes = set(sc[sc["type"] != "I"]["index_code"])
-    cs_concept = cs[cs["index_code"].isin(concept_codes)]
-
-    # Count per stock how many concepts it appears in
-    concept_count = (
-        cs_concept.groupby("stock_code")
-        .size()
-        .reset_index(name="concept_count")
-    )
-    concept_count["stock_code"] = concept_count["stock_code"].apply(_pad_code)
-
-    # Map to the daily_adj universe for consistent Date x Code index
-    daily_adj = context.load("daily_adj.parquet")
-    all_dates = daily_adj.index.get_level_values("Date").unique()
-    all_codes = daily_adj.index.get_level_values("Code").unique()
-
-    count_series = concept_count.set_index("stock_code")["concept_count"]
-    count_series = count_series.reindex(all_codes).fillna(0)
-
-    # Broadcast to all dates (static count per stock)
-    result = count_series.to_frame("concept_heat")
-    result["Date"] = all_dates[0]
-    result = result.set_index("Date", append=True)
-    result.index = result.index.rename(["Code", "Date"])
-    result = result.reorder_levels(["Date", "Code"])
-    result = result["concept_heat"]
-
-    full_idx = pd.MultiIndex.from_product(
-        [all_dates, all_codes], names=["Date", "Code"]
-    )
-    result = result.reindex(full_idx).ffill()
-    return cross_sectional_rank(result)
-
-
 # ── Supplementary sector momentum factors ──────────────────────────────────
 
 
@@ -623,24 +570,4 @@ def factor_sector_earnings_consistency(context: FactorContext):
     df["consistency"] = df.groupby(["Date", "industry"])["positive"].transform("mean")
     return cross_sectional_rank(df["consistency"])
 
-
-@register_factor(
-    name="concept_heat_change_5d",
-    description="概念热度5日变化因子 (热度上升排前)。",
-    category="sector",
-    thesis="概念热度快速上升期是alpha最强的阶段，热度变化比热度水平更有信号",
-    dependencies=("ths_daily.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
-)
-def factor_concept_heat_change_5d(context: FactorContext):
-    stock_map = _load_stock_sector_map(context, sector_types=("N",))
-    turn_panel = _load_sector_turnover_panel(context)
-
-    ma_5 = turn_panel.rolling(5, min_periods=3).mean()
-    ma_20 = turn_panel.rolling(20, min_periods=10).mean()
-    change = (ma_5 / ma_20.replace(0, np.nan) - 1)
-
-    sector_stocks = _build_sector_stocks(stock_map, set(turn_panel.columns))
-    stock_metric = _map_sector_metric_to_stocks(change, sector_stocks)
-    if stock_metric.empty:
-        return cross_sectional_rank(pd.Series(0, index=turn_panel.index))
     return cross_sectional_rank(stock_metric)

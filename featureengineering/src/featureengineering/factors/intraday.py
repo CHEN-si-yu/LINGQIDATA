@@ -35,10 +35,10 @@ def _intraday_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     every metric needed by the 14 registered intraday factors.
     """
     df = stock_df.copy()
-    # Parse trade_time via string slicing (5× faster than pd.to_datetime)
+    # Use .dt accessor — trade_time is datetime64[us], not string
     ts = df["trade_time"]
-    df["trade_date"] = ts.str[:10].str.replace("-", "")
-    df["minute"] = ts.str[11:13].astype(int) * 60 + ts.str[14:16].astype(int)
+    df["trade_date"] = ts.dt.strftime("%Y%m%d")
+    df["minute"] = ts.dt.hour * 60 + ts.dt.minute
 
     grouped = df.groupby("trade_date")
 
@@ -340,6 +340,222 @@ def _intraday_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
         / (df.groupby("trade_date")["ret_demean_sq"].sum() ** 2).replace(0, np.nan)
     )
 
+    # ── 60-minute realised volatility ─────────────────────────────────────
+    df["close_60min_ago"] = df.groupby("trade_date")["close"].shift(60)
+    df["ret_60min"] = df["close"] / df["close_60min_ago"].replace(0, np.nan) - 1.0
+    df["ret_60min_sq"] = df["ret_60min"] ** 2
+    results["rv_60min"] = np.sqrt(df.groupby("trade_date")["ret_60min_sq"].sum())
+
+    # ── Daily RV (all 1-min returns) ──────────────────────────────────────
+    df["ret_1min"] = df["close"] / df.groupby("trade_date")["close"].shift(1).replace(0, np.nan) - 1.0
+    df["ret_1min_sq"] = df["ret_1min"] ** 2
+    results["rv_daily"] = np.sqrt(df.groupby("trade_date")["ret_1min_sq"].sum())
+
+    # ── Daily bipower variation ───────────────────────────────────────────
+    df["abs_ret_1min"] = df["ret_1min"].abs()
+    df["abs_ret_1min_lag"] = df.groupby("trade_date")["abs_ret_1min"].shift(1)
+    df["bv_daily_term"] = df["abs_ret_1min"] * df["abs_ret_1min_lag"]
+    bv_daily = (np.pi / 2) * df.groupby("trade_date")["bv_daily_term"].sum()
+    results["bv_daily"] = bv_daily
+    rj_daily = results["rv_daily"] ** 2 - bv_daily
+    rj_daily = rj_daily.clip(lower=0)
+    results["rjump_daily"] = np.sqrt(rj_daily)
+
+    # ── Upside/Downside semivariance (daily) ──────────────────────────────
+    df["ret_1min_pos_sq"] = df["ret_1min"].clip(lower=0) ** 2
+    df["ret_1min_neg_sq"] = df["ret_1min"].clip(upper=0) ** 2
+    results["rv_semi_up"] = np.sqrt(df.groupby("trade_date")["ret_1min_pos_sq"].sum())
+    results["rv_semi_down"] = np.sqrt(df.groupby("trade_date")["ret_1min_neg_sq"].sum())
+
+    # ── Volume profile skew & kurtosis ────────────────────────────────────
+    df["minute_5min_bucket"] = (df["minute"] // 5) * 5
+    vol_5min_bucket = df.groupby(["trade_date", "minute_5min_bucket"])["vol"].sum()
+    vol_5min_mean_b = vol_5min_bucket.groupby("trade_date").mean()
+    vol_5min_std_b = vol_5min_bucket.groupby("trade_date").std()
+    vol_dev = (vol_5min_bucket - vol_5min_mean_b) / vol_5min_std_b.replace(0, np.nan)
+    results["volume_profile_skew"] = (vol_dev ** 3).groupby("trade_date").mean()
+    results["volume_profile_kurt"] = (vol_dev ** 4).groupby("trade_date").mean()
+
+    # ── Volume peak time (minute of max 5-min volume) ─────────────────────
+    vol_5min_wide = vol_5min_bucket.unstack("minute_5min_bucket")
+    # Safe idxmax — all-NaN rows raise ValueError
+    valid_mask = vol_5min_wide.notna().any(axis=1)
+    vol_peak = pd.Series(np.nan, index=vol_5min_wide.index, dtype=float)
+    if valid_mask.any():
+        vol_peak[valid_mask] = vol_5min_wide.loc[valid_mask].idxmax(axis=1).astype(float)
+    results["volume_peak_time"] = vol_peak
+
+    # ── Relative volume by session ────────────────────────────────────────
+    first_hour_mask = (df["minute"] >= 570) & (df["minute"] <= 630)
+    last_hour_mask = (df["minute"] >= 840) & (df["minute"] <= 900)
+    midday_mask = (df["minute"] >= 660) & (df["minute"] <= 810)
+    results["rel_vol_first_hour"] = df.loc[first_hour_mask].groupby("trade_date")["vol"].sum() / daily_vol.replace(0, np.nan)
+    results["rel_vol_last_hour"] = df.loc[last_hour_mask].groupby("trade_date")["vol"].sum() / daily_vol.replace(0, np.nan)
+    results["rel_vol_midday"] = df.loc[midday_mask].groupby("trade_date")["vol"].sum() / daily_vol.replace(0, np.nan)
+
+    # ── Path efficiency: |close - open| / (high - low) ────────────────────
+    results["path_efficiency"] = (daily_close - daily_open).abs() / (daily_high - daily_low).replace(0, np.nan)
+
+    # ── Intraday max drawdown (from peak) ─────────────────────────────────
+    cum_max = df.groupby("trade_date")["close"].cummax()
+    df["drawdown"] = df["close"] / cum_max.replace(0, np.nan) - 1.0
+    results["intraday_max_drawdown"] = df.groupby("trade_date")["drawdown"].min()
+
+    # ── Intraday max runup (from trough) ──────────────────────────────────
+    cum_min = df.groupby("trade_date")["close"].cummin()
+    df["runup"] = df["close"] / cum_min.replace(0, np.nan) - 1.0
+    results["intraday_max_runup"] = df.groupby("trade_date")["runup"].max()
+
+    # ── Close auction impact (last 3 minutes return) ──────────────────────
+    close_3min = df[df["minute"] >= 897]
+    if not close_3min.empty:
+        c3g = close_3min.groupby("trade_date")
+        results["close_auction_impact"] = c3g["close"].last() / c3g["open"].first().replace(0, np.nan) - 1.0
+    else:
+        results["close_auction_impact"] = pd.Series(np.nan, index=daily_open.index)
+
+    # ── AM/PM return ratio ────────────────────────────────────────────────
+    am_ret = results.get("am_close", pd.Series(np.nan, index=daily_open.index)) / results.get("am_open", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan) - 1.0
+    pm_ret = results.get("pm_close", pd.Series(np.nan, index=daily_open.index)) / results.get("pm_open", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan) - 1.0
+    results["am_pm_return_ratio"] = am_ret / pm_ret.replace(0, np.nan)
+
+    # ── Return asymmetry: (mean - median) of 5-min returns ────────────────
+    ret_5min_mean2 = df.groupby("trade_date")["ret_5min"].mean()
+    ret_5min_median = df.groupby("trade_date")["ret_5min"].median()
+    results["return_asymmetry"] = ret_5min_mean2 - ret_5min_median
+
+    # ── Up minutes ratio ──────────────────────────────────────────────────
+    df["ret_1min_pos_flag"] = (df["ret_1min"] > 0).astype(float)
+    results["up_minutes_ratio"] = df.groupby("trade_date")["ret_1min_pos_flag"].mean()
+
+    # ── Volume-weighted return ────────────────────────────────────────────
+    df["vw_ret_term"] = df["ret_1min"] * df["vol"]
+    results["volume_weighted_ret"] = df.groupby("trade_date")["vw_ret_term"].sum() / daily_vol.replace(0, np.nan)
+
+    # ── Realized spread: mean |ret_5min| ──────────────────────────────────
+    results["realized_spread_5min"] = df.groupby("trade_date")["abs_ret_5min"].mean()
+
+    # ── Price impact asymmetry: |ret|/vol for up vs down ──────────────────
+    df["impact_up"] = df["ret_1min"].clip(lower=0).abs() / df["vol"].replace(0, np.nan)
+    df["impact_down"] = df["ret_1min"].clip(upper=0).abs() / df["vol"].replace(0, np.nan)
+    impact_up_mean = df.groupby("trade_date")["impact_up"].mean()
+    impact_down_mean = df.groupby("trade_date")["impact_down"].mean()
+    results["price_impact_asymmetry"] = impact_up_mean / impact_down_mean.replace(0, np.nan)
+
+    # ── Liquidity resilience: vol autocorrelation after extreme return ────
+    extreme_mask = df["abs_ret_5min"] > df.groupby("trade_date")["abs_ret_5min"].transform(lambda x: x.rolling(20, min_periods=5).mean() + 2 * x.rolling(20, min_periods=5).std())
+
+    def _safe_autocorr(x):
+        """Autocorrelation with zero-variance guard (avoids np.corrcoef divide-by-zero)."""
+        x = x.dropna()
+        if len(x) <= 5:
+            return np.nan
+        s = x.std()
+        if not (s > 0):                       # catches NaN (all-NaN groups) and 0.0
+            return np.nan
+        return x.autocorr(lag=1)
+
+    results["liquidity_resilience"] = -df.loc[extreme_mask].groupby("trade_date")["vol"].apply(_safe_autocorr)
+
+    # ── Turnover concentration: top 30 min volume / total ─────────────────
+    vol_5min_top = vol_5min_bucket.groupby("trade_date").max()
+    results["turnover_concentration"] = vol_5min_top / daily_vol.replace(0, np.nan)
+
+    # ── Flash crash risk: max 5-min drawdown ──────────────────────────────
+    df["ret_5min_cum"] = df.groupby("trade_date")["ret_5min"].cumsum()
+    df["ret_5min_peak"] = df.groupby("trade_date")["ret_5min_cum"].cummax()
+    df["ret_5min_drawdown"] = df["ret_5min_cum"] - df["ret_5min_peak"]
+    results["flash_crash_risk"] = -df.groupby("trade_date")["ret_5min_drawdown"].min()
+
+    # ── Extreme move count: |ret_5min| > 3σ within the day ────────────────
+    ret_5min_std_daily = df.groupby("trade_date")["ret_5min"].transform("std")
+    df["is_extreme"] = (df["abs_ret_5min"] > 3 * ret_5min_std_daily).astype(float)
+    results["extreme_move_count"] = df.groupby("trade_date")["is_extreme"].sum()
+
+    # ── Jump ratio: rjump_daily / rv_daily ────────────────────────────────
+    results["jump_ratio"] = results["rjump_daily"] / results["rv_daily"].replace(0, np.nan)
+
+    # ── Volume U-shape score ──────────────────────────────────────────────
+    u_template = np.array([1.5, 1.0, 0.7, 0.5, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0, 2.2, 2.0,
+                           1.8, 1.5, 1.2, 1.0, 0.8, 0.6, 0.5, 0.6, 0.8, 1.0, 1.3, 1.7])
+    n_buckets = len(u_template)
+    vol_bucket_norm = vol_5min_wide.div(vol_5min_wide.mean(axis=1), axis=0)
+    # Take up to n_buckets columns
+    common_buckets = vol_bucket_norm.columns[:n_buckets]
+    vol_arr = vol_bucket_norm[common_buckets].values
+    template_arr = u_template[:len(common_buckets)]
+    # Correlation of each day's vol profile with U-template
+    vol_centered = vol_arr - vol_arr.mean(axis=1, keepdims=True)
+    template_centered = template_arr - template_arr.mean()
+    cov = (vol_centered * template_centered).sum(axis=1)
+    var_vol = (vol_centered ** 2).sum(axis=1)
+    var_template = (template_centered ** 2).sum()
+    results["volume_u_shape_score"] = pd.Series(
+        cov / np.sqrt(var_vol * var_template + 1e-10), index=vol_bucket_norm.index
+    )
+
+    # ── Hourly RV decomposition ────────────────────────────────────────────
+    for h, (start_m, end_m, label) in enumerate([
+        (570, 630, "rv_hourly_1"), (630, 690, "rv_hourly_2"),
+        (780, 840, "rv_hourly_3"), (840, 900, "rv_hourly_4"),
+    ]):
+        hour_mask = (df["minute"] >= start_m) & (df["minute"] <= end_m)
+        hour_rv = np.sqrt(df.loc[hour_mask].groupby("trade_date")["ret_1min_sq"].sum())
+        results[label] = hour_rv.reindex(daily_open.index)
+
+    # ── Hourly RV dispersion ──────────────────────────────────────────────
+    hourly_cols = ["rv_hourly_1", "rv_hourly_2", "rv_hourly_3", "rv_hourly_4"]
+    hourly_df = pd.DataFrame({c: results[c] for c in hourly_cols})
+    results["rv_hourly_dispersion"] = hourly_df.std(axis=1) / hourly_df.mean(axis=1).replace(0, np.nan)
+
+    # ── Abs autocorrelation (market quality proxy) ────────────────────────
+    df["abs_ret_5min_lag1"] = df.groupby("trade_date")["abs_ret_5min"].shift(1)
+    df["abs_ac_prod"] = df["abs_ret_5min"] * df["abs_ret_5min_lag1"]
+    df["abs_ret_5min_sq"] = df["abs_ret_5min"] ** 2
+    results["ret_autocorr_abs"] = df.groupby("trade_date")["abs_ac_prod"].sum() / df.groupby(
+        "trade_date"
+    )["abs_ret_5min_sq"].sum().replace(0, np.nan)
+
+    # ── AM/PM HL range ────────────────────────────────────────────────────
+    results["am_hl_range"] = (
+        results.get("am_high", pd.Series(np.nan, index=daily_open.index))
+        / results.get("am_low", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan)
+    ) - 1.0
+    results["pm_hl_range"] = (
+        results.get("pm_high", pd.Series(np.nan, index=daily_open.index))
+        / results.get("pm_low", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan)
+    ) - 1.0
+
+    # ── Opening/Closing 5-min momentum ────────────────────────────────────
+    open_5 = df[(df["minute"] >= 570) & (df["minute"] <= 575)]
+    close_5 = df[(df["minute"] >= 895) & (df["minute"] <= 900)]
+    if not open_5.empty:
+        o5g = open_5.groupby("trade_date")
+        results["open_5min_momentum"] = o5g["close"].last() / o5g["open"].first().replace(0, np.nan) - 1.0
+    else:
+        results["open_5min_momentum"] = pd.Series(np.nan, index=daily_open.index)
+    if not close_5.empty:
+        c5g = close_5.groupby("trade_date")
+        results["close_5min_momentum"] = c5g["close"].last() / c5g["open"].first().replace(0, np.nan) - 1.0
+    else:
+        results["close_5min_momentum"] = pd.Series(np.nan, index=daily_open.index)
+
+    # ── Cumulative return path efficiency ─────────────────────────────────
+    # Ratio of |total return| / sum(|ret_1min|)
+    total_ret = daily_close / daily_open.replace(0, np.nan) - 1.0
+    sum_abs_ret = df.groupby("trade_date")["abs_ret_1min"].sum()
+    results["cumulative_ret_path"] = total_ret.abs() / sum_abs_ret.replace(0, np.nan)
+
+    # ── PM momentum ───────────────────────────────────────────────────────
+    results["pm_momentum"] = results.get("pm_close", pd.Series(np.nan, index=daily_open.index)) / results.get("pm_open", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan) - 1.0
+
+    # ── RV rolling std (vol-of-vol at 5-daily level) ──────────────────────
+    rv_5min_s2 = results["rv_5min"]
+    results["rv_rolling_5d_std"] = rv_5min_s2.rolling(5, min_periods=3).std()
+
+    # ── RV term structure slope: rv_5min / rv_60min ───────────────────────
+    results["rv_term_structure_slope"] = results["rv_5min"] / results["rv_60min"].replace(0, np.nan) - 1.0
+
     return pd.DataFrame(results, index=daily_open.index)
 
 
@@ -396,6 +612,53 @@ INTRADAY_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "pos_rv_ratio":           ("pos_rv_ratio",      "pos"),
     "am_pm_rv_ratio":         ("am_pm_rv_ratio",    "pos"),
     "rq_intraday":            ("realized_quarticity","neg"),
+    # ── New: extended RV estimators ─────────────────────────────────────
+    "rv_60min":               ("rv_60min",          "neg"),
+    "rv_daily":               ("rv_daily",          "neg"),
+    "bv_daily":               ("bv_daily",          "neg"),
+    "rjump_daily":            ("rjump_daily",       "neg"),
+    "rv_semi_up":             ("rv_semi_up",        "pos"),
+    "rv_semi_down":           ("rv_semi_down",      "neg"),
+    # ── New: volume distribution ────────────────────────────────────────
+    "volume_profile_skew":    ("volume_profile_skew", "neg"),
+    "volume_profile_kurt":    ("volume_profile_kurt", "neg"),
+    "volume_peak_time":       ("volume_peak_time",  "neg"),
+    "rel_vol_first_hour":     ("rel_vol_first_hour", "pos"),
+    "rel_vol_last_hour":      ("rel_vol_last_hour", "neg"),
+    "rel_vol_midday":         ("rel_vol_midday",    "neg"),
+    # ── New: price path ─────────────────────────────────────────────────
+    "path_efficiency":        ("path_efficiency",   "pos"),
+    "intraday_max_drawdown":  ("intraday_max_drawdown","neg"),
+    "intraday_max_runup":     ("intraday_max_runup","pos"),
+    "close_auction_impact":   ("close_auction_impact","pos"),
+    "am_pm_return_ratio":     ("am_pm_return_ratio","pos"),
+    "return_asymmetry_intraday": ("return_asymmetry","neg"),
+    "up_minutes_ratio":       ("up_minutes_ratio",  "pos"),
+    "volume_weighted_ret":    ("volume_weighted_ret","pos"),
+    # ── New: liquidity & microstructure ─────────────────────────────────
+    "realized_spread_5min":   ("realized_spread_5min","neg"),
+    "price_impact_asymmetry": ("price_impact_asymmetry","neg"),
+    "liquidity_resilience":   ("liquidity_resilience","pos"),
+    "turnover_concentration_intraday": ("turnover_concentration","neg"),
+    "flash_crash_risk":       ("flash_crash_risk",  "neg"),
+    "extreme_move_count":     ("extreme_move_count","neg"),
+    "jump_ratio_intraday":    ("jump_ratio",        "neg"),
+    "volume_u_shape_score":   ("volume_u_shape_score","neg"),
+    # ── New: hourly decomposition ───────────────────────────────────────
+    "rv_hourly_1":            ("rv_hourly_1",       "neg"),
+    "rv_hourly_4":            ("rv_hourly_4",       "neg"),
+    "rv_hourly_dispersion":   ("rv_hourly_dispersion","neg"),
+    # ── New: autocorrelation & range ────────────────────────────────────
+    "ret_autocorr_abs":       ("ret_autocorr_abs",  "pos"),
+    "am_hl_range_intraday":   ("am_hl_range",       "neg"),
+    "pm_hl_range_intraday":   ("pm_hl_range",       "neg"),
+    "close_5min_momentum":    ("close_5min_momentum","neg"),
+    "open_5min_momentum":     ("open_5min_momentum","pos"),
+    "cumulative_ret_path":    ("cumulative_ret_path","pos"),
+    "pm_momentum_intraday":   ("pm_momentum",       "pos"),
+    # ── New: vol-of-vol & term structure ────────────────────────────────
+    "rv_rolling_5d_std":      ("rv_rolling_5d_std", "neg"),
+    "rv_term_structure_slope":("rv_term_structure_slope","neg"),
 }
 
 #: All metric columns produced by ``_intraday_all_metrics`` that map to factors.
@@ -1781,3 +2044,541 @@ def factor_rq_intraday(context: FactorContext):
     rq = _compute_intraday_factor(source_root, context.repo.allowed_codes, "realized_quarticity",
                                    on_progress=context.repo.on_progress)
     return cross_sectional_rank(-rq)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Class 3 — Extended intraday factors (Task 3, ~40 new factors)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Extended RV ──────────────────────────────────────────────────────────────
+
+@register_factor(
+    name="rv_60min",
+    description="60分钟已实现波动率因子，1分钟数据60分钟收益平方和开根截面排名（低波排前）。",
+    category="intraday",
+    thesis="60分钟频率的RV捕捉更长周期的波动动态——相比5/15/30分钟RV，60分钟RV对 microstructure noise 更稳健，接近'长期波动率'成分。多频RV联合提供波动率期限结构信息。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_60min(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_60min",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rv)
+
+
+@register_factor(
+    name="rv_daily",
+    description="日度已实现波动率因子，1分钟数据全日收益平方和开根截面排名（低波排前）。",
+    category="intraday",
+    thesis="日度RV使用全部240个1分钟收益，是最精确的日度波动率估计量。相比收盘价波动率，日度RV利用了全天的价格路径信息，精确度高一个数量级(Andersen et al. 2001)。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_daily(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_daily",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rv)
+
+
+@register_factor(
+    name="bv_daily",
+    description="日度双幂变差因子，1分钟数据双幂变差截面排名（低波排前）。连续价格变动的稳健波动估计。",
+    category="intraday",
+    thesis="双幂变差(BV)是对跳跃稳健的波动率估计量(Barndorff-Nielsen & Shephard 2004)——通过相邻收益的乘积而非平方来降低跳跃的影响。BV与RV的差异(RV²-BV²)可分离出跳跃成分。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_bv_daily(context: FactorContext):
+    bv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "bv_daily",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-bv)
+
+
+@register_factor(
+    name="rjump_daily",
+    description="日度已实现跳跃因子，sqrt(max(RV²-BV²,0))截面排名（高跳跃=风险信号排后）。",
+    category="intraday",
+    thesis="日度已实现跳跃分离了价格过程中的不连续成分——跳跃代表信息冲击或流动性断裂。高跳跃股票面临更大的尾部风险和更不稳定的波动率。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rjump_daily(context: FactorContext):
+    rj = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rjump_daily",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rj)
+
+
+@register_factor(
+    name="rv_semi_up",
+    description="上行已实现半方差因子，仅正1分钟收益平方和开根截面排名（上涨波动=正面信号排前）。",
+    category="intraday",
+    thesis="上行半方差(Barndorff-Nielsen et al. 2010)将波动率分解为'好波动'(上涨驱动)和'坏波动'(下跌驱动)——上涨波动率高的股票处于资金主动买入阶段，是积极的价格发现过程。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_semi_up(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_semi_up",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(rv)
+
+
+@register_factor(
+    name="rv_semi_down",
+    description="下行已实现半方差因子，仅负1分钟收益平方和开根截面排名（高下行波=风险排后）。",
+    category="intraday",
+    thesis="下行半方差是投资者真正厌恶的'坏波动'——下行RV高的股票在下跌行情中跌幅更大，需要更高的风险溢价。下行RV对尾部风险的预测能力优于对称RV。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_semi_down(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_semi_down",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rv)
+
+
+# ── Volume Distribution ──────────────────────────────────────────────────────
+
+@register_factor(
+    name="volume_profile_skew",
+    description="成交量分布偏度因子，5分钟成交量日内分布的偏度截面排名（取负向=偏度极端排后）。",
+    category="intraday",
+    thesis="成交量分布的偏度反映成交活跃度的日内倾斜——正偏(集中在早盘)意味着信息消化高效，负偏(集中在尾盘)可能是被动交易或操纵行为。极端的成交量偏度是不健康的交易结构。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_volume_profile_skew(context: FactorContext):
+    vs = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "volume_profile_skew",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-vs.abs())
+
+
+@register_factor(
+    name="volume_profile_kurt",
+    description="成交量分布峰度因子，5分钟成交量日内分布的峰度截面排名（取负向=高峰度=不均排后）。",
+    category="intraday",
+    thesis="成交量峰度高意味着交易集中在少数几个5分钟区间——极端的成交量集中往往对应着大单冲击或主力行为。均匀分布的成交量代表自然的、健康的交易节奏。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_volume_profile_kurt(context: FactorContext):
+    vk = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "volume_profile_kurt",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-vk)
+
+
+@register_factor(
+    name="volume_peak_time",
+    description="成交量峰值时间因子，日内最大5分钟成交量所在分钟截面排名（取负向=尾盘放量=异常排后）。",
+    category="intraday",
+    thesis="成交量峰值出现的时间包含信息——早盘峰值(正常)+午盘峰值(可接受)+尾盘峰值(警惕)。尾盘突然放量往往是主力做收盘价或短线资金集中进出的标志，次日走势不确定。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_volume_peak_time(context: FactorContext):
+    vpt = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "volume_peak_time",
+                                    on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-vpt)
+
+
+@register_factor(
+    name="rel_vol_first_hour",
+    description="首小时量比因子，开盘首小时成交量/全日成交量截面排名（早盘活跃=信息驱动排前）。",
+    category="intraday",
+    thesis="开盘首小时是A股全天成交最活跃的时段——首小时成交占比高意味着市场对隔夜信息的反应积极高效，价格发现质量高。首小时占比持续高的股票流动性更好。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rel_vol_first_hour(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rel_vol_first_hour",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(rv)
+
+
+@register_factor(
+    name="rel_vol_last_hour",
+    description="尾小时量比因子，收盘前1小时成交量/全日成交量截面排名（取负向=尾盘博弈=不可靠排后）。",
+    category="intraday",
+    thesis="尾盘最后1小时成交占比过高是A股T+1制度下的特殊风险信号——尾盘拉抬或打压无法当日了结，次日走势往往反向。尾盘量比高意味着短线博弈而非价值投资。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rel_vol_last_hour(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rel_vol_last_hour",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rv)
+
+
+@register_factor(
+    name="rel_vol_midday",
+    description="午间量比因子，11:00-13:30成交量/全日成交量截面排名（取负向=午间异常放量排后）。",
+    category="intraday",
+    thesis="午间时段通常是A股成交最清淡的时段——午间异常放量往往意味着有特定消息或主力在这个'低关注窗口'进行操作。午间量比高是信息不对称的信号。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rel_vol_midday(context: FactorContext):
+    rv = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rel_vol_midday",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rv)
+
+
+# ── Price Path ───────────────────────────────────────────────────────────────
+
+@register_factor(
+    name="path_efficiency",
+    description="价格路径效率因子，|收盘-开盘|/(最高-最低)截面排名（高效=趋势性强排前）。",
+    category="intraday",
+    thesis="价格路径效率衡量日内价格是趋势性运动还是震荡运动——高效率(接近1)意味着价格从开盘到收盘基本单向运动，趋势明确。低效率(接近0)意味着日内大幅双向波动后回到原点，多空分歧大。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_path_efficiency(context: FactorContext):
+    pe = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "path_efficiency",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(pe)
+
+
+@register_factor(
+    name="intraday_max_drawdown",
+    description="日内最大回撤因子，日内从最高点到后续最低点的最大跌幅截面排名（取负向=深回撤排后）。",
+    category="intraday",
+    thesis="日内最大回撤衡量盘中持仓可能遭遇的最差情景——大回撤意味着即使收盘涨了，盘中也有大量资金被套。日内回撤小的股票持有人体验好、止损盘少、趋势更稳定。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_intraday_max_drawdown(context: FactorContext):
+    dd = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "intraday_max_drawdown",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-dd.abs())
+
+
+@register_factor(
+    name="intraday_max_runup",
+    description="日内最大拉升因子，日内从最低点到后续最高点的最大涨幅截面排名（强拉升=买方力量排前）。",
+    category="intraday",
+    thesis="日内最大拉升反映买方在盘中的反击力度——在经历低点后能快速大幅拉升说明下方支撑坚实、买方力量强。大拉升后的股票短期动量和信心都更强。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_intraday_max_runup(context: FactorContext):
+    ru = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "intraday_max_runup",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(ru)
+
+
+@register_factor(
+    name="close_auction_impact",
+    description="收盘竞价影响因子，最后3分钟收益截面排名（正拉升=尾盘抢筹排前）。",
+    category="intraday",
+    thesis="A股收盘前3分钟(14:57-15:00)是集合竞价阶段——这3分钟的涨跌反映了资金对收盘价的态度。收盘竞价拉升通常是机构为了提高净值或技术面做收盘价，次日高开概率较大。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_close_auction_impact(context: FactorContext):
+    ca = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "close_auction_impact",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(ca)
+
+
+@register_factor(
+    name="am_pm_return_ratio",
+    description="上午/下午收益比因子，上午收益/下午收益截面排名（上午领涨=主动买入排前）。",
+    category="intraday",
+    thesis="上午和下午的收益分配反映不同类型资金的行为——上午收益主要由隔夜信息和机构调仓驱动，下午收益更多受短线资金和情绪影响。上午领涨的股票信息优势更强。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_am_pm_return_ratio(context: FactorContext):
+    ar = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "am_pm_return_ratio",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(ar)
+
+
+@register_factor(
+    name="return_asymmetry_intraday",
+    description="日内收益不对称因子，-(5分钟收益均值-中位数)截面排名（取负向=不对称=偏度大排后）。",
+    category="intraday",
+    thesis="收益均值与中位数的差异反映分布的偏度——均值>中位数意味着少数极端正收益拉高了均值（正偏），均值<中位数则是少数极端负收益（负偏）。不对称性大意味着价格过程包含跳跃。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_return_asymmetry_intraday(context: FactorContext):
+    ra = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "return_asymmetry",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-ra.abs())
+
+
+@register_factor(
+    name="up_minutes_ratio",
+    description="上涨分钟占比因子，1分钟正收益分钟数/总分钟数截面排名（买盘主导排前）。",
+    category="intraday",
+    thesis="上涨分钟的占比是日内买方力量的直接度量——>50%的分钟在上涨意味着买方在全天持续主导，而非仅在个别时段发力。高上涨占比的股票日内定价效率高、趋势可靠。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_up_minutes_ratio(context: FactorContext):
+    um = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "up_minutes_ratio",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(um)
+
+
+@register_factor(
+    name="volume_weighted_ret",
+    description="成交量加权收益因子，Σ(ret_i×vol_i)/Σvol_i截面排名（量价配合=真实涨跌排前）。",
+    category="intraday",
+    thesis="成交量加权收益比简单收益更能反映'真实'的价格变动——在成交量大的价位上的价格变动比成交量小的价位上的变动更有信息含量。VW收益排除了无量空涨/空跌的噪音。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_volume_weighted_ret(context: FactorContext):
+    vw = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "volume_weighted_ret",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(vw)
+
+
+# ── Liquidity & Microstructure ──────────────────────────────────────────────
+
+@register_factor(
+    name="realized_spread_5min",
+    description="已实现价差因子，5分钟|ret|均值截面排名（取负向=高价差=高交易成本排后）。",
+    category="intraday",
+    thesis="5分钟绝对收益的均值是bid-ask spread的代理变量——在有效市场中，价格在两个方向间弹跳产生小的绝对收益。绝对收益均值大意味着实际买卖价差大、交易成本高。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_realized_spread_5min(context: FactorContext):
+    rs = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "realized_spread_5min",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rs)
+
+
+@register_factor(
+    name="price_impact_asymmetry",
+    description="价格冲击不对称因子，-(上涨冲击/下跌冲击)截面排名（取负向=不对称=上涨费劲排后）。",
+    category="intraday",
+    thesis="上涨和下跌的价格冲击比反映了买卖方流动性供给的不对称——上涨比下跌需要更大成交量（高比值）意味着卖方挂单稀疏、上涨阻力大。低比值则意味着买方承接力弱。接近1的对称性是最优的交易结构。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_price_impact_asymmetry(context: FactorContext):
+    pa = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "price_impact_asymmetry",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-np.abs(pa - 1.0))
+
+
+@register_factor(
+    name="liquidity_resilience",
+    description="流动性弹性因子，极端收益后成交量的恢复速度截面排名（恢复快=流动性好排前）。",
+    category="intraday",
+    thesis="流动性弹性(Liquidity Resilience)衡量市场在经历大单冲击后恢复正常交易的速度——高弹性意味着即使出现大单冲击，流动性也能迅速恢复，交易成本不会持续升高。这是市场质量的高级度量。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_liquidity_resilience(context: FactorContext):
+    lr = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "liquidity_resilience",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(lr)
+
+
+@register_factor(
+    name="turnover_concentration_intraday",
+    description="换手率集中度因子，最大5分钟成交量/全日成交量截面排名（取负向=集中度过高排后）。",
+    category="intraday",
+    thesis="换手率在单一5分钟区间过度集中往往是大单冲击或主力对倒——集中度>30%意味着三分之一的日成交在5分钟内完成，不利于中小投资者的交易执行。适度分散的成交是健康流动性的标志。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_turnover_concentration_intraday(context: FactorContext):
+    tc = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "turnover_concentration",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-tc)
+
+
+@register_factor(
+    name="flash_crash_risk",
+    description="闪崩风险因子，日内5分钟累计收益最大回撤截面排名（取负向=闪崩风险高排后）。",
+    category="intraday",
+    thesis="闪崩(Flash Crash)是短时间内价格剧烈下跌的现象——即使最终收盘涨回来，盘中闪崩也会触发大量止损单，对持仓者造成实质性伤害。闪崩风险高的股票需要额外的尾部风险溢价。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_flash_crash_risk(context: FactorContext):
+    fc = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "flash_crash_risk",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-fc)
+
+
+@register_factor(
+    name="extreme_move_count",
+    description="极端波动次数因子，日内|ret_5min|>3σ的次数截面排名（取负向=频繁极端波动排后）。",
+    category="intraday",
+    thesis="日内极端5分钟波动的次数直接度量了价格的'不平静'程度——即使总体RV不高，频繁的极端波动也意味着价格过程远非高斯，跳跃风险高。极端波动次数是对标准波动率的重要补充。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_extreme_move_count(context: FactorContext):
+    em = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "extreme_move_count",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-em)
+
+
+@register_factor(
+    name="jump_ratio_intraday",
+    description="跳跃占比因子，日度已实现跳跃/日度RV截面排名（取负向=跳跃主导=不稳定排后）。",
+    category="intraday",
+    thesis="跳跃成分占总波动的比例反映了价格过程的'光滑度'——跳跃占比高意味着价格变动主要由不连续的冲击驱动(而非连续的扩散)，预测难度更大、套利风险更高。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_jump_ratio_intraday(context: FactorContext):
+    jr = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "jump_ratio",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-jr)
+
+
+@register_factor(
+    name="volume_u_shape_score",
+    description="U型分布评分因子，成交量日内分布与U型模板的相关性截面排名（取负向=极端U型=操纵风险排后）。",
+    category="intraday",
+    thesis="A股成交量呈U型分布(早盘和尾盘量大、午间量小)是正常现象——但极端的U型(过于集中首尾)往往与操纵行为有关。适度的U型是健康的，极端的U型可能暗示主力在特定时段操作。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_volume_u_shape_score(context: FactorContext):
+    us = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "volume_u_shape_score",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-us.abs())
+
+
+# ── Hourly Decomposition ─────────────────────────────────────────────────────
+
+@register_factor(
+    name="rv_hourly_1",
+    description="第一小时波动率因子，9:30-10:30已实现波动率截面排名（取负向=开盘高波排后）。",
+    category="intraday",
+    thesis="开盘第一小时的波动率是隔夜信息冲击的集中释放——第一小时波动率异常高意味着隔夜发生了重大事件，市场需要时间消化。持续的高开盘波动往往伴随更高的后续波动。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_hourly_1(context: FactorContext):
+    rh = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_hourly_1",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rh)
+
+
+@register_factor(
+    name="rv_hourly_4",
+    description="第四小时波动率因子，14:00-15:00已实现波动率截面排名（取负向=尾盘高波排后）。",
+    category="intraday",
+    thesis="尾盘最后一小时的波动率包含了T+1制度下的特殊博弈——尾盘波动率异常高往往与短线资金的日内了结和隔夜避险行为有关，对次日开盘有预测意义。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_hourly_4(context: FactorContext):
+    rh = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_hourly_4",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rh)
+
+
+@register_factor(
+    name="rv_hourly_dispersion",
+    description="小时波动率离散度因子，四个小时RV的标准差/均值截面排名（取负向=波动集中=不稳定排后）。",
+    category="intraday",
+    thesis="四个小时的波动率离散度反映日内波动的'均匀性'——波动集中在某一个小时(高离散)意味着信息冲击集中在该时段，其余时间缺乏定价活动。低离散(均匀分布)代表全天持续的信息流和稳定的交易节奏。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_hourly_dispersion(context: FactorContext):
+    rd = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_hourly_dispersion",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-rd)
+
+
+# ── Autocorrelation & Range ──────────────────────────────────────────────────
+
+@register_factor(
+    name="ret_autocorr_abs",
+    description="绝对收益自相关因子，|ret_5min|的一阶自相关系数截面排名（正自相关=波动聚集排前=预测性好）。",
+    category="intraday",
+    thesis="绝对收益的自相关(而非收益本身的自相关)是波动率聚集的微观体现——正自相关意味着大波动后继续大波动(波动聚集)，这是金融市场普遍存在的特征。较高的正自相关意味着波动率具有一定的可预测性(可使用GARCH类模型)。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_ret_autocorr_abs(context: FactorContext):
+    ra = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "ret_autocorr_abs",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(ra)
+
+
+@register_factor(
+    name="am_hl_range_intraday",
+    description="上午振幅因子，上午最高/上午最低-1截面排名（取负向=上午高振幅=分歧大排后）。",
+    category="intraday",
+    thesis="上午的振幅反映了隔夜信息消化过程中的多空分歧——上午振幅大意味着市场对新信息的价格发现还处于激烈博弈阶段，定价尚未收敛。低上午振幅意味着市场对信息的解读较为一致。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_am_hl_range_intraday(context: FactorContext):
+    ah = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "am_hl_range",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-ah)
+
+
+@register_factor(
+    name="pm_hl_range_intraday",
+    description="下午振幅因子，下午最高/下午最低-1截面排名（取负向=下午高振幅=尾盘博弈排后）。",
+    category="intraday",
+    thesis="下午的振幅更多反映盘中新增信息和T+1博弈——下午振幅异常放大往往与短线资金的短线操作和尾盘避险/抢筹有关。下午振幅大的股票隔夜风险更高。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_pm_hl_range_intraday(context: FactorContext):
+    ph = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "pm_hl_range",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-ph)
+
+
+@register_factor(
+    name="close_5min_momentum",
+    description="尾盘5分钟动量因子，最后5分钟收益截面排名（取负向=尾盘拉升=次日易低开排后）。",
+    category="intraday",
+    thesis="尾盘最后5分钟的收益率是A股T+1制度下最具争议的信号——尾盘拉升往往是为了做高收盘价(无法当日卖出)，次日大概率低开。尾盘打压则可能是为了次日低价吸筹。尾盘动量对次日开盘有显著的负向预测能力。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_close_5min_momentum(context: FactorContext):
+    cm = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "close_5min_momentum",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-cm)
+
+
+@register_factor(
+    name="open_5min_momentum",
+    description="开盘5分钟动量因子，前5分钟收益截面排名（开盘强势=隔夜利好排前）。",
+    category="intraday",
+    thesis="开盘前5分钟是集合竞价后的第一个连续交易时段——这5分钟的走势是市场对集合竞价定价的'确认'或'否定'。开盘5分钟继续上涨意味着隔夜利好被确认，有延续性。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_open_5min_momentum(context: FactorContext):
+    om = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "open_5min_momentum",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(om)
+
+
+@register_factor(
+    name="cumulative_ret_path",
+    description="累积收益路径效率因子，|总收益|/Σ|1分钟收益|截面排名（高效率=趋势明确排前）。",
+    category="intraday",
+    thesis="累积收益路径效率是趋势强度的度量——如果股票全天持续上涨(|总收益|/Σ|每分钟收益|接近1)，说明买方持续主导。如果比值小(0.1-0.3)，说明日内涨跌互现、无明确方向。高效率的日内路径预示着更强的短期趋势。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_cumulative_ret_path(context: FactorContext):
+    cr = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "cumulative_ret_path",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(cr)
+
+
+@register_factor(
+    name="pm_momentum_intraday",
+    description="下午动量因子，下午收盘/下午开盘-1截面排名（下午走强=买盘持续排前）。",
+    category="intraday",
+    thesis="下午的走势(尤其是下午开盘后)是A股短线交易的重要参考——经过午间休市的信息消化后，下午开盘的方向往往代表了机构资金的最终判断。下午持续走强比上午冲高下午回落更可靠。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_pm_momentum_intraday(context: FactorContext):
+    pm = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "pm_momentum",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(pm)
+
+
+# ── Vol-of-Vol & Term Structure ──────────────────────────────────────────────
+
+@register_factor(
+    name="rv_rolling_5d_std",
+    description="波动率波动因子，rv_5min的5日标准差截面排名（取负向=波动率不稳定排后）。",
+    category="intraday",
+    thesis="波动率本身的波动率(vol-of-vol)是二阶风险——两只股票当前波动率相同，但波动率更不稳定的那只未来风险更大。Vol-of-vol是预测波动率突变的重要先行指标。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_rolling_5d_std(context: FactorContext):
+    vs = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_rolling_5d_std",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-vs)
+
+
+@register_factor(
+    name="rv_term_structure_slope",
+    description="波动率期限结构斜率因子，rv_5min/rv_60min-1截面排名（取负向=陡峭=短期波动高排后）。",
+    category="intraday",
+    thesis="短期与长期RV的比值是波动率期限结构的斜率——比值>1意味着短期波动率高于长期(波动率期限结构向下倾斜)，往往对应着短期事件冲击或市场压力。比值<1(正常状态)意味着波动率期限结构向上。",
+    dependencies=("history_1min", "calendar.parquet"),
+)
+def factor_rv_term_structure_slope(context: FactorContext):
+    ts = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "rv_term_structure_slope",
+                                   on_progress=context.repo.on_progress)
+    return cross_sectional_rank(-ts)

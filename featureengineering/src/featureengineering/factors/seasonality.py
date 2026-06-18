@@ -166,8 +166,13 @@ def factor_month_effect_rank(context: FactorContext):
     dates = pd.to_datetime(ret.index.get_level_values("Date"), format="%Y%m%d")
     month = dates.month
     df = pd.DataFrame({"ret": ret.values, "month": month}, index=ret.index)
-    # Compute average return for each stock in current month over history
-    month_avg = df.groupby(["month", "Code"])["ret"].transform("mean")
+
+    # Expanding mean within each (month, Code) group — only uses data from
+    # same-month dates up to and including the current date (no future leakage).
+    def _expanding_mean(s):
+        return s.expanding(min_periods=5).mean()
+
+    month_avg = df.groupby(["month", "Code"])["ret"].transform(_expanding_mean)
     return cross_sectional_rank(month_avg)
 
 
@@ -204,7 +209,13 @@ def factor_weekday_effect(context: FactorContext):
     dates = pd.to_datetime(ret.index.get_level_values("Date"), format="%Y%m%d")
     weekday = dates.dayofweek
     df = pd.DataFrame({"ret": ret.values, "wday": weekday}, index=ret.index)
-    wday_avg = df.groupby(["wday", "Code"])["ret"].transform("mean")
+
+    # Expanding mean within each (weekday, Code) group — only uses data from
+    # same-weekday dates up to and including the current date (no future leakage).
+    def _expanding_mean(s):
+        return s.expanding(min_periods=10).mean()
+
+    wday_avg = df.groupby(["wday", "Code"])["ret"].transform(_expanding_mean)
     return cross_sectional_rank(wday_avg)
 
 

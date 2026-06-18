@@ -35,6 +35,15 @@ def _load_stock_sector_map(context: FactorContext) -> dict[str, list[str]]:
 
     Only includes sectors of type 'I' (industry classification).
     Cached at module level to avoid redundant I/O.
+
+    .. warning::
+       **数据泄露风险**: ``ths_constituent_stocks.parquet`` 不含日期字段，
+       为静态快照。板块/概念成分股会随时间变化（新增、剔除），
+       但此映射将所有历史日期统一应用当前快照，可能引入前瞻偏差。
+       对于 type='I'（行业板块）成分股变化较慢、影响有限；
+       对于 type='N'（概念板块）主题板块更动态、泄漏风险更高。
+       若数据源提供历史成分股快照，应改为按日期动态加载。
+       当前实现仅使用 type='I' 行业板块以最小化泄露风险。
     """
     cache = getattr(_load_stock_sector_map, "_cache", None)
     if cache is not None:

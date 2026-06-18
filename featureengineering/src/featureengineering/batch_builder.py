@@ -36,11 +36,12 @@ from .storage import (
     write_factor,
     write_factor_incremental,
     write_target,
+    write_target_incremental,
 )
 
 logger = logging.getLogger(__name__)
 
-_LOOKBACK = 252
+_LOOKBACK = 2000  # covers 1260 trading-day rolling windows (~5 years)
 
 # ── Metadata column exclusion for financial file schema discovery ─────────────
 
@@ -424,7 +425,7 @@ def _compute_group_sequential(
                 end_date=effective_end,
             )
             raw_output = spec.compute(context)
-            factor_frame = ensure_single_factor_frame(raw_output, spec.name)
+            factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
 
             if action == "incremental" and reason:
                 factor_frame = factor_frame.loc[factor_frame.index > reason]
@@ -433,9 +434,33 @@ def _compute_group_sequential(
             nn_rows = int(factor_frame.notna().sum().sum())
 
             if spec.category == "target":
-                factor_path, manifest_path = write_target(spec, factor_frame, paths=paths)
+                if action == "incremental":
+                    factor_path, manifest_path = write_target_incremental(spec, factor_frame, paths=paths)
+                else:
+                    factor_path, manifest_path = write_target(spec, factor_frame, paths=paths)
             elif action == "incremental":
-                factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)
+                # Validate incremental data: if new rows are mostly NaN,
+                # something went wrong (likely insufficient lookback for
+                # a long rolling window). Re-compute with full history.
+                nn_frac = factor_frame.notna().sum().sum() / max(factor_frame.size, 1)
+                if nn_frac < 0.10 and len(factor_frame) > 0:
+                    logger.warning(
+                        "Incremental for %s produced %.1f%% non-NaN — "
+                        "recomputing with full history",
+                        spec.name, nn_frac * 100,
+                    )
+                    # Re-compute with full context (no date range restriction)
+                    full_context = BatchFactorContext(
+                        _shared_data=shared_data,
+                        repo=repo,
+                        start_date=None,
+                        end_date=effective_end,
+                    )
+                    full_output = spec.compute(full_context)
+                    full_frame = ensure_single_factor_frame(full_output, spec.name, skip_ffill=(spec.category == "target"))
+                    factor_path, manifest_path = write_factor(spec, full_frame, paths=paths)
+                else:
+                    factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)
             else:
                 factor_path, manifest_path = write_factor(spec, factor_frame, paths=paths)
 
@@ -508,7 +533,7 @@ def _compute_group_parallel(
                 end_date=effective_end,
             )
             raw_output = spec.compute(context)
-            factor_frame = ensure_single_factor_frame(raw_output, spec.name)
+            factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
 
             if action == "incremental" and reason:
                 factor_frame = factor_frame.loc[factor_frame.index > reason]
@@ -517,9 +542,33 @@ def _compute_group_parallel(
             nn_rows = int(factor_frame.notna().sum().sum())
 
             if spec.category == "target":
-                factor_path, manifest_path = write_target(spec, factor_frame, paths=paths)
+                if action == "incremental":
+                    factor_path, manifest_path = write_target_incremental(spec, factor_frame, paths=paths)
+                else:
+                    factor_path, manifest_path = write_target(spec, factor_frame, paths=paths)
             elif action == "incremental":
-                factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)
+                # Validate incremental data: if new rows are mostly NaN,
+                # something went wrong (likely insufficient lookback for
+                # a long rolling window). Re-compute with full history.
+                nn_frac = factor_frame.notna().sum().sum() / max(factor_frame.size, 1)
+                if nn_frac < 0.10 and len(factor_frame) > 0:
+                    logger.warning(
+                        "Incremental for %s produced %.1f%% non-NaN — "
+                        "recomputing with full history",
+                        spec.name, nn_frac * 100,
+                    )
+                    # Re-compute with full context (no date range restriction)
+                    full_context = BatchFactorContext(
+                        _shared_data=shared_data,
+                        repo=repo,
+                        start_date=None,
+                        end_date=effective_end,
+                    )
+                    full_output = spec.compute(full_context)
+                    full_frame = ensure_single_factor_frame(full_output, spec.name, skip_ffill=(spec.category == "target"))
+                    factor_path, manifest_path = write_factor(spec, full_frame, paths=paths)
+                else:
+                    factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)
             else:
                 factor_path, manifest_path = write_factor(spec, factor_frame, paths=paths)
 
