@@ -6,14 +6,12 @@ import pandas as pd
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
-
 def _pad_code(code: str) -> str:
     code = str(code).strip()
     for suffix in (".SZ", ".SH", ".BSE"):
         if code.upper().endswith(suffix):
             code = code[: -len(suffix)]
     return code.zfill(6)
-
 
 def _monthly_to_daily(series: pd.Series, calendar: pd.DataFrame, context: FactorContext,
                       cap_date: str | None = None) -> pd.Series:
@@ -49,7 +47,6 @@ def _monthly_to_daily(series: pd.Series, calendar: pd.DataFrame, context: Factor
         stacked = stacked.loc[codes_mask]
     return stacked
 
-
 @register_factor(
     name="index_membership_count",
     description="指数覆盖数量因子，股票被纳入的指数数量截面排名。",
@@ -64,20 +61,6 @@ def factor_index_membership_count(context: FactorContext):
     membership = (iw["weight"] > 0).astype(float)
     count = membership.groupby(level=["Date", "Code"]).transform("sum")
     return cross_sectional_rank(count)
-
-
-@register_factor(
-    name="index_weight_hs300",
-    description="沪深300权重因子截面排名（权重越高=被动资金越多排前）。",
-    category="index",
-    thesis="沪深300指数成分权重量化被动资金的配置规模——权重越高意味着越多的指数基金必须配置该股票，是被动资金流入的确定性来源。",
-    dependencies=("index_weight.parquet",),
-)
-def factor_index_weight_hs300(context: FactorContext):
-    iw = context.load_financial("index_weight.parquet", value_cols=["index_code", "weight"], date_col="trade_date")
-    # Filter for HS300 and rank weight
-    return cross_sectional_rank(iw["weight"])
-
 
 @register_factor(
     name="index_weight_change",
@@ -105,9 +88,7 @@ def factor_index_weight_change(context: FactorContext):
     daily = _monthly_to_daily(chg, calendar, context, cap_date=context.end_date)
     return cross_sectional_rank(daily)
 
-
 # ── Index weight diversification ───────────────────────────────────────
-
 
 @register_factor(
     name="index_weight_diversification",
@@ -138,85 +119,42 @@ def factor_index_weight_diversification(context: FactorContext):
     daily = _monthly_to_daily(diversification, calendar, context, cap_date=context.end_date)
     return cross_sectional_rank(daily)
 
-
-# ── Index inclusion recency ────────────────────────────────────────────
-
-
-@register_factor(
-    name="index_inclusion_recency",
-    description="指数调入新近度因子，最近被纳入核心指数的天数截面排名（新纳入=增量资金未充分消化排前）。",
-    category="index",
-    thesis="最近刚被纳入核心指数的股票享受'指数效应'——被动基金尚未完成建仓、主动基金在提前布局，存在短期alpha窗口。",
-    dependencies=("index_weight.parquet",),
-)
-def factor_index_inclusion_recency(context: FactorContext):
-    iw = context.load_financial("index_weight.parquet", value_cols=["weight"], date_col="trade_date")
-    # Weight going from 0 to positive = inclusion event
-    was_zero = (iw["weight"].groupby(level="Code").transform(lambda s: s.shift(1)) == 0).astype(float)
-    is_positive = (iw["weight"] > 0).astype(float)
-    recently_included = was_zero * is_positive
-    recency = recently_included.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=1).sum()
-    )
-    return cross_sectional_rank(recency)
-
-
-# ── Index weight change momentum ────────────────────────────────────────
-
-@register_factor(
-    name="index_weight_change_mom",
-    description="指数权重月度变化因子，权重月环比截面排名。",
-    category="index",
-    thesis="权重边际提升意味着指数调仓带来的增量被动买入需求——是短期确定的资金流入催化剂。",
-    dependencies=("index_weight.parquet",),
-)
-def factor_index_weight_change_mom(context: FactorContext):
-    iw = context.load_financial("index_weight.parquet", value_cols=["weight"], date_col="trade_date")
-    chg = iw["weight"].groupby(level="Code").transform(lambda s: s.diff(1))
-    return cross_sectional_rank(chg)
-
-
-# ── Index weight concentration ──────────────────────────────────────────
-
-@register_factor(
-    name="index_weight_concentration",
-    description="指数权重集中度因子，-(max_weight/total_weight)截面排名（高度集中=依赖单一指数排后）。",
-    category="index",
-    thesis="股票过度依赖单一指数的权重配置意味着被动资金过于集中——单一指数调仓可能造成较大的流动性冲击。分散在多个指数中权重较均衡的股票更为稳健。",
-    dependencies=("index_weight.parquet",),
-)
-def factor_index_weight_concentration(context: FactorContext):
-    iw = context.load_financial("index_weight.parquet", value_cols=["weight"], date_col="trade_date")
-    # HHI of weight distribution across indices
-    # Simplified: just use the weight directly as it's already aggregated
-    return cross_sectional_rank(iw["weight"])
-
-
-# ── Index weight trend 3m ────────────────────────────────────────────────
-
 @register_factor(
     name="index_weight_trend_3m",
-    description="指数权重趋势因子，权重3个月斜率截面排名（权重持续提升=被动资金持续流入排前）。",
+    description="指数权重趋势因子（沪深300），权重3个月斜率截面排名（权重持续提升=被动资金持续流入排前）。",
     category="index",
-    thesis="指数权重的趋势性变化反映指数编制规则下的长期再平衡方向——权重持续提升的股票受益于被动资金的持续流入，是低换手策略中的优质alpha来源。",
-    dependencies=("index_weight.parquet",),
+    thesis="沪深300指数权重的趋势性变化反映指数编制规则下的长期再平衡方向——权重持续提升的股票受益于被动资金的持续流入，是低换手策略中的优质alpha来源。仅使用沪深300避免多指数混合干扰趋势信号。",
+    dependencies=("index_weight.parquet", "calendar.parquet"),
 )
 def factor_index_weight_trend_3m(context: FactorContext):
-    iw = context.load_financial("index_weight.parquet", value_cols=["weight"], date_col="trade_date")
+    raw = context.repo._read_parquet(
+        context.repo.paths.source_root / "index_weight.parquet"
+    )
+    raw = raw.copy()
+    hs300 = raw[raw["index_code"] == "000300.SH"].copy()
+    hs300["trade_date"] = hs300["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    hs300["stock_code"] = hs300["stock_code"].apply(_pad_code)
+    hs300 = hs300.set_index(["trade_date", "stock_code"])["weight"]
+    hs300.index = hs300.index.set_names(["Date", "Code"])
+    hs300 = hs300.reorder_levels(["Date", "Code"]).sort_index()
 
     def _trend_slope(y):
-        y = y[~np.isnan(y)]
-        if len(y) < 2:
+        y_arr = np.asarray(y[~np.isnan(y)])
+        if len(y_arr) < 2:
             return np.nan
-        x = np.arange(len(y), dtype=float)
+        x = np.arange(len(y_arr), dtype=float)
         x = x - x.mean()
-        y = y - y.mean()
+        y_arr = y_arr - y_arr.mean()
         denom = (x * x).sum()
         if denom == 0:
             return np.nan
-        return (x * y).sum() / denom
+        return (x * y_arr).sum() / denom
 
-    slope = iw["weight"].groupby(level="Code").transform(
+    slope = hs300.groupby(level="Code").transform(
         lambda s: s.rolling(3, min_periods=2).apply(_trend_slope, raw=True)
     )
-    return cross_sectional_rank(slope)
+    calendar = context.repo._read_parquet(
+        context.repo.paths.source_root / "calendar.parquet"
+    )
+    daily = _monthly_to_daily(slope, calendar, context, cap_date=context.end_date)
+    return cross_sectional_rank(daily)

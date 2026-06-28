@@ -21,7 +21,6 @@ from ..utils import (
     safe_divide,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -33,7 +32,6 @@ def _pad_code(code: str) -> str:
         if code.upper().endswith(suffix):
             code = code[: -len(suffix)]
     return code.zfill(6)
-
 
 def _monthly_to_daily(series: pd.Series, context: FactorContext,
                       cap_date: str | None = None) -> pd.Series:
@@ -69,7 +67,6 @@ def _monthly_to_daily(series: pd.Series, context: FactorContext,
         stacked = stacked.loc[codes_mask]
     return stacked
 
-
 def _load_index_weight_raw(context: FactorContext) -> pd.DataFrame:
     """Load index_weight.parquet with normalized codes and dates."""
     cache = getattr(_load_index_weight_raw, "_cache", None)
@@ -85,7 +82,6 @@ def _load_index_weight_raw(context: FactorContext) -> pd.DataFrame:
 
     _load_index_weight_raw._cache = raw
     return raw
-
 
 def _build_index_weight_panel(context: FactorContext,
                                index_code: str | None = None) -> pd.DataFrame:
@@ -105,7 +101,6 @@ def _build_index_weight_panel(context: FactorContext,
     panel.columns.name = "Code"
     return panel.sort_index()
 
-
 def _get_index_weight_series(context: FactorContext,
                               index_code: str | None = None) -> pd.Series:
     """Get a (Date, Code) MultiIndex Series of index weights, daily forward-filled."""
@@ -117,11 +112,9 @@ def _get_index_weight_series(context: FactorContext,
     daily = _monthly_to_daily(stacked, context, cap_date=context.end_date)
     return daily
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # A — Composite & Risk Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="index_weight_rank_composite",
@@ -141,26 +134,6 @@ def factor_index_weight_rank_composite(context: FactorContext):
 
     daily = _monthly_to_daily(composite, context, cap_date=context.end_date)
     return cross_sectional_rank(daily)
-
-
-@register_factor(
-    name="index_weight_volatility_12m",
-    description="指数权重波动率因子，个股沪深300权重12个月标准差截面排名（取负向=权重不稳排后）。",
-    category="index",
-    thesis="指数权重的稳定性反映个股在指数中的'粘性'——权重波动大的股票可能处于调入/调出的边缘，被动资金配置的不确定性高，应给予风险折扣。",
-    dependencies=("index_weight.parquet", "calendar.parquet"),
-)
-def factor_index_weight_volatility_12m(context: FactorContext):
-    panel = _build_index_weight_panel(context, "000300.SH")
-    vol = panel.rolling(12, min_periods=6).std()
-
-    stacked = vol.stack(future_stack=True)
-    stacked.index = stacked.index.set_names(["Date", "Code"])
-    stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
-
-    daily = _monthly_to_daily(stacked, context, cap_date=context.end_date)
-    return cross_sectional_rank(-daily)
-
 
 @register_factor(
     name="index_weight_seasonality",
@@ -193,11 +166,9 @@ def factor_index_weight_seasonality(context: FactorContext):
     daily = _monthly_to_daily(seasonality_avg, context, cap_date=context.end_date)
     return cross_sectional_rank(daily)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # B — Inclusion/Exclusion Probability
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="index_inclusion_probability",
@@ -226,7 +197,6 @@ def factor_index_inclusion_probability(context: FactorContext):
     inclusion_prob = mv_proximity * amt_rank  # liquidity bonus
     return cross_sectional_rank(inclusion_prob)
 
-
 @register_factor(
     name="index_exclusion_risk",
     description="剔除风险因子，-(沪深300中权重最低的20%股票的权重排名)截面排名（边缘股=剔除风险高排后）。",
@@ -252,11 +222,9 @@ def factor_index_exclusion_risk(context: FactorContext):
     daily = _monthly_to_daily(stacked, context, cap_date=context.end_date)
     return cross_sectional_rank(-daily)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # C — Style Exposure Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="index_float_adj_weight",
@@ -275,7 +243,6 @@ def factor_index_float_adj_weight(context: FactorContext):
 
     return cross_sectional_rank(float_ratio)
 
-
 @register_factor(
     name="index_style_exposure_value",
     description="价值风格暴露因子，基于BP排名估算价值指数（如中证价值）的隐含权重截面排名。",
@@ -289,7 +256,6 @@ def factor_index_style_exposure_value(context: FactorContext):
     bp = 1.0 / pb  # Book-to-price
 
     return cross_sectional_rank(bp)
-
 
 @register_factor(
     name="index_style_exposure_growth",
@@ -310,7 +276,6 @@ def factor_index_style_exposure_growth(context: FactorContext):
     growth_exposure = (rev_rank + roe_rank) / 2.0
     return cross_sectional_rank(growth_exposure)
 
-
 @register_factor(
     name="index_style_exposure_size",
     description="规模风格暴露因子，基于总市值排名的规模指数隐含权重截面排名（大市值=大盘风格排前）。",
@@ -323,11 +288,9 @@ def factor_index_style_exposure_size(context: FactorContext):
     mv = finance["total_mv"]
     return cross_sectional_rank(mv)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # D — Weight Distribution & Gini
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="index_weight_gini",
@@ -356,14 +319,9 @@ def factor_index_weight_gini(context: FactorContext):
     daily = _monthly_to_daily(gini, context, cap_date=context.end_date)
     return cross_sectional_rank(-daily)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # E — Tracking & Rebalance
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-
-
 
 @register_factor(
     name="index_rebalance_anticipation",
@@ -398,7 +356,6 @@ def factor_index_rebalance_anticipation(context: FactorContext):
     daily = _monthly_to_daily(anticipation, context, cap_date=context.end_date)
     return cross_sectional_rank(daily)
 
-
 @register_factor(
     name="index_passive_flow_estimate",
     description="被动资金流估算因子，沪深300权重×估算AUM(约2000亿)截面排名（高权重=高被动流入排前）。",
@@ -414,7 +371,6 @@ def factor_index_passive_flow_estimate(context: FactorContext):
     estimated_flow = weight * 2000  # in 亿 RMB
 
     return cross_sectional_rank(estimated_flow)
-
 
 @register_factor(
     name="index_weight_drift",
@@ -440,11 +396,9 @@ def factor_index_weight_drift(context: FactorContext):
     # Negative drift = stock lagged market = more likely to be bought at rebalance
     return cross_sectional_rank(-drift)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # F — Market Participation & Benchmark Relative
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="market_participation_20",
@@ -474,6 +428,135 @@ def factor_market_participation_20(context: FactorContext):
     stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
     return cross_sectional_rank(stacked)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# H — Index Arbitrage & Overlap  (RECONSTRUCTED — original implementation lost during cleanup)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@register_factor(
+    name="index_overlap_premium",
+    description="多指数覆盖溢价因子，个股被几个核心指数同时纳入的截面排名（多数纳入=稳定被动资金排前）。",
+    category="index",
+    thesis="被多个核心指数同时纳入的股票享受指数重叠效应——不同的指数基金都需要配置该股，形成多层次的被动买盘。",
+    dependencies=("index_weight.parquet", "calendar.parquet"),
+)
+def factor_index_overlap_premium(context: FactorContext):
+    raw = _load_index_weight_raw(context)
+    core_indices = ["000001.SH", "000016.SH", "000300.SH", "000852.SH",
+                    "000905.SH", "399001.SZ", "399006.SZ"]
+    core_data = raw[raw["index_code"].isin(core_indices)]
+    has_weight = (core_data["weight"] > 0).astype(float)
+    count = has_weight.groupby([core_data["trade_date"], core_data["stock_code"]]).sum()
+    count.index = count.index.set_names(["Date", "Code"])
+    count = count.reorder_levels(["Date", "Code"]).sort_index()
+    daily = _monthly_to_daily(count, context, cap_date=context.end_date)
+    return cross_sectional_rank(daily)
+
+@register_factor(
+    name="index_passive_demand_pressure",
+    description="被动需求压力因子，权重×调仓临近度截面排名（高权重+临近调仓=买入压力大排前）。",
+    category="index",
+    thesis="被动需求压力综合了权重大小和时间紧迫度两个维度——权重高且离调仓日近的股票，被动基金必须在短期内完成配置，对价格的推升作用最显著。",
+    dependencies=("index_weight.parquet", "calendar.parquet"),
+)
+def factor_index_passive_demand_pressure(context: FactorContext):
+    raw = _load_index_weight_raw(context)
+    hs300 = raw[raw["index_code"] == "000300.SH"].copy()
+    hs300["trade_date"] = hs300["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    hs300["stock_code"] = hs300["stock_code"].apply(_pad_code)
+    weight = hs300.set_index(["trade_date", "stock_code"])["weight"]
+    weight.index = weight.index.set_names(["Date", "Code"])
+    weight = weight.reorder_levels(["Date", "Code"]).sort_index()
+    daily = _monthly_to_daily(weight, context, cap_date=context.end_date)
+    mom_1m = daily.groupby(level="Code").diff(21)
+    mom_1m_abs = mom_1m.abs()
+    pressure = daily * (1.0 + mom_1m_abs.fillna(0))
+    return cross_sectional_rank(pressure)
+
+@register_factor(
+    name="index_sector_neutral_weight",
+    description="行业中性权重因子，沪深300权重/行业平均权重截面排名（行业内高权重=相对超配排前）。",
+    category="index",
+    thesis="行业中性化后的权重反映了股票在行业内的指数代表性——同一行业内，指数权重更高的股票是被动基金在该行业中配置最重的标的。",
+    dependencies=("index_weight.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_index_sector_neutral_weight(context: FactorContext):
+    industry = context.repo.load_industry_map()
+    raw = _load_index_weight_raw(context)
+    hs300 = raw[raw["index_code"] == "000300.SH"].copy()
+    hs300["trade_date"] = hs300["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    hs300["stock_code"] = hs300["stock_code"].apply(_pad_code)
+    weight = hs300.set_index(["trade_date", "stock_code"])["weight"]
+    weight.index = weight.index.set_names(["Date", "Code"])
+    weight = weight.reorder_levels(["Date", "Code"]).sort_index()
+    daily = _monthly_to_daily(weight, context, cap_date=context.end_date)
+    daily_df = daily.unstack("Code")
+    industry_series = pd.Series(industry, name="industry")
+    aligned = industry_series.reindex(daily_df.columns)
+    sector_mean = daily_df.T.groupby(aligned.values).transform("mean").T
+    neutral = safe_divide(daily_df, sector_mean + 1e-8)
+    stacked = neutral.stack(future_stack=True)
+    stacked.index = stacked.index.set_names(["Date", "Code"])
+    stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
+    return cross_sectional_rank(stacked)
+
+@register_factor(
+    name="index_weight_acceleration",
+    description="指数权重加速度因子，沪深300权重(3月变化-6月变化/2)截面排名（二阶导=加速纳入排前）。",
+    category="index",
+    thesis="权重变化的加速度（二阶导）比一阶导更早发现纳入趋势——权重从缓慢增加变为快速增加意味着指数基金正在加速配置该股。",
+    dependencies=("index_weight.parquet", "calendar.parquet"),
+)
+def factor_index_weight_acceleration(context: FactorContext):
+    raw = _load_index_weight_raw(context)
+    hs300 = raw[raw["index_code"] == "000300.SH"].copy()
+    hs300["trade_date"] = hs300["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    hs300["stock_code"] = hs300["stock_code"].apply(_pad_code)
+    weight = hs300.set_index(["trade_date", "stock_code"])["weight"]
+    weight.index = weight.index.set_names(["Date", "Code"])
+    weight = weight.reorder_levels(["Date", "Code"]).sort_index()
+    daily = _monthly_to_daily(weight, context, cap_date=context.end_date)
+    mom_3m = daily.groupby(level="Code").diff(63)
+    mom_6m = daily.groupby(level="Code").diff(126)
+    accel = mom_3m - mom_6m / 2.0
+    return cross_sectional_rank(accel)
+
+@register_factor(
+    name="index_weight_change_mom",
+    description="指数权重月度变化因子（沪深300），权重月环比截面排名。",
+    category="index",
+    thesis="沪深300指数权重的月度边际变化反映指数调仓方向——权重被提升的股票意味着更多被动资金配置增量，短期有正向资金面支撑。",
+    dependencies=("index_weight.parquet", "calendar.parquet"),
+)
+def factor_index_weight_change_mom(context: FactorContext):
+    raw = _load_index_weight_raw(context)
+    hs300 = raw[raw["index_code"] == "000300.SH"].copy()
+    hs300["trade_date"] = hs300["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    hs300["stock_code"] = hs300["stock_code"].apply(_pad_code)
+    weight = hs300.set_index(["trade_date", "stock_code"])["weight"]
+    weight.index = weight.index.set_names(["Date", "Code"])
+    weight = weight.reorder_levels(["Date", "Code"]).sort_index()
+    daily = _monthly_to_daily(weight, context, cap_date=context.end_date)
+    chg = daily.groupby(level="Code").diff(21)
+    return cross_sectional_rank(chg)
+
+@register_factor(
+    name="index_weight_concentration",
+    description="指数权重集中度因子，-(单指数最大权重/总权重)截面排名（高度集中=依赖单一指数排后）。",
+    category="index",
+    thesis="股票过度依赖单一指数的权重配置意味着被动资金过于集中——单一指数调仓可能造成较大的流动性冲击。",
+    dependencies=("index_weight.parquet",),
+)
+def factor_index_weight_concentration(context: FactorContext):
+    raw = _load_index_weight_raw(context)
+    raw = raw[raw["weight"] > 0].copy()
+    raw["trade_date"] = raw["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    raw["stock_code"] = raw["stock_code"].apply(_pad_code)
+    total = raw.groupby(["trade_date", "stock_code"])["weight"].sum()
+    max_w = raw.groupby(["trade_date", "stock_code"])["weight"].max()
+    concentration = max_w / total.replace(0, np.nan)
+    concentration.index = concentration.index.set_names(["Date", "Code"])
+    concentration = concentration.reorder_levels(["Date", "Code"]).sort_index()
+    return cross_sectional_rank(-concentration)
 
 @register_factor(
     name="market_cap_tier_rank",
@@ -501,7 +584,6 @@ def factor_market_cap_tier_rank(context: FactorContext):
     tier_rank = mv.groupby(level="Date").transform(_tier_rank)
     return cross_sectional_rank(tier_rank)
 
-
 @register_factor(
     name="benchmark_relative_return_20",
     description="基准相对收益因子，个股20日收益-沪深300 20日收益截面排名（跑赢基准排前）。",
@@ -525,7 +607,6 @@ def factor_benchmark_relative_return_20(context: FactorContext):
     relative = cum_20 - market_mapped
     return cross_sectional_rank(relative)
 
-
 @register_factor(
     name="all_a_relative_strength_20",
     description="全A相对强度因子，个股20日收益-全A等权20日收益截面排名。",
@@ -547,7 +628,6 @@ def factor_all_a_relative_strength_20(context: FactorContext):
 
     rs = cum_20 - all_a_mapped
     return cross_sectional_rank(rs)
-
 
 @register_factor(
     name="board_relative_strength_20",
@@ -576,11 +656,9 @@ def factor_board_relative_strength_20(context: FactorContext):
 
     return cross_sectional_rank(df["relative"])
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # G — Style Tilt & Market Regime
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="style_tilt_momentum",
@@ -602,174 +680,11 @@ def factor_style_tilt_momentum(context: FactorContext):
 
     style_mom = (bp_rank_chg.fillna(0) + growth_chg.fillna(0)) / 2.0
     return cross_sectional_rank(style_mom)
-
-
-@register_factor(
-    name="market_regime_sensitivity",
-    description="市场状态敏感度因子，个股在上涨市Beta/下跌市Beta的比值截面排名（上涨弹性>下跌弹性排前）。",
-    category="index",
-    thesis="非对称Beta（上涨Beta vs 下跌Beta的差异）反映了股票的风险回报非对称性——上涨Beta高+下跌Beta低的股票是理想的'涨多跌少'标的。A股中此类股票往往具有品牌壁垒或定价权优势。",
-    dependencies=("daily_adj.parquet",),
-)
-def factor_market_regime_sensitivity(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-
-    market_ret = ret.groupby(level="Date").mean()
-    is_up = market_ret > 0
-    is_down = market_ret < 0
-
-    ret_wide = ret.unstack("Code")
-
-    up_beta = pd.DataFrame(index=ret_wide.index, columns=ret_wide.columns)
-    down_beta = pd.DataFrame(index=ret_wide.index, columns=ret_wide.columns)
-
-    for code in ret_wide.columns:
-        stock_r = ret_wide[code]
-        # Up market beta: only use up-market days
-        up_mask = is_up & stock_r.notna()
-        if up_mask.sum() > 30:
-            market_up = market_ret[up_mask]
-            stock_up = stock_r[up_mask]
-            up_cov = stock_up.rolling(60, min_periods=30).cov(market_up)
-            up_var = market_up.rolling(60, min_periods=30).var()
-            up_beta[code] = up_cov / up_var.replace(0, np.nan)
-
-        # Down market beta
-        down_mask = is_down & stock_r.notna()
-        if down_mask.sum() > 30:
-            market_down = market_ret[down_mask]
-            stock_down = stock_r[down_mask]
-            down_cov = stock_down.rolling(60, min_periods=30).cov(market_down)
-            down_var = market_down.rolling(60, min_periods=30).var()
-            down_beta[code] = down_cov / down_var.replace(0, np.nan)
-
-    # Sensitivity = up_beta / down_beta (higher = better asymmetry)
-    sensitivity = up_beta / down_beta.replace(0, np.nan)
-
-    stacked = sensitivity.stack(future_stack=True)
-    stacked.index = stacked.index.set_names(["Date", "Code"])
-    stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
-    return cross_sectional_rank(stacked)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# H — Index Arbitrage & Overlap
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@register_factor(
-    name="index_overlap_premium",
-    description="多指数覆盖溢价因子，个股被几个核心指数同时纳入的截面排名（多数纳入=稳定被动资金排前）。",
-    category="index",
-    thesis="被多个核心指数同时纳入的股票享受'指数重叠效应'——不同的指数基金都需要配置该股，形成多层次的被动买盘。多指数覆盖的股票流动性溢价更高，估值也系统性偏高。",
-    dependencies=("index_weight.parquet", "calendar.parquet"),
-)
-def factor_index_overlap_premium(context: FactorContext):
-    raw = _load_index_weight_raw(context)
-    core_indices = ["000001.SH", "000016.SH", "000300.SH", "000852.SH",
-                    "000905.SH", "399001.SZ", "399006.SZ"]
-
-    core_data = raw[raw["index_code"].isin(core_indices)]
-    has_weight = (core_data["weight"] > 0).astype(float)
-    # Group by the original DataFrame columns (has_weight is a Series)
-    count = has_weight.groupby([core_data["trade_date"], core_data["stock_code"]]).sum()
-    count.index = count.index.set_names(["Date", "Code"])
-    count = count.reorder_levels(["Date", "Code"]).sort_index()
-
-    daily = _monthly_to_daily(count, context, cap_date=context.end_date)
-    return cross_sectional_rank(daily)
-
-
-@register_factor(
-    name="index_weight_momentum_3m",
-    description="指数权重动量因子，沪深300权重3个月变化截面排名（权重提升=被动增配排前）。",
-    category="index",
-    thesis="权重在3个月窗口内的边际变化是最稳定的被动资金流指标——3个月足够平滑单月噪音，同时捕捉调仓趋势。权重持续提升的股票是'被动投资牛市'中最确定的受益者。",
-    dependencies=("index_weight.parquet", "calendar.parquet"),
-)
-def factor_index_weight_momentum_3m(context: FactorContext):
-    panel = _build_index_weight_panel(context, "000300.SH")
-
-    # 3-month weight change
-    chg = panel.diff(3)
-
-    stacked = chg.stack(future_stack=True)
-    stacked.index = stacked.index.set_names(["Date", "Code"])
-    stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
-
-    daily = _monthly_to_daily(stacked, context, cap_date=context.end_date)
-    return cross_sectional_rank(daily)
-
-
-@register_factor(
-    name="index_weight_acceleration",
-    description="指数权重加速度因子，沪深300权重3月变化-权重6月变化/2截面排名（二阶导=加速纳入排前）。",
-    category="index",
-    thesis="权重变化的加速度（二阶导）比一阶导更早发现纳入趋势——权重从'缓慢增加'变为'快速增加'意味着指数基金正在加速配置该股，可能是被纳入新指数的前兆。",
-    dependencies=("index_weight.parquet", "calendar.parquet"),
-)
-def factor_index_weight_acceleration(context: FactorContext):
-    panel = _build_index_weight_panel(context, "000300.SH")
-
-    chg_3m = panel.diff(3)
-    chg_6m = panel.diff(6)
-
-    # Acceleration = recent change - longer-term average change
-    accel = chg_3m - chg_6m / 2.0
-
-    stacked = accel.stack(future_stack=True)
-    stacked.index = stacked.index.set_names(["Date", "Code"])
-    stacked = stacked.reorder_levels(["Date", "Code"]).sort_index()
-
-    daily = _monthly_to_daily(stacked, context, cap_date=context.end_date)
-    return cross_sectional_rank(daily)
-
-
-@register_factor(
-    name="index_sector_neutral_weight",
-    description="行业中性权重因子，沪深300权重/行业平均权重截面排名（行业内高权重=相对超配排前）。",
-    category="index",
-    thesis="行业中性化后的权重反映了股票在行业内的'指数代表性'——同一行业内，指数权重更高的股票是被动基金在该行业中配置最重的标的。行业中性权重剔除了行业间权重差异。",
-    dependencies=("index_weight.parquet", "stock_list.parquet", "calendar.parquet"),
-)
-def factor_index_sector_neutral_weight(context: FactorContext):
-    weight = _get_index_weight_series(context, "000300.SH")
-    industry_map = context.repo.load_industry_map()
-
-    codes = weight.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-
-    df = pd.DataFrame({"weight": weight.values, "industry": industries.values}, index=weight.index)
-    df = df.dropna(subset=["industry"])
-    df["industry_avg"] = df.groupby(["Date", "industry"])["weight"].transform("mean")
-    df["neutral_weight"] = df["weight"] / df["industry_avg"].replace(0, np.nan)
-
-    return cross_sectional_rank(df["neutral_weight"])
-
-
-@register_factor(
-    name="index_passive_demand_pressure",
-    description="被动需求压力因子，权重×调仓临近度截面排名（高权重+临近调仓=买入压力大排前）。",
-    category="index",
-    thesis="被动需求压力综合了权重大小和时间紧迫度两个维度——权重高且离调仓日近的股票，被动基金必须在短期内完成配置，对价格的推升作用最显著。",
-    dependencies=("index_weight.parquet", "calendar.parquet"),
-)
-def factor_index_passive_demand_pressure(context: FactorContext):
-    weight = _get_index_weight_series(context, "000300.SH")
-
-    # Proximity to rebalance
-    date_strs = weight.index.get_level_values("Date")
-    months = pd.to_numeric(date_strs.str[4:6], errors="coerce")
-    dist_to_jun = (6 - months) % 12
-    dist_to_dec = (12 - months) % 12
     dist = pd.Series(np.minimum(dist_to_jun, dist_to_dec), index=weight.index)
     proximity = 1.0 / dist.clip(lower=1).astype(float)
 
     pressure = weight * proximity
     return cross_sectional_rank(pressure)
-
 
 @register_factor(
     name="index_style_rotation_20",
@@ -791,7 +706,6 @@ def factor_index_style_rotation_20(context: FactorContext):
 
     rotation = value_chg.fillna(0) - growth_chg.fillna(0)
     return cross_sectional_rank(rotation)
-
 
 @register_factor(
     name="index_marginal_contribution",

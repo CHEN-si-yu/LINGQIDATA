@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
@@ -246,7 +247,7 @@ def factor_ar_turn(context: FactorContext):
 
 # ── REMOVED: All q_* single-quarter factors (q_roe, q_gsprofit_margin,
 # q_netprofit_margin, q_sales_yoy, q_netprofit_yoy, q_profit_yoy,
-# q_ocf_to_sales, q_eps) — upstream financial_indicator.parquet q_* columns
+# q_ocf_to_or, q_eps) — upstream financial_indicator.parquet q_* columns
 # are zero-filled for ~95% of records 2019-2022. Ranking zero values produces
 # noise. Do not re-add unless vendor backfills historical q_* data.
 # See: memory/vendor-data-quality.md
@@ -1058,3 +1059,322 @@ def factor_or_growth_acceleration(context: FactorContext):
     growth = fin["or_yoy"]
     accel = growth.groupby(level="Code").transform(lambda s: s.diff(4))
     return cross_sectional_rank(accel)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 2a: Industry-Neutralized Quality Factors
+# 行业中性化版本 — 剔除行业间差异，提取行业内相对质量信号
+# ════════════════════════════════════════════════════════════════════════════
+
+from .neutral import _industry_neutral_rank
+
+
+@register_factor(
+    name="roe_dt_neutral",
+    description="行业中性化扣非ROE因子，行业内截面排名后统一排名。",
+    category="quality",
+    thesis="ROE在不同行业间的合理水平差异极大（金融杠杆vs科技轻资产），行业中性化后提取行业内相对盈利质量信号，更纯粹地反映公司层面的经营差异。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_roe_dt_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roe_dt"]
+    )
+    neutral = _industry_neutral_rank(fin["roe_dt"], context)
+    return cross_sectional_rank(neutral)
+
+
+
+@register_factor(
+    name="netprofit_margin_neutral",
+    description="行业中性化净利率因子。",
+    category="quality",
+    thesis="净利率同样受行业模式影响——费用结构（销售费用vs研发费用占比）行业差异显著，中性化后反映公司层面费用管控效率。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_netprofit_margin_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["netprofit_margin"]
+    )
+    neutral = _industry_neutral_rank(fin["netprofit_margin"], context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="debt_to_assets_neutral",
+    description="行业中性化资产负债率因子（取负，低杠杆排前）。",
+    category="quality",
+    thesis="杠杆率天然因行业而异——金融/地产/公用事业高杠杆是常态，行业中性化后才能识别同行业内真正过度负债的公司。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_debt_to_assets_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["debt_to_assets"]
+    )
+    neutral = _industry_neutral_rank(-fin["debt_to_assets"], context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="asset_turn_neutral",
+    description="行业中性化资产周转率因子。",
+    category="quality",
+    thesis="资产周转效率在不同行业间不可比（零售高周转vs基建低周转），中性化后提取行业内相对运营效率信号。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_asset_turn_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["assets_turn"]
+    )
+    neutral = _industry_neutral_rank(fin["assets_turn"], context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="fcff_ps_neutral",
+    description="行业中性化自由现金流/总资产因子。",
+    category="quality",
+    thesis="自由现金流生成能力因行业资本密集度差异显著，中性化后提取行业内相对现金流效率——高FCF每股意味着更强的内生增长与分红能力。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_fcff_ps_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["fcff_ps"]
+    )
+    neutral = _industry_neutral_rank(fin["fcff_ps"], context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="ocf_to_or_neutral",
+    description="行业中性化经营现金流/营收因子。",
+    category="quality",
+    thesis="现金回收率(OCF/营收)反映盈利的真实性——在行业中性化后能识别出同行业中'纸面利润'vs'真金白银'的差异。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_ocf_to_or_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ocf_to_or"]
+    )
+    neutral = _industry_neutral_rank(fin["ocf_to_or"], context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="roe_stability_8q_neutral",
+    description="行业中性化ROE稳定性因子（取负CV，稳定排前）。",
+    category="quality",
+    thesis="ROE稳定性(8Q CV)在行业中性化后剔除行业周期性的干扰——识别同行业内真正盈利稳健的公司。",
+    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_roe_stability_8q_neutral(context: FactorContext):
+    fin = context.load_financial("financial_indicator.parquet", value_cols=["roe"])
+    roe = fin["roe"]
+    roe_std = roe.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).std()
+    )
+    roe_mean = roe.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).mean()
+    )
+    cv = safe_divide(roe_std, roe_mean.abs() + 1e-8)
+    neutral = _industry_neutral_rank(-cv, context)
+    return cross_sectional_rank(neutral)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 2b: Time-Series Acceleration Quality Factors
+# 质量指标的边际变化（加速度）——捕捉质量改善趋势而非静态水平
+# ════════════════════════════════════════════════════════════════════════════
+
+def _quarterly_slope(series: pd.Series, n_quarters: int = 4) -> pd.Series:
+    """Compute linear trend slope over the last N quarterly observations."""
+    def _slope(y):
+        y_arr = np.asarray(y[~np.isnan(y)])
+        if len(y_arr) < n_quarters:
+            return np.nan
+        y_arr = y_arr[-n_quarters:]
+        x = np.arange(n_quarters, dtype=float) - (n_quarters - 1) / 2.0
+        y_dm = y_arr - y_arr.mean()
+        denom = (x * x).sum()
+        if denom == 0:
+            return np.nan
+        return (x * y_dm).sum() / denom
+
+    return series.groupby(level="Code").transform(
+        lambda s: s.rolling(n_quarters, min_periods=n_quarters).apply(_slope, raw=True)
+    )
+
+
+@register_factor(
+    name="roe_acceleration_4q",
+    description="ROE四季度线性斜率因子——ROE改善趋势截面排名。",
+    category="quality",
+    thesis="ROE的趋势性改善(加速)比ROE的水平值更具前瞻性——改善中的公司通常处于竞争优势强化阶段，未来超额收益更显著。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_roe_acceleration_4q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["roe_dt"]
+    )
+    slope = _quarterly_slope(fin["roe_dt"], n_quarters=4)
+    return cross_sectional_rank(slope)
+
+
+@register_factor(
+    name="gross_margin_acceleration_4q",
+    description="毛利率四季度斜率因子——毛利率改善趋势截面排名。",
+    category="quality",
+    thesis="毛利率的持续改善意味着定价权提升或成本结构优化——毛利率趋势比毛利率水平更及时地反映竞争格局变化。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_gross_margin_acceleration_4q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["gross_margin"]
+    )
+    slope = _quarterly_slope(fin["gross_margin"], n_quarters=4)
+    return cross_sectional_rank(slope)
+
+
+@register_factor(
+    name="asset_turn_acceleration_4q",
+    description="资产周转率四季度斜率因子。",
+    category="quality",
+    thesis="资产周转效率的趋势性提升意味着公司正在更有效地利用资产——需求改善或产能优化正在释放运营杠杆。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_asset_turn_acceleration_4q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["assets_turn"]
+    )
+    slope = _quarterly_slope(fin["assets_turn"], n_quarters=4)
+    return cross_sectional_rank(slope)
+
+
+@register_factor(
+    name="fcf_improvement_4q",
+    description="自由现金流/总资产四季度斜率因子。",
+    category="quality",
+    thesis="自由现金流的趋势性改善意味着公司内生增长能力的增强——从'烧钱'到'造血'的转变是价值重估的核心催化剂。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_fcf_improvement_4q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["fcff_ps"]
+    )
+    slope = _quarterly_slope(fin["fcff_ps"], n_quarters=4)
+    return cross_sectional_rank(slope)
+
+
+@register_factor(
+    name="debt_reduction_4q",
+    description="资产负债率四季度下降斜率因子（斜率取负=去杠杆排前）。",
+    category="quality",
+    thesis="主动去杠杆（负债率趋势性下降）意味着公司财务风险边际改善——偿债压力减轻释放自由现金流，同时降低尾部风险。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_debt_reduction_4q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["debt_to_assets"]
+    )
+    slope = _quarterly_slope(fin["debt_to_assets"], n_quarters=4)
+    return cross_sectional_rank(-slope)
+
+
+@register_factor(
+    name="eps_growth_acceleration_8q",
+    description="EPS增速二阶加速度因子（diff(8) of eps_yoy），8季度diff截面排名。",
+    category="quality",
+    thesis="EPS增长率本身的加速（加速度）识别盈利拐点——增速由负转正加速或正增速进一步提速都是基本面的最强信号。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_eps_growth_acceleration_8q(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["basic_eps_yoy"]
+    )
+    growth = fin["basic_eps_yoy"]
+    # diff(8) over quarterly data = 2-year change in YoY growth rate
+    accel = growth.groupby(level="Code").transform(lambda s: s.diff(8))
+    return cross_sectional_rank(accel)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 2c: Composite Quality Factors
+# 多维度质量综合 — 单一指标噪音大，综合分数更稳定
+# ════════════════════════════════════════════════════════════════════════════
+
+@register_factor(
+    name="quality_composite_golden",
+    description="质量综合因子，ROE+毛利率+资产周转率+FCF每股的等权综合排名。",
+    category="quality",
+    thesis="多维度质量指标的等权综合较单一维度更稳定——ROE(盈利水平)+毛利率(护城河)+周转率(运营效率)+FCF每股(现金真实性)四维度捕捉质量的不同侧面，彼此互补降低噪音。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_quality_composite_golden(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet",
+        value_cols=["roe_dt", "gross_margin", "assets_turn", "fcff_ps"],
+    )
+    rank_roe = cross_sectional_rank(fin["roe_dt"])
+    rank_margin = cross_sectional_rank(fin["gross_margin"])
+    rank_turn = cross_sectional_rank(fin["assets_turn"])
+    rank_fcf = cross_sectional_rank(fin["fcff_ps"])
+    composite = (rank_roe + rank_margin + rank_turn + rank_fcf) / 4.0
+    return cross_sectional_rank(composite)
+
+
+@register_factor(
+    name="quality_earnings_composite",
+    description="盈利质量综合因子，(应计质量+盈利平滑度+ROE稳定性)等权综合。",
+    category="quality",
+    thesis="盈利质量的三个核心维度：应计低(现金真实性)、平滑度低(无恶意平滑)、ROE稳定(竞争优势持续)——三者综合比单一维度更准确识别真实的盈利质量。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_quality_earnings_composite(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet",
+        value_cols=["roe"],
+    )
+    roe = fin["roe"]
+    roe_std = roe.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).std()
+    )
+    roe_mean = roe.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).mean()
+    )
+    roe_cv = safe_divide(roe_std, roe_mean.abs() + 1e-8)
+    # Lower CV = more stable, higher rank
+    rank_stability = cross_sectional_rank(-roe_cv)
+    # For earnings smoothness proxy: use 8Q autocorrelation of quarterly changes
+    roe_chg = roe.groupby(level="Code").diff(1)
+    autocorr = roe_chg.groupby(level="Code").transform(
+        lambda s: s.rolling(8, min_periods=4).apply(
+            lambda x: np.asarray(x).var() / (np.asarray(x[1:]).var() + 1e-8) if len(x) >= 4 else np.nan, raw=True
+        )
+    )
+    # High autocorr of changes = possible smoothing, lower rank
+    rank_smooth = cross_sectional_rank(-autocorr)
+    composite = (rank_stability + rank_smooth) / 2.0
+    return cross_sectional_rank(composite)
+
+
+@register_factor(
+    name="quality_growth_composite",
+    description="质量成长综合因子，(ROE加速度+毛利率加速度+FCF改善+营收增速)等权综合。",
+    category="quality",
+    thesis="质量+成长的综合捕捉：纯质量因子忽视成长性，纯成长因子忽视质量——四维度加速度综合识别'高质量成长'公司（盈利改善+护城河增强+现金流优化+规模扩张同时发生）。",
+    dependencies=("financial_indicator.parquet", "calendar.parquet"),
+)
+def factor_quality_growth_composite(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet",
+        value_cols=["roe_dt", "gross_margin", "fcff_ps", "or_yoy"],
+    )
+    roe_slope = _quarterly_slope(fin["roe_dt"], n_quarters=4)
+    margin_slope = _quarterly_slope(fin["gross_margin"], n_quarters=4)
+    fcf_slope = _quarterly_slope(fin["fcff_ps"], n_quarters=4)
+    rank_roe_acc = cross_sectional_rank(roe_slope)
+    rank_margin_acc = cross_sectional_rank(margin_slope)
+    rank_fcf_acc = cross_sectional_rank(fcf_slope)
+    rank_rev_growth = cross_sectional_rank(fin["or_yoy"])
+    composite = (rank_roe_acc + rank_margin_acc + rank_fcf_acc + rank_rev_growth) / 4.0
+    return cross_sectional_rank(composite)

@@ -345,3 +345,83 @@ def factor_pb_to_roe(context: FactorContext):
     common = roe.index.intersection(pb.index)
     pb_roe = safe_divide(pb.loc[common], roe.loc[common].abs() + 1e-8)
     return cross_sectional_rank(-pb_roe)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Phase 2d: Industry-Neutralized Valuation Factors
+# 行业中性化估值因子 — 剔除行业估值中枢差异
+# ════════════════════════════════════════════════════════════════════════════
+
+from .neutral import _industry_neutral_rank
+
+
+
+
+@register_factor(
+    name="ebitda_to_ev_neutral",
+    description="行业中性化EBITDA/EV因子。",
+    category="valuation",
+    thesis="EBITDA/EV剔除资本结构和折旧政策干扰，行业中性化后是更纯粹的行业内相对估值指标。",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_ebitda_to_ev_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebitda"]
+    )
+    finance = context.load("finance.parquet")
+    ebitda = fin["ebitda"]
+    mv = finance["total_mv"]
+    total_liab = context.load_financial(
+        "balancesheet.parquet", value_cols=["total_liab"]
+    )["total_liab"]
+    cash = context.load_financial(
+        "balancesheet.parquet", value_cols=["money_cap"]
+    )["money_cap"]
+    common = ebitda.index.intersection(mv.index).intersection(
+        total_liab.index
+    ).intersection(cash.index)
+    ev = mv.loc[common] + total_liab.loc[common] - cash.loc[common]
+    ratio = safe_divide(ebitda.loc[common], ev.abs() + 1e-8)
+    neutral = _industry_neutral_rank(ratio, context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="mv_to_ebitda_neutral",
+    description="行业中性化市值/EBITDA因子（取负=低估值排前）。",
+    category="valuation",
+    thesis="EV/EBITDA的简化版(市值/EBITDA)在行业中性化后可作为行业内相对估值指标——低倍数意味着估值修复空间更大。",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_mv_to_ebitda_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["ebitda"]
+    )
+    finance = context.load("finance.parquet")
+    ebitda = fin["ebitda"]
+    mv = finance["total_mv"]
+    common = ebitda.index.intersection(mv.index)
+    ratio = safe_divide(mv.loc[common], ebitda.loc[common].abs() + 1e-8)
+    neutral = _industry_neutral_rank(-ratio, context)
+    return cross_sectional_rank(neutral)
+
+
+@register_factor(
+    name="pe_to_eps_growth_neutral",
+    description="行业中性化PEG因子（PE/eps_yoy，取负=低PEG排前）。",
+    category="valuation",
+    thesis="PEG比率因行业增长中枢差异而不可比，行业中性化后识别同行业内低估值-高增长的个股。",
+    dependencies=("financial_indicator.parquet", "finance.parquet", "stock_list.parquet", "calendar.parquet"),
+)
+def factor_pe_to_eps_growth_neutral(context: FactorContext):
+    fin = context.load_financial(
+        "financial_indicator.parquet", value_cols=["basic_eps_yoy"]
+    )
+    finance = context.load("finance.parquet")
+    eps_g = fin["basic_eps_yoy"]
+    pe = finance["pe_ttm"]
+    common = eps_g.index.intersection(pe.index)
+    growth = eps_g.loc[common].clip(lower=1.0)
+    peg = safe_divide(pe.loc[common], growth.abs() + 1e-8)
+    neutral = _industry_neutral_rank(-peg, context)
+    return cross_sectional_rank(neutral)

@@ -25,7 +25,6 @@ from ..utils import (
     safe_divide,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -34,11 +33,9 @@ def _net_margin_flow(margin: pd.DataFrame) -> pd.Series:
     """Daily net margin flow = 融资买入 - 融资偿还."""
     return margin["rzmre"] - margin["rzche"]
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # A — Net Flow & Flow Dynamics
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="margin_net_flow_5d",
@@ -53,7 +50,6 @@ def factor_margin_net_flow_5d(context: FactorContext):
     net_5d = rolling_group_sum(net, 5)
     return cross_sectional_rank(net_5d)
 
-
 @register_factor(
     name="margin_flow_volatility_20",
     description="融资流波动率因子，20日净融资流标准差截面排名（取负向=高波动排后）。",
@@ -66,10 +62,6 @@ def factor_margin_flow_volatility_20(context: FactorContext):
     net = _net_margin_flow(margin)
     vol = rolling_group_std(net, 20)
     return cross_sectional_rank(-vol)
-
-
-
-
 
 @register_factor(
     name="margin_flow_reversal_5d",
@@ -92,7 +84,6 @@ def factor_margin_flow_reversal_5d(context: FactorContext):
 
     return cross_sectional_rank(-reversal)  # No reversal = good
 
-
 @register_factor(
     name="margin_buy_climax",
     description="融资买入高潮因子，融资买入额相对60日均值的偏离度截面排名（取负向=极端买入=潜在顶部排后）。",
@@ -112,7 +103,6 @@ def factor_margin_buy_climax(context: FactorContext):
 
     return cross_sectional_rank(-climax)
 
-
 @register_factor(
     name="margin_panic_repay",
     description="恐慌偿还因子，-(融资偿还额超过60日均值3σ的程度)截面排名（恐慌偿还=强制平仓风险排后）。",
@@ -131,11 +121,9 @@ def factor_margin_panic_repay(context: FactorContext):
 
     return cross_sectional_rank(-panic)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # B — Short Selling Signals
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="short_sell_activity_5d",
@@ -149,21 +137,6 @@ def factor_short_sell_activity_5d(context: FactorContext):
     short_sell = margin["rqmcl"]
     short_5d = rolling_group_mean(short_sell, 5)
     return cross_sectional_rank(-short_5d)
-
-
-@register_factor(
-    name="short_sell_momentum_5d",
-    description="融券动量因子，融券卖出量5日变化率截面排名（取负向=融券加速=做空加剧排后）。",
-    category="margin",
-    thesis="融券卖出量的边际变化比绝对水平更具信号价值——融券量在增加意味着做空力量在集结，可能在为更大的下跌做准备。融券边际增加的股票短期面临更大的下行压力。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_short_sell_momentum_5d(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    short_sell = margin["rqmcl"]
-    chg = short_sell.groupby(level="Code").transform(lambda s: s.pct_change(5))
-    return cross_sectional_rank(-chg)
-
 
 @register_factor(
     name="short_sell_to_turnover",
@@ -184,7 +157,6 @@ def factor_short_sell_to_turnover(context: FactorContext):
 
     return cross_sectional_rank(-ratio)
 
-
 @register_factor(
     name="short_sell_concentration",
     description="融券集中度因子，融券卖出量20日日间变异系数截面排名（取负向=集中做空=冲击大排后）。",
@@ -201,7 +173,6 @@ def factor_short_sell_concentration(context: FactorContext):
 
     cv = std_20 / mean_20.replace(0, np.nan)  # coefficient of variation
     return cross_sectional_rank(-cv)
-
 
 @register_factor(
     name="short_squeeze_potential",
@@ -228,7 +199,6 @@ def factor_short_squeeze_potential(context: FactorContext):
 
     squeeze = rqye_rank * ret_rank
     return cross_sectional_rank(squeeze)
-
 
 @register_factor(
     name="short_cover_rally_signal",
@@ -258,11 +228,9 @@ def factor_short_cover_rally_signal(context: FactorContext):
     cover_signal = short_decline_rank * price_rise_rank
     return cross_sectional_rank(cover_signal)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # C — Leverage & Cost Metrics
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="margin_to_float_mv",
@@ -283,7 +251,6 @@ def factor_margin_to_float_mv(context: FactorContext):
 
     return cross_sectional_rank(-ratio)
 
-
 @register_factor(
     name="margin_to_turnover",
     description="融资成交比因子，日融资买入额/日成交额截面排名（高融资占比=杠杆驱动排前）。",
@@ -302,7 +269,6 @@ def factor_margin_to_turnover(context: FactorContext):
     ratio = rzmre.loc[common] / amount.loc[common].replace(0, np.nan)
 
     return cross_sectional_rank(ratio)
-
 
 @register_factor(
     name="margin_leverage_change_5d",
@@ -323,7 +289,6 @@ def factor_margin_leverage_change_5d(context: FactorContext):
     leverage_chg = leverage.groupby(level="Code").transform(lambda s: s.diff(5))
 
     return cross_sectional_rank(leverage_chg)
-
 
 @register_factor(
     name="margin_cost_burden",
@@ -350,7 +315,6 @@ def factor_margin_cost_burden(context: FactorContext):
 
     return cross_sectional_rank(-burden)
 
-
 @register_factor(
     name="margin_utilization_rate",
     description="融资使用率因子，融资余额/全市场融资余额截面排名（融资集中度=该股在融资体系中的重要性）。",
@@ -370,11 +334,9 @@ def factor_margin_utilization_rate(context: FactorContext):
 
     return cross_sectional_rank(utilization)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # D — Composite Indicators
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="margin_bullish_composite",
@@ -396,7 +358,6 @@ def factor_margin_bullish_composite(context: FactorContext):
     composite = (buy_rank + net_rank + bal_rank) / 3.0
     return cross_sectional_rank(composite)
 
-
 @register_factor(
     name="margin_bearish_composite",
     description="空头融资综合因子，(偿还排名+融券排名+余额下降排名)/3截面排名（取负向=看空信号排后）。",
@@ -416,7 +377,6 @@ def factor_margin_bearish_composite(context: FactorContext):
 
     composite = (repay_rank + short_rank + bal_rank) / 3.0
     return cross_sectional_rank(-composite)
-
 
 @register_factor(
     name="margin_extreme_positioning",
@@ -443,11 +403,9 @@ def factor_margin_extreme_positioning(context: FactorContext):
     extreme = (rzye_pct + buy_pct + net_pct) / 3.0
     return cross_sectional_rank(-extreme)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # E — Divergence & Confirmation Signals
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="margin_price_divergence_5d",
@@ -476,7 +434,6 @@ def factor_margin_price_divergence_5d(context: FactorContext):
     # Divergence = net buying + price decline (inverse of ret)
     divergence = net_rank * (1 - ret_rank)
     return cross_sectional_rank(divergence)
-
 
 @register_factor(
     name="margin_breakout_confirmation",
@@ -508,7 +465,6 @@ def factor_margin_breakout_confirmation(context: FactorContext):
 
     return cross_sectional_rank(conf_5d)
 
-
 @register_factor(
     name="margin_flush_out_signal",
     description="融资出清信号因子，5日跌幅>10%+融资余额5日降幅>10%截面排名（暴跌+去杠杆=恐慌底排前）。",
@@ -537,11 +493,9 @@ def factor_margin_flush_out_signal(context: FactorContext):
     flush = price_severe * margin_reduce
     return cross_sectional_rank(flush)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # F — Extended Margin Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="margin_trend_strength_20",
@@ -558,7 +512,6 @@ def factor_margin_trend_strength_20(context: FactorContext):
     trend_strength = rolling_group_mean(is_positive, 20)
 
     return cross_sectional_rank(trend_strength)
-
 
 @register_factor(
     name="short_interest_ratio_change",
@@ -579,7 +532,6 @@ def factor_short_interest_ratio_change(context: FactorContext):
     si_chg = si_ratio.groupby(level="Code").transform(lambda s: s.diff(5))
 
     return cross_sectional_rank(-si_chg)
-
 
 @register_factor(
     name="margin_sentiment_divergence",
@@ -603,7 +555,6 @@ def factor_margin_sentiment_divergence(context: FactorContext):
 
     return cross_sectional_rank(sentiment_lead)
 
-
 @register_factor(
     name="margin_flow_acceleration",
     description="融资流加速度因子，5日净流变化-20日净流变化/4截面排名（流入加速排前）。",
@@ -622,7 +573,6 @@ def factor_margin_flow_acceleration(context: FactorContext):
     accel = net_5d.diff(5) - net_20d.diff(20) / 4.0
 
     return cross_sectional_rank(accel)
-
 
 @register_factor(
     name="dual_margin_signal",
@@ -643,7 +593,6 @@ def factor_dual_margin_signal(context: FactorContext):
     dual = net_rank - short_rank
     return cross_sectional_rank(dual)
 
-
 @register_factor(
     name="margin_concentration_hhi",
     description="融资集中度HHI因子，各股融资余额在总融资中的占比平方和截面排名（集中度高=系统风险大排后）。",
@@ -663,7 +612,6 @@ def factor_margin_concentration_hhi(context: FactorContext):
     hhi = share ** 2  # Individual contribution to HHI
 
     return cross_sectional_rank(hhi)
-
 
 @register_factor(
     name="margin_smart_money_proxy",

@@ -446,14 +446,25 @@ def _intraday_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     extreme_mask = df["abs_ret_5min"] > df.groupby("trade_date")["abs_ret_5min"].transform(lambda x: x.rolling(20, min_periods=5).mean() + 2 * x.rolling(20, min_periods=5).std())
 
     def _safe_autocorr(x):
-        """Autocorrelation with zero-variance guard (avoids np.corrcoef divide-by-zero)."""
+        """Autocorrelation with manual Pearson computation (avoids np.corrcoef)."""
         x = x.dropna()
         if len(x) <= 5:
             return np.nan
-        s = x.std()
-        if not (s > 0):                       # catches NaN (all-NaN groups) and 0.0
+        x_lag = x.shift(1)
+        # Keep only overlapping (non-NaN) pairs after the shift
+        mask = x.notna() & x_lag.notna()
+        n = mask.sum()
+        if n <= 5:
             return np.nan
-        return x.autocorr(lag=1)
+        a = x.loc[mask]
+        b = x_lag.loc[mask]
+        a_c = a - a.mean()
+        b_c = b - b.mean()
+        cov = (a_c * b_c).sum()
+        denom = np.sqrt((a_c ** 2).sum() * (b_c ** 2).sum())
+        if denom == 0:
+            return np.nan
+        return cov / denom
 
     results["liquidity_resilience"] = -df.loc[extreme_mask].groupby("trade_date")["vol"].apply(_safe_autocorr)
 

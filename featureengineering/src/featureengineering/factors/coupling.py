@@ -17,6 +17,7 @@ import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import (
+    event_decay,
     cross_sectional_rank,
     rolling_group_mean,
     rolling_group_std,
@@ -31,28 +32,23 @@ def _rank(s: pd.Series) -> pd.Series:
     """Cross-sectional percentile rank (0-1)."""
     return s.groupby(level="Date").rank(pct=True)
 
-
 def _zscore(s: pd.Series) -> pd.Series:
     """Cross-sectional z-score per date."""
     mu = s.groupby(level="Date").transform("mean")
     sg = s.groupby(level="Date").transform("std")
     return safe_divide(s - mu, sg + 1e-8)
 
-
 def _delta(s: pd.Series, window: int) -> pd.Series:
     """Per-stock difference over *window* periods."""
     return s.groupby(level="Code").diff(window)
-
 
 def _momentum(s: pd.Series, window: int) -> pd.Series:
     """Per-stock percentage change over *window* periods."""
     return s.groupby(level="Code").transform(lambda x: x.pct_change(window))
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # A — Factor Momentum (因子动量)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="bp_factor_momentum_20",
@@ -66,7 +62,6 @@ def factor_bp_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     mom = _momentum(bp, 20)
     return cross_sectional_rank(mom)
 
-
 @register_factor(
     name="roe_factor_momentum_60",
     description="ROE因子60日动量 (ROE因子值的变化率)。",
@@ -78,7 +73,6 @@ def factor_roe_factor_momentum_60(ctx: FactorContext) -> pd.Series:
     roe = ctx.load_factor("roe")
     mom = _momentum(roe, 60)
     return cross_sectional_rank(mom)
-
 
 @register_factor(
     name="mom20_factor_momentum_20",
@@ -92,7 +86,6 @@ def factor_mom20_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     delta = _delta(mom, 20)
     return cross_sectional_rank(delta)
 
-
 @register_factor(
     name="turnover_factor_momentum_20",
     description="换手率因子20日动量 (关注度变化)。",
@@ -104,7 +97,6 @@ def factor_turnover_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     to = ctx.load_factor("turnover_20")
     mom = _momentum(to, 20)
     return cross_sectional_rank(mom)
-
 
 @register_factor(
     name="volatility_factor_momentum_20",
@@ -118,7 +110,6 @@ def factor_volatility_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     delta = _delta(vol, 20)
     return cross_sectional_rank(-delta)
 
-
 @register_factor(
     name="winner_rate_factor_momentum_20",
     description="获利盘因子20日动量 (筹码结构变化方向)。",
@@ -130,7 +121,6 @@ def factor_winner_rate_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     wr = ctx.load_factor("winner_rate")
     delta = _delta(wr, 20)
     return cross_sectional_rank(-delta)
-
 
 @register_factor(
     name="mf_flow_factor_momentum_20",
@@ -144,11 +134,9 @@ def factor_mf_flow_factor_momentum_20(ctx: FactorContext) -> pd.Series:
     delta = _delta(mf, 20)
     return cross_sectional_rank(delta)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # B — Factor Divergence (因子背离)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_momentum_divergence",
@@ -167,7 +155,6 @@ def factor_value_momentum_divergence(ctx: FactorContext) -> pd.Series:
     divergence = bp_r * mom_r
     return cross_sectional_rank(divergence)
 
-
 @register_factor(
     name="quality_price_divergence",
     description="质量-价格背离因子 (高ROE+低收益=质量回调买入机会)。",
@@ -184,7 +171,6 @@ def factor_quality_price_divergence(ctx: FactorContext) -> pd.Series:
     divergence = roe_r * (1 - mom_r)
     return cross_sectional_rank(divergence)
 
-
 @register_factor(
     name="flow_price_divergence",
     description="资金-价格背离因子 (主力流入+价格下跌=吸筹信号)。",
@@ -200,7 +186,6 @@ def factor_flow_price_divergence(ctx: FactorContext) -> pd.Series:
     # Inflow + weak price = accumulation
     divergence = mf_r * (1 - mom_r)
     return cross_sectional_rank(divergence)
-
 
 @register_factor(
     name="chip_price_divergence",
@@ -219,7 +204,6 @@ def factor_chip_price_divergence(ctx: FactorContext) -> pd.Series:
     divergence = wr_declining * mom_r
     return cross_sectional_rank(-divergence)
 
-
 @register_factor(
     name="turnover_price_divergence",
     description="换手-价格背离因子 (高换手+下跌=恐慌抛售, 取负)。",
@@ -235,7 +219,6 @@ def factor_turnover_price_divergence(ctx: FactorContext) -> pd.Series:
     # High turnover + negative momentum = panic selling (negative)
     divergence = to_r * (1 - mom_r)
     return cross_sectional_rank(-divergence)
-
 
 @register_factor(
     name="bp_roe_divergence",
@@ -254,7 +237,6 @@ def factor_bp_roe_divergence(ctx: FactorContext) -> pd.Series:
     divergence = bp_r * roe_r
     return cross_sectional_rank(divergence)
 
-
 @register_factor(
     name="size_quality_divergence",
     description="规模-质量背离因子 (小市值+高ROE是优质成长, 大市值+低ROE是僵尸企业)。",
@@ -272,7 +254,6 @@ def factor_size_quality_divergence(ctx: FactorContext) -> pd.Series:
     divergence = small_r * roe_r
     return cross_sectional_rank(divergence)
 
-
 @register_factor(
     name="vol_momentum_divergence",
     description="波动-动量背离因子 (低波+正动量=优质趋势, 高波+正动量=风险趋势)。",
@@ -288,7 +269,6 @@ def factor_vol_momentum_divergence(ctx: FactorContext) -> pd.Series:
     mom_r = _rank(mom)
     # Low vol + strong momentum = quality trend
     return cross_sectional_rank(low_vol_r * mom_r)
-
 
 @register_factor(
     name="fundflow_retail_inst_divergence",
@@ -306,11 +286,9 @@ def factor_fundflow_retail_inst_divergence(ctx: FactorContext) -> pd.Series:
     divergence = big_r * small_r
     return cross_sectional_rank(divergence)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # C — Factor Resonance (因子共振)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_quality_resonance",
@@ -323,7 +301,6 @@ def factor_value_quality_resonance(ctx: FactorContext) -> pd.Series:
     bp = ctx.load_factor("bp")
     roe = ctx.load_factor("roe")
     return cross_sectional_rank((_rank(bp) + _rank(roe)) / 2.0)
-
 
 @register_factor(
     name="trend_quality_resonance",
@@ -338,7 +315,6 @@ def factor_trend_quality_resonance(ctx: FactorContext) -> pd.Series:
     roe = ctx.load_factor("roe")
     return cross_sectional_rank((_rank(mom) + _rank(vol) + _rank(roe)) / 3.0)
 
-
 @register_factor(
     name="low_risk_value_resonance",
     description="低风险-价值共振因子 (低波+低回撤+高BP)。",
@@ -352,7 +328,6 @@ def factor_low_risk_value_resonance(ctx: FactorContext) -> pd.Series:
     dd = ctx.load_factor("max_drawdown_60")
     return cross_sectional_rank((_rank(bp) + _rank(vol) + _rank(dd)) / 3.0)
 
-
 @register_factor(
     name="momentum_value_resonance",
     description="动量-价值共振因子 (趋势+便宜)。",
@@ -364,7 +339,6 @@ def factor_momentum_value_resonance(ctx: FactorContext) -> pd.Series:
     bp = ctx.load_factor("bp")
     mom = ctx.load_factor("mom_60")
     return cross_sectional_rank((_rank(bp) + _rank(mom)) / 2.0)
-
 
 @register_factor(
     name="quality_growth_resonance",
@@ -378,7 +352,6 @@ def factor_quality_growth_resonance(ctx: FactorContext) -> pd.Series:
     growth = ctx.load_factor("or_yoy")
     return cross_sectional_rank((_rank(roe) + _rank(growth)) / 2.0)
 
-
 @register_factor(
     name="chip_momentum_resonance",
     description="筹码-动量共振因子 (筹码CR3集中度+动量趋势)。",
@@ -391,7 +364,6 @@ def factor_chip_momentum_resonance(ctx: FactorContext) -> pd.Series:
     mom = ctx.load_factor("mom_20")
     return cross_sectional_rank((_rank(chip) + _rank(mom)) / 2.0)
 
-
 @register_factor(
     name="flow_momentum_resonance",
     description="资金-动量共振因子 (主力流入+价格动量)。",
@@ -403,7 +375,6 @@ def factor_flow_momentum_resonance(ctx: FactorContext) -> pd.Series:
     mf = ctx.load_factor("mf_net_inflow_ratio")
     mom = ctx.load_factor("mom_20")
     return cross_sectional_rank((_rank(mf) + _rank(mom)) / 2.0)
-
 
 @register_factor(
     name="bull_factor_alignment_5",
@@ -422,7 +393,6 @@ def factor_bull_factor_alignment_5(ctx: FactorContext) -> pd.Series:
     if "volatility_20" in factors.columns:
         score += (factors["volatility_20"].groupby(level="Date").rank(pct=True) < 0.5).astype(float)
     return cross_sectional_rank(score)
-
 
 @register_factor(
     name="factor_unanimity_8",
@@ -452,16 +422,13 @@ def factor_factor_unanimity_8(ctx: FactorContext) -> pd.Series:
             score += (r < 0.5).astype(float)
     return cross_sectional_rank(score)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # D — Conditional Factors (条件因子)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # E — Factor Stability (因子稳定性)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="factor_rank_stability_20",
@@ -482,12 +449,11 @@ def factor_factor_rank_stability_20(ctx: FactorContext) -> pd.Series:
         diff_abs = (rank - rank_lag20).abs()
         stability_col = -diff_abs.groupby(level="Code").transform(
             lambda s: s.rolling(20, min_periods=10).mean()
-        )
+            )
         stability += stability_col.fillna(0)
 
     stability = stability / len(factors.columns)
     return cross_sectional_rank(stability)
-
 
 @register_factor(
     name="factor_rank_volatility_60",
@@ -503,11 +469,10 @@ def factor_factor_rank_volatility_60(ctx: FactorContext) -> pd.Series:
         rank = factors[col].groupby(level="Date").rank(pct=True)
         col_vol = rank.groupby(level="Code").transform(
             lambda s: s.rolling(60, min_periods=30).std()
-        )
+            )
         vol_sum += col_vol.fillna(0)
     avg_vol = vol_sum / len(factors.columns)
     return cross_sectional_rank(-avg_vol)
-
 
 @register_factor(
     name="factor_profile_shift_20",
@@ -528,11 +493,9 @@ def factor_factor_profile_shift_20(ctx: FactorContext) -> pd.Series:
     avg_shift = shift_sum / len(factors.columns)
     return cross_sectional_rank(-avg_shift)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # F — Factor Timing / Regime (因子择时)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_factor_zscore_252",
@@ -552,7 +515,6 @@ def factor_value_factor_zscore_252(ctx: FactorContext) -> pd.Series:
     z = bp.groupby(level="Code").transform(lambda s: _rolling_zscore(s, 252))
     return cross_sectional_rank(z)
 
-
 @register_factor(
     name="momentum_factor_zscore_60",
     description="动量因子60日历史Z-score (相对自身历史的动量强度)。",
@@ -571,7 +533,6 @@ def factor_momentum_factor_zscore_60(ctx: FactorContext) -> pd.Series:
     z = mom.groupby(level="Code").transform(lambda s: _rolling_zscore(s, 60))
     return cross_sectional_rank(z)
 
-
 @register_factor(
     name="factor_crowding_proxy_20",
     description="因子拥挤度代理变量 (因子截面离散度/均值, 高拥挤排后)。",
@@ -584,12 +545,11 @@ def factor_factor_crowding_proxy_20(ctx: FactorContext) -> pd.Series:
     crowding = pd.Series(0.0, index=factors.index)
     for col in factors.columns:
         cv = factors[col].groupby(level="Date").transform(
-            lambda s: s.std() / (s.abs().mean() + 1e-8)
-        )
+            lambda s: s.std() / (pd.to_numeric(s, errors="coerce").abs().mean() + 1e-8)
+            )
         crowding += cv.fillna(0)
     crowding = crowding / len(factors.columns)
     return cross_sectional_rank(-crowding)
-
 
 @register_factor(
     name="factor_regime_change_60",
@@ -615,7 +575,7 @@ def factor_factor_regime_change_60(ctx: FactorContext) -> pd.Series:
             pair_corr = ranks[c1] * ranks[c2]  # product proxy for correlation
             corr_now = pair_corr.groupby(level="Code").transform(
                 lambda s: s.rolling(20, min_periods=10).mean()
-            )
+                )
             corr_old = corr_now.groupby(level="Code").shift(60)
             change = (corr_now - corr_old).abs()
             regime_change += change.fillna(0)
@@ -625,11 +585,9 @@ def factor_factor_regime_change_60(ctx: FactorContext) -> pd.Series:
         regime_change = regime_change / n_pairs
     return cross_sectional_rank(-regime_change)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # G — Cross-Factor Residual (因子残差/正交)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="momentum_orthogonal_to_value",
@@ -651,7 +609,6 @@ def factor_momentum_orthogonal_to_value(ctx: FactorContext) -> pd.Series:
     residual = mom_z - beta * bp_z
     return cross_sectional_rank(residual)
 
-
 @register_factor(
     name="quality_orthogonal_to_size",
     description="质量对规模正交化因子 (剔除规模效应的纯质量)。",
@@ -669,7 +626,6 @@ def factor_quality_orthogonal_to_size(ctx: FactorContext) -> pd.Series:
     )
     residual = roe_z - beta * size_z
     return cross_sectional_rank(residual)
-
 
 @register_factor(
     name="vol_orthogonal_to_beta",
@@ -689,7 +645,6 @@ def factor_vol_orthogonal_to_beta(ctx: FactorContext) -> pd.Series:
     residual = vol_z - b * beta_z
     return cross_sectional_rank(residual)
 
-
 @register_factor(
     name="turnover_orthogonal_to_mv",
     description="换手率对市值正交化因子 (剔除规模效应的纯流动性)。",
@@ -708,11 +663,9 @@ def factor_turnover_orthogonal_to_mv(ctx: FactorContext) -> pd.Series:
     residual = to_z - b * size_z
     return cross_sectional_rank(residual)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # H — Coupling / Cross-Factor Spreads & Interactions
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_momentum_spread",
@@ -727,7 +680,6 @@ def factor_value_momentum_spread(context: FactorContext):
     mom_r = df["mom_20"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(bp_r - mom_r)
 
-
 @register_factor(
     name="quality_value_bias",
     description="质量价值偏差因子，roe排名-bp排名截面排名（正=质量>价值=质量溢价排前）。",
@@ -740,7 +692,6 @@ def factor_quality_value_bias(context: FactorContext):
     roe_r = df["roe"].groupby(level="Date").rank(pct=True)
     bp_r = df["bp"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(roe_r - bp_r)
-
 
 @register_factor(
     name="momentum_volatility_ratio",
@@ -756,7 +707,6 @@ def factor_momentum_volatility_ratio(context: FactorContext):
     efficiency = mom_r / (1 + vol_r)
     return cross_sectional_rank(efficiency)
 
-
 @register_factor(
     name="value_reversal_crossover",
     description="价值反转交叉因子，bp排名+reversal_5排名截面排名（低估值+短期下跌=超跌价值排前）。",
@@ -770,7 +720,6 @@ def factor_value_reversal_crossover(context: FactorContext):
     rev_r = df["reversal_5"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(bp_r + rev_r)
 
-
 @register_factor(
     name="fund_flow_price_resonance",
     description="资金价格共振因子，net_mf_amount_intensity排名×mom_20排名截面排名（资金+价格双强排前）。",
@@ -783,7 +732,6 @@ def factor_fund_flow_price_resonance(context: FactorContext):
     mf_r = df["net_mf_amount_intensity"].groupby(level="Date").rank(pct=True)
     mom_r = df["mom_20"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(mf_r * mom_r)
-
 
 @register_factor(
     name="illusory_diversification",
@@ -799,7 +747,6 @@ def factor_illusory_diversification(context: FactorContext):
     illusion = div_r * (1 - vol_r)
     return cross_sectional_rank(illusion)
 
-
 @register_factor(
     name="chip_momentum_confirmation",
     description="筹码动量确认因子，chip_cr3_factor排名×mom_20排名截面排名（筹码集中+动量=强烈趋势排前）。",
@@ -813,7 +760,6 @@ def factor_chip_momentum_confirmation(context: FactorContext):
     mom_r = df["mom_20"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(chip_r * mom_r)
 
-
 @register_factor(
     name="small_quality_premium",
     description="小盘质量溢价因子，log_circ_mv排名×roe排名截面排名（小市值+高质量=高成长空间排前）。",
@@ -826,7 +772,6 @@ def factor_small_quality_premium(context: FactorContext):
     size_r = (1 - df["log_circ_mv"].groupby(level="Date").rank(pct=True))
     roe_r = df["roe"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(size_r * roe_r)
-
 
 @register_factor(
     name="turnover_shock_20",
@@ -843,7 +788,6 @@ def factor_turnover_shock_20(context: FactorContext):
     zscore = (to - to_mean) / to_std.replace(0, np.nan)
     return cross_sectional_rank(-zscore.abs())
 
-
 @register_factor(
     name="profitability_size_interaction",
     description="盈利规模交互因子，roe排名×log_total_mv排名截面排名（大市值+高盈利=龙头质量排前）。",
@@ -856,7 +800,6 @@ def factor_profitability_size_interaction(context: FactorContext):
     roe_r = df["roe"].groupby(level="Date").rank(pct=True)
     mv_r = df["log_total_mv"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(roe_r * mv_r)
-
 
 @register_factor(
     name="reversal_vol_coupling",
@@ -871,7 +814,6 @@ def factor_reversal_vol_coupling(context: FactorContext):
     vol_r = df["volatility_20"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(rev_r * (1 - vol_r))
 
-
 @register_factor(
     name="bp_vol_interaction",
     description="估值波动交互因子，bp排名/(1+volatility_20排名)截面排名。",
@@ -884,7 +826,6 @@ def factor_bp_vol_interaction(context: FactorContext):
     bp_r = df["bp"].groupby(level="Date").rank(pct=True)
     vol_r = df["volatility_20"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(bp_r / (1 + vol_r))
-
 
 @register_factor(
     name="multi_factor_consensus",
@@ -902,7 +843,6 @@ def factor_multi_factor_consensus(context: FactorContext):
     consensus = pd.concat([bp_r, mom_r, roe_r, vol_r], axis=1).min(axis=1)
     return cross_sectional_rank(consensus)
 
-
 @register_factor(
     name="momentum_reversal_balance",
     description="动量反转平衡因子，mom_20排名-reversal_5排名截面排名。",
@@ -915,7 +855,6 @@ def factor_momentum_reversal_balance(context: FactorContext):
     mom_r = df["mom_20"].groupby(level="Date").rank(pct=True)
     rev_r = df["reversal_5"].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(mom_r - rev_r)
-
 
 @register_factor(
     name="depth_quality_composite",
@@ -935,11 +874,9 @@ def factor_depth_quality_composite(context: FactorContext):
     composite = (roe_r + roa_r + gm_r + ocf_r + at_r + acc_r) / 6.0
     return cross_sectional_rank(composite)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # I — Factor Lead-Lag / Information Flow (因子领先滞后)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="fund_flow_lead_momentum_10",
@@ -958,7 +895,6 @@ def factor_fund_flow_lead_momentum_10(ctx: FactorContext) -> pd.Series:
     lead_score = mf_lag10 * mom_rank
     return cross_sectional_rank(lead_score)
 
-
 @register_factor(
     name="chip_lead_momentum_10",
     description="筹码领先动量因子，滞后10日获利盘变化与当前动量的一致性（筹码改善领先价格排前）。",
@@ -975,7 +911,6 @@ def factor_chip_lead_momentum_10(ctx: FactorContext) -> pd.Series:
     mom_rank = mom.groupby(level="Date").rank(pct=True)
     lead_score = wr_lag10 * mom_rank
     return cross_sectional_rank(lead_score)
-
 
 @register_factor(
     name="turnover_lead_volatility_10",
@@ -996,11 +931,9 @@ def factor_turnover_lead_volatility_10(ctx: FactorContext) -> pd.Series:
     lead_risk = to_lag10 * vol_change_r
     return cross_sectional_rank(-lead_risk)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # J — Asymmetric Factor Response (非对称因子响应)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="bp_down_market_defense",
@@ -1021,7 +954,6 @@ def factor_bp_down_market_defense(ctx: FactorContext) -> pd.Series:
     defense_score = bp_rank * (0.5 + 0.5 * down_market_weight_r)
     return cross_sectional_rank(defense_score)
 
-
 @register_factor(
     name="quality_bear_market_alpha",
     description="质量熊市Alpha因子，高波动(熊市)环境下ROE质量溢价（熊市质量溢价排前）。",
@@ -1037,7 +969,6 @@ def factor_quality_bear_market_alpha(ctx: FactorContext) -> pd.Series:
     # Quality gets stronger bid in high vol environment; amplify roe_rank by vol_rank
     bear_alpha = roe_rank * (0.3 + 0.7 * vol_rank)
     return cross_sectional_rank(bear_alpha)
-
 
 @register_factor(
     name="mom_up_down_asymmetry",
@@ -1055,7 +986,6 @@ def factor_mom_up_down_asymmetry(ctx: FactorContext) -> pd.Series:
     asymmetry = up_r - down_r
     return cross_sectional_rank(asymmetry)
 
-
 @register_factor(
     name="low_vol_tail_hedge",
     description="低波动尾部对冲因子，低波动+低回撤的尾部保护综合得分（极端风险保护力排前）。",
@@ -1072,11 +1002,9 @@ def factor_low_vol_tail_hedge(ctx: FactorContext) -> pd.Series:
     hedge_score = (1 - vol_r) * (1 - dd_r)
     return cross_sectional_rank(hedge_score)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # K — Higher-Order Factor Interactions (高阶因子交互)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_quality_safety_triple",
@@ -1094,7 +1022,6 @@ def factor_value_quality_safety_triple(ctx: FactorContext) -> pd.Series:
     debt_r = _rank(debt)  # low debt ranks high
     triple = bp_r * roe_r * debt_r
     return cross_sectional_rank(triple)
-
 
 @register_factor(
     name="momentum_quality_liquidity_triple",
@@ -1115,7 +1042,6 @@ def factor_momentum_quality_liquidity_triple(ctx: FactorContext) -> pd.Series:
     triple = mom_r * roe_r * liq_penalty
     return cross_sectional_rank(triple)
 
-
 @register_factor(
     name="chip_flow_momentum_triple",
     description="筹码资金动量三因子共振，(获利盘×主力资金×动量)三维度乘积截面排名。",
@@ -1133,7 +1059,6 @@ def factor_chip_flow_momentum_triple(ctx: FactorContext) -> pd.Series:
     triple = wr_r * mf_r * mom_r
     return cross_sectional_rank(triple)
 
-
 @register_factor(
     name="growth_value_quality_golden",
     description="成长价值质量金三角因子，(营收增速+BP+ROE)三个排名均值截面排名。",
@@ -1148,11 +1073,9 @@ def factor_growth_value_quality_golden(ctx: FactorContext) -> pd.Series:
     golden = (_rank(growth) + _rank(bp) + _rank(roe)) / 3.0
     return cross_sectional_rank(golden)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # L — Factor Time-Series Dynamics (因子时序动态)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="factor_autocorrelation_break",
@@ -1172,13 +1095,12 @@ def factor_factor_autocorrelation_break(ctx: FactorContext) -> pd.Series:
         abs_diff = (rank - rank_lag).abs()
         rolling_instability = abs_diff.groupby(level="Code").transform(
             lambda s: s.rolling(20, min_periods=10).mean()
-        )
+            )
         # Current vs past instability — break = sudden increase in instability
         instability_change = rolling_instability - rolling_instability.groupby(level="Code").shift(20)
         break_score += instability_change.fillna(0)
     break_score = break_score / len(factors.columns)
     return cross_sectional_rank(-break_score)
-
 
 @register_factor(
     name="factor_trend_exhaustion",
@@ -1201,7 +1123,6 @@ def factor_factor_trend_exhaustion(ctx: FactorContext) -> pd.Series:
     exhaustion = exhaustion / len(factors.columns)
     return cross_sectional_rank(exhaustion)
 
-
 @register_factor(
     name="factor_rolling_drawdown_60",
     description="因子滚动回撤因子，BP因子从60日高点的回撤程度（回撤大=因子超跌排前）。",
@@ -1220,7 +1141,6 @@ def factor_factor_rolling_drawdown_60(ctx: FactorContext) -> pd.Series:
     bp_dd = bp.groupby(level="Code").transform(_rolling_dd)
     # Large drawdown = factor oversold = potential bounce (rank high)
     return cross_sectional_rank(bp_dd)
-
 
 @register_factor(
     name="factor_mean_reversion_signal",
@@ -1246,11 +1166,9 @@ def factor_factor_mean_reversion_signal(ctx: FactorContext) -> pd.Series:
     mr_score = mr_score / len(factors.columns)
     return cross_sectional_rank(mr_score)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # M — Cross-Sectional Factor Structure (因子截面结构)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="factor_cs_tail_ratio",
@@ -1262,19 +1180,21 @@ def factor_factor_mean_reversion_signal(ctx: FactorContext) -> pd.Series:
 def factor_factor_cs_tail_ratio(ctx: FactorContext) -> pd.Series:
     factor_names = ["bp", "roe", "mom_20"]
     factors = ctx.load_factors(factor_names)
+    # Per-stock tail contribution: how far is each stock's rank from the median?
+    # Stocks consistently at distribution extremes get high tail contribution scores.
     tail_score = pd.Series(0.0, index=factors.index)
     for col in factors.columns:
         rank = factors[col].groupby(level="Date").rank(pct=True)
-        # Per-date tail ratio: p90 / p10 of factor values
-        p90 = factors[col].groupby(level="Date").transform(lambda s: s.quantile(0.90))
-        p10 = factors[col].groupby(level="Date").transform(lambda s: s.quantile(0.10))
-        p50 = factors[col].groupby(level="Date").transform(lambda s: s.median())
-        tail_ratio = safe_divide(p90 - p50, p50 - p10 + 1e-8)
-        tail_score += tail_ratio.fillna(1.0)
+        # Per-stock distance from median: stocks near 0 or 1 are in the tails
+        dist_from_median = (rank - 0.5).abs()
+        tail_score += dist_from_median.fillna(0)
     tail_score = tail_score / len(factors.columns)
-    # High tail ratio = extreme dispersion = uncertainty (rank low)
+    # High tail score = stock at factor distribution extremes across dimensions
+    # This means the stock is being extremely priced on multiple factors
+    # (both positive and negative extremes possible — rank this low as
+    #  factor consensus is unclear when a stock is at one extreme on some
+    #  factors and another extreme on others)
     return cross_sectional_rank(-tail_score)
-
 
 @register_factor(
     name="factor_rank_bimodality",
@@ -1286,17 +1206,18 @@ def factor_factor_cs_tail_ratio(ctx: FactorContext) -> pd.Series:
 def factor_factor_rank_bimodality(ctx: FactorContext) -> pd.Series:
     factor_names = ["bp", "roe", "mom_20"]
     factors = ctx.load_factors(factor_names)
+    # Per-stock bimodality: stock's own distance from median averaged across factors.
+    # Stocks at extremes (near rank 0 or 1) across multiple factors contribute to 
+    # distribution bimodality. High bimodality = stock being polarized on many dimensions.
     bimodality = pd.Series(0.0, index=factors.index)
     for col in factors.columns:
         rank = factors[col].groupby(level="Date").rank(pct=True)
-        # Bimodality proxy: how far is the mass from 0.5? High when mass at extremes
-        # abs(rank - 0.5) measures distance from median; mean of this = bimodality proxy
         dist_from_median = (rank - 0.5).abs()
-        date_mean_dist = dist_from_median.groupby(level="Date").transform("mean")
-        bimodality += date_mean_dist.fillna(0)
+        bimodality += dist_from_median.fillna(0)
     bimodality = bimodality / len(factors.columns)
+    # Bimodality = stock at extremes across dimensions = market polarization signal
+    # Rank low (negative): stocks in the middle of distributions are preferred
     return cross_sectional_rank(-bimodality)
-
 
 @register_factor(
     name="factor_pair_correlation_dispersion",
@@ -1320,10 +1241,10 @@ def factor_factor_pair_correlation_dispersion(ctx: FactorContext) -> pd.Series:
             pair_prod = ranks[c1] * ranks[c2]
             pair_ma = pair_prod.groupby(level="Code").transform(
                 lambda s: s.rolling(20, min_periods=10).mean()
-            )
+                )
             pair_std = pair_prod.groupby(level="Code").transform(
                 lambda s: s.rolling(20, min_periods=10).std()
-            )
+                )
             # Dispersion = std/abs(mean) for each pair
             pair_disp = safe_divide(pair_std, pair_ma.abs() + 1e-8)
             corr_disp += pair_disp.fillna(0)
@@ -1332,11 +1253,9 @@ def factor_factor_pair_correlation_dispersion(ctx: FactorContext) -> pd.Series:
         corr_disp = corr_disp / n_pairs
     return cross_sectional_rank(-corr_disp)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # N — Factor Efficiency (因子效率)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="factor_rolling_ir_proxy",
@@ -1354,15 +1273,14 @@ def factor_factor_rolling_ir_proxy(ctx: FactorContext) -> pd.Series:
         delta = factors[col].groupby(level="Code").diff(5)
         mean_delta = delta.groupby(level="Code").transform(
             lambda s: s.rolling(60, min_periods=30).mean()
-        )
+            )
         std_delta = delta.groupby(level="Code").transform(
             lambda s: s.rolling(60, min_periods=30).std()
-        )
+            )
         ir = safe_divide(mean_delta, std_delta + 1e-8)
         ir_score += ir.fillna(0)
     ir_score = ir_score / len(factors.columns)
     return cross_sectional_rank(ir_score)
-
 
 @register_factor(
     name="factor_consistency_ratio",
@@ -1385,7 +1303,6 @@ def factor_factor_consistency_ratio(ctx: FactorContext) -> pd.Series:
 
     consistency = bp_delta.groupby(level="Code").transform(_consistency)
     return cross_sectional_rank(consistency)
-
 
 @register_factor(
     name="factor_gain_to_pain_ratio",
@@ -1411,11 +1328,9 @@ def factor_factor_gain_to_pain_ratio(ctx: FactorContext) -> pd.Series:
     gpr_score = gpr_score / len(factors.columns)
     return cross_sectional_rank(gpr_score)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # O — Stress & Tail Event Response (压力与尾部事件)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="multi_factor_stress_beta",
@@ -1433,7 +1348,6 @@ def factor_multi_factor_stress_beta(ctx: FactorContext) -> pd.Series:
     stress = (_rank(beta) + _rank(vol) + _rank(dd) + _rank(tail)) / 4.0
     return cross_sectional_rank(-stress)
 
-
 @register_factor(
     name="factor_liquidity_fragility",
     description="因子流动性脆弱性因子，(高换手+高非流动性+高波动)三维度流动性压力得分（流动性脆弱排后）。",
@@ -1448,7 +1362,6 @@ def factor_factor_liquidity_fragility(ctx: FactorContext) -> pd.Series:
     # High turnover + high illiquidity + high vol = liquidity fragility
     fragility = (_rank(turnover) + _rank(illiq) + _rank(vol)) / 3.0
     return cross_sectional_rank(-fragility)
-
 
 @register_factor(
     name="factor_crash_resilience",
@@ -1467,11 +1380,9 @@ def factor_factor_crash_resilience(ctx: FactorContext) -> pd.Series:
                   (1 - _rank(debt)) + (1 - _rank(vol))) / 4.0
     return cross_sectional_rank(resilience)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # P — Factor Cross-Sectional Interaction Depth (因子截面交互深度)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="value_lowvol_nonlinear",
@@ -1489,7 +1400,6 @@ def factor_value_lowvol_nonlinear(ctx: FactorContext) -> pd.Series:
     nonlinear = np.sqrt(bp_r * low_vol_r + 1e-8)
     return cross_sectional_rank(nonlinear)
 
-
 @register_factor(
     name="quality_momentum_nonlinear",
     description="质量动量非线性耦合因子，(ROE排名×动量排名)的幂次变换（幂次放大联合强信号排前）。",
@@ -1506,7 +1416,6 @@ def factor_quality_momentum_nonlinear(ctx: FactorContext) -> pd.Series:
     nonlinear = (roe_r * mom_r) ** 1.5
     return cross_sectional_rank(nonlinear)
 
-
 @register_factor(
     name="factor_relative_value_spread",
     description="因子相对价值价差因子，BP排名与行业中性BP排名的差值（相对行业高估/低估排前）。",
@@ -1522,7 +1431,6 @@ def factor_factor_relative_value_spread(ctx: FactorContext) -> pd.Series:
     # Positive = raw BP ranks higher than industry-neutral = within-industry undervaluation
     spread = bp_r - bp_ind_r
     return cross_sectional_rank(spread)
-
 
 @register_factor(
     name="sentiment_fundamental_gap",
@@ -1543,7 +1451,6 @@ def factor_sentiment_fundamental_gap(ctx: FactorContext) -> pd.Series:
     gap = fundamental - sentiment
     return cross_sectional_rank(gap)
 
-
 @register_factor(
     name="short_term_long_term_alignment",
     description="短长期因子对齐因子，短期动量排名+长期动量排名的等权（短长期一致=趋势确认排前）。",
@@ -1556,7 +1463,6 @@ def factor_short_term_long_term_alignment(ctx: FactorContext) -> pd.Series:
     mom60 = ctx.load_factor("mom_60")
     alignment = (_rank(mom5) + _rank(mom60)) / 2.0
     return cross_sectional_rank(alignment)
-
 
 @register_factor(
     name="factor_dispersion_risk",
@@ -1577,3 +1483,11 @@ def factor_factor_dispersion_risk(ctx: FactorContext) -> pd.Series:
     # Coefficient of variation: higher = more disagreement across factors
     dispersion = safe_divide(rank_std, rank_mean + 1e-8)
     return cross_sectional_rank(-dispersion)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Z — Event Decay Wrappers (事件因子指数衰减连续化)
+# ═══════════════════════════════════════════════════════════════════════════════
+# These factors take sparse event-driven factors (NaN > 90%) and convert them
+# into continuous signals via forward-fill + exponential decay.
+# Half-life: 3d (封板/seal), 5d (龙虎榜/涨跌停)))
+

@@ -1,36 +1,3 @@
-"""
-V3.0 — MVFP: Best Combination (4-Year Window + 10d Target + Full Factors)
-
-Combines the two strongest improvements from V1 experiments:
-  - 4-year training window (from V1.3, +33% Sharpe)
-  - 10-day return target (from V1.7, +60% Sharpe)
-  - Full 953-factor set (from V1.2, +9% IC)
-
-This is the optimal configuration based on V1.X experimental results.
-
-Architecture:
-  Input(F d) → SE recalibration → Shared Backbone(256→128)  # F = factor_num (determined at runtime)
-    ├── View 1: Normal Head₁ (128→32→1) + Feature Dropout₁
-    ├── View 2: Normal Head₂ (128→32→1) + Feature Dropout₂
-    ├── View 3: Normal Head₃ (128→32→1) + Feature Dropout₃
-    └── Shared: Limit-Up Head (128→32→1) + gate
-
-Loss:
-  For each view v: L_v = L_wpcc(score_v) + α * L_rank(score_v)
-  Diversity Loss: L_div = max(0, mean_corr(views) - target_corr)
-  Total: L = mean(L_v) + λ_div * L_div + L_limit_up
-
-Inference:
-  score = mean(view_1_score, view_2_score, view_3_score)
-  (Each view uses standard evaluation mode, no feature dropout at inference)
-
-Key Configuration:
-  - 4-year training window (extended from baseline 2 years)
-  - 10-day return prediction target
-  - Full 953-factor set (pre-filtering applied in data loading)
-  - K=3 parallel Normal Heads with feature dropout diversity
-"""
-
 import gc
 import pandas as pd
 import numpy as np
@@ -42,13 +9,12 @@ import torch.nn.functional as F
 from argparse import ArgumentParser
 import warnings
 import shutil
-import pickle
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import random
 from dateutil.relativedelta import relativedelta
 import pytorch_lightning as pl
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import OneCycleLR
 
 from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
                                          ModelCheckpoint,
@@ -58,7 +24,6 @@ from pytorch_lightning import LightningModule
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.profilers import SimpleProfiler
-from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
@@ -87,13 +52,13 @@ torch.backends.cudnn.deterministic = False
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--weight_decay', type=float, default=2e-2)
+    parser.add_argument('--batch_size', type=int, default=8)          
+    parser.add_argument('--weight_decay', type=float, default=3e-2)   
     parser.add_argument('--seed', type=int, default=3253)
     parser.add_argument('--optimizer', default='adamw',
                         choices=['adam', 'adamw'])
     parser.add_argument('--loss', default='wpcc')
-    parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--lr', type=float, default=0.0005)            
 
     parser.add_argument('--max_epochs', type=int, default=30)
     parser.add_argument('--min_epochs', type=int, default=15)
@@ -110,11 +75,6 @@ def parse_args():
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--checkpoint', help='path to checkpoints (for test)')
 
-    # V9.5 args
-    parser.add_argument('--num_views', type=int, default=3)
-    parser.add_argument('--diversity_weight', type=float, default=0.1)
-    parser.add_argument('--target_corr', type=float, default=0.7)
-
     args, unknown = parser.parse_known_args()
     return args
 
@@ -124,9 +84,9 @@ args = parse_args()
 PROJECT_ROOT = "/root/autodl-fs/lingqiData/"
 root_path = PROJECT_ROOT + 'Model/V3.1'
 fac_path = PROJECT_ROOT + 'trainingdata/'
-fac_name = r'fac20260614'
+fac_name = r'fac_all'
 label_path = PROJECT_ROOT + 'trainingdata'
-label_name = r'label_ret_5d'  # V3.1: 5-day return target (best from V1.7)
+label_name = r'label_ret_1d'
 liquid_path = PROJECT_ROOT + 'trainingdata'
 liquid_name = r'trade_amt'
 
@@ -136,41 +96,40 @@ class params:
     profiler_path = rf'{root_path}/logs'
     model_prefix = rf'nn'
     liquid_data = pd.read_feather(rf"{liquid_path}/{liquid_name}.fea").set_index("index")
-    ret_data = pd.read_feather(rf"{label_path}/{label_name}.fea").set_index("index")        # label_ret_10d — 训练 target（低噪声）
-    ret_1d_data = pd.read_feather(rf"{label_path}/label_ret_1d.fea").set_index("index")      # label_ret_1d — 验证/测试真实收益（单日换手）
+    ret_data = pd.read_feather(rf"{label_path}/{label_name}.fea").set_index("index")
+    ret_1d_data = pd.read_feather(rf"{label_path}/label_ret_1d.fea").set_index("index")
+    # 多周期训练所需的额外标签数据
+    ret_5d_data = pd.read_feather(rf"{label_path}/label_ret_5d.fea").set_index("index")
+    ret_10d_data = pd.read_feather(rf"{label_path}/label_ret_10d.fea").set_index("index")
     dropout = True
     dropout_rate = 0.2
     normed_method = 'zscore'
 
-    feature_dropout_rate = 0.25
-    ranknet_alpha = 0.1
+    # V3.0: 移除 Mixup（V2.0 负交互根源）
+
+    # 多周期损失权重
+    multi_horizon_weights = {'1d': 1.0, '5d': 0.5, '10d': 0.3}
+
     time_decay_half_life_days = 365
     time_decay_ref_date = '20260101'
 
-    near_limit_up_idx = None
-    gate_threshold = 1.5
-    gate_temperature = 5.0
-    limit_up_loss_weight = 2.0
-
-    # V9.5: Multi-View Factor Perturbation
-    num_views = 3
-    diversity_weight = 0.1       # weight for diversity loss
-    target_corr = 0.7            # target mean correlation between views
-    se_reduction = 16
-
-    # Training stability
+    # 训练稳定性配置
     swa_enabled = True
     swa_epoch_start = 0.6
     early_stop_patience = 8
     gradient_clip_val = 1.0
-    warmup_epochs = 3
+
+    # OneCycleLR 参数
+    onecycle_max_lr = 0.001
+    onecycle_pct_start = 0.3
+    onecycle_div_factor = 10
+    onecycle_final_div_factor = 100
+
+    # 强标签平滑 (V1.7 验证有效: IC +2.6%)
+    label_smooth_noise = 0.02  # V3.0: 轻量标签平滑（恢复 V1.0 水平）
 
 
-def get_basic_name():
-    name = rf'{params.model_prefix}--{fac_name}--{label_name}'
-    if params.dropout:
-        name += rf'--dropout{params.dropout_rate}'
-    return name
+
 
 
 def normed_data(data, date, stage, factor_list, normed_method=params.normed_method):
@@ -181,16 +140,35 @@ def normed_data(data, date, stage, factor_list, normed_method=params.normed_meth
     data['liquid'] = liquid_data.reindex(data["Code"]).values
     ret_data = params.ret_data.loc[date]
     data['Label'] = ret_data.reindex(data["Code"]).values
+    # 加载 5 日和 10 日收益用于多周期训练
+    ret_5d_series = params.ret_5d_data.loc[date]
+    ret_10d_series = params.ret_10d_data.loc[date]
+    data['Label_5d'] = ret_5d_series.reindex(data["Code"]).values
+    data['Label_10d'] = ret_10d_series.reindex(data["Code"]).values
     if stage == "train":
         data['Label'] = (data['Label'] - data['Label'].mean()) / data['Label'].std()
+        # 对 5 日和 10 日标签应用相同的标准化与标签平滑
+        data['Label_5d'] = (data['Label_5d'] - data['Label_5d'].mean()) / data['Label_5d'].std()
+        data['Label_10d'] = (data['Label_10d'] - data['Label_10d'].mean()) / data['Label_10d'].std()
+        # 轻微标签平滑 —— 小方差高斯噪声可减轻过拟合
+        noise_1d = np.random.normal(0, params.label_smooth_noise, size=len(data['Label']))
+        noise_5d = np.random.normal(0, params.label_smooth_noise, size=len(data['Label_5d']))
+        noise_10d = np.random.normal(0, params.label_smooth_noise, size=len(data['Label_10d']))
+        data['Label'] = data['Label'] + noise_1d
+        data['Label_5d'] = data['Label_5d'] + noise_5d
+        data['Label_10d'] = data['Label_10d'] + noise_10d
     data['Label'] = data['Label'].fillna(0)
+    data['Label_5d'] = data['Label_5d'].fillna(0)
+    data['Label_10d'] = data['Label_10d'].fillna(0)
     # 加载真实 1 日收益（仅用于验证/测试评估，不参与训练 loss）
     ret_1d_series = params.ret_1d_data.loc[date]
     data['Ret1d'] = ret_1d_series.reindex(data["Code"]).values
     data['Ret1d'] = data['Ret1d'].fillna(0)
     code_value = data['Code'].values
-    data_X = data.drop(['Code', 'Label', 'liquid', 'Ret1d'], axis=1)
-    data_y = data['Label']
+    data_X = data.drop(['Code', 'Label', 'liquid', 'Ret1d', 'Label_5d', 'Label_10d'], axis=1)
+    data_y_1d = data['Label']
+    data_y_5d = data['Label_5d']
+    data_y_10d = data['Label_10d']
     data_liquid = data['liquid']
 
     if normed_method == 'zscore':
@@ -203,19 +181,23 @@ def normed_data(data, date, stage, factor_list, normed_method=params.normed_meth
 
     data_ret1d = data['Ret1d']
     data_x_np = np.nan_to_num(data_X.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
-    data_y_np = np.nan_to_num(data_y.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    data_y_1d_np = np.nan_to_num(data_y_1d.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    data_y_5d_np = np.nan_to_num(data_y_5d.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    data_y_10d_np = np.nan_to_num(data_y_10d.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
     data_liquid_np = np.nan_to_num(data_liquid.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
     data_ret1d_np = np.nan_to_num(data_ret1d.to_numpy(dtype=np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
 
     return torch.from_numpy(data_x_np), \
-        torch.from_numpy(data_y_np), \
+        torch.from_numpy(data_y_1d_np), \
+        torch.from_numpy(data_y_5d_np), \
+        torch.from_numpy(data_y_10d_np), \
         code_value, torch.from_numpy(data_liquid_np), \
         torch.from_numpy(data_ret1d_np)
 
 
 def collate_fn(datas):
-    data_X, data_y, data_time, code_value, data_liquid, data_ret1d = zip(*datas)
-    return list(data_X), list(data_y), list(data_time), list(code_value), list(data_liquid), list(data_ret1d)
+    data_X, data_y_1d, data_y_5d, data_y_10d, data_time, code_value, data_liquid, data_ret1d = zip(*datas)
+    return list(data_X), list(data_y_1d), list(data_y_5d), list(data_y_10d), list(data_time), list(code_value), list(data_liquid), list(data_ret1d)
 
 
 class DLDataset(torch.utils.data.Dataset):
@@ -227,10 +209,11 @@ class DLDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         date = self.date_list[index]
         if date == 'out_sample':
-            return 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample'
+            return 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample', 'out_sample'
         data = self.all_data.loc[date].copy()
-        data_X, data_y, code_value, data_liquid, data_ret1d = normed_data(data, date, stage=self.stage, factor_list=self.factor_list)
-        return data_X, data_y, date, code_value, data_liquid, data_ret1d
+        data_X, data_y_1d, data_y_5d, data_y_10d, code_value, data_liquid, data_ret1d = normed_data(
+            data, date, stage=self.stage, factor_list=self.factor_list)
+        return data_X, data_y_1d, data_y_5d, data_y_10d, date, code_value, data_liquid, data_ret1d
     def __len__(self):
         return len(self.date_list)
 
@@ -247,7 +230,7 @@ class DLDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(self.tr, batch_size=self.args.batch_size, collate_fn=collate_fn,
                           num_workers=min(8, cpu_num // 2) if torch.cuda.is_available() else 0, shuffle=True,
-                          persistent_workers=True, drop_last=False, pin_memory=True)
+                          persistent_workers=torch.cuda.is_available(), drop_last=False, pin_memory=True)
     def _val_dataloader(self, dataset):
         return DataLoader(dataset, batch_size=1, collate_fn=collate_fn,
                           num_workers=0, persistent_workers=False, pin_memory=False, drop_last=False)
@@ -279,7 +262,7 @@ def get_loss_fn(loss):
         argsort = torch.argsort(preds, descending=True, dim=0)
         weight_new = _get_wpcc_rank_weights(preds.shape[0], preds.device, preds.dtype)
         weight = torch.empty_like(preds)
-        weight.scatter_(0, argsort, weight_new.expand_as(preds))
+        weight.scatter_(0, argsort, weight_new.expand_as(preds).to(weight.dtype))
         weight_sum = weight.sum(dim=0)
         weighted_pred_mean = (preds * weight).sum(dim=0) / weight_sum
         weighted_y_mean = (y * weight).sum(dim=0) / weight_sum
@@ -290,26 +273,6 @@ def get_loss_fn(loss):
     def output(loss):
         return {'wpcc': wpcc}[loss]
     return output(loss)
-
-
-def pairwise_ranking_loss(preds, y, n_pairs=2000):
-    n = preds.shape[0]
-    if n < 2:
-        return torch.tensor(0.0, device=preds.device)
-    n_pairs = min(n_pairs, n * (n - 1) // 2)
-    idx_i = torch.randint(0, n, (n_pairs,), device=preds.device)
-    idx_j = torch.randint(0, n, (n_pairs,), device=preds.device)
-    valid = idx_i != idx_j
-    idx_i, idx_j = idx_i[valid], idx_j[valid]
-    if len(idx_i) == 0:
-        return torch.tensor(0.0, device=preds.device)
-    si = preds[idx_i].squeeze(-1)
-    sj = preds[idx_j].squeeze(-1)
-    yi = y[idx_i].squeeze(-1)
-    yj = y[idx_j].squeeze(-1)
-    target = (yi > yj).float()
-    logit = si - sj
-    return F.binary_cross_entropy_with_logits(logit, target)
 
 
 _TIME_WEIGHT_CACHE = {}
@@ -334,118 +297,63 @@ def _get_time_weight(date_str, ref_date=None, half_life_days=None):
     return weight
 
 
-# ── SE-Net Layer ───────────────────────────────────────────────────────
 
-class SELayer(nn.Module):
-    def __init__(self, num_factors, reduction=16):
+class ConcreteDropout(nn.Module):
+    """Concrete Dropout: 可学习 dropout rate 的正则化 dropout 层。"""
+    def __init__(self, temperature=0.1, p_init=0.2, reg_weight=1e-5):
         super().__init__()
-        bottleneck = max(8, num_factors // reduction)
-        self.fc1 = nn.Linear(num_factors * 2, bottleneck)
-        self.fc2 = nn.Linear(bottleneck, num_factors)
-        self.sigmoid = nn.Sigmoid()
+        self.temperature = temperature
+        self.reg_weight = reg_weight
+        init_log_alpha = np.log(p_init / (1.0 - p_init)) * temperature
+        self.log_alpha = nn.Parameter(torch.tensor(init_log_alpha, dtype=torch.float32))
+
+    def get_regularization(self):
+        """返回当前层的 KL 正则化项（计算图张量），不在模块上存储非叶张量。"""
+        return self.reg_weight * torch.sigmoid(self.log_alpha / self.temperature)
 
     def forward(self, x):
-        avg_pool = x.mean(dim=0, keepdim=True)
-        max_pool = x.max(dim=0, keepdim=True)[0]
-        squeeze = torch.cat([avg_pool, max_pool], dim=1)
-        excite = F.relu(self.fc1(squeeze))
-        excite = self.fc2(excite)
-        return x * self.sigmoid(excite)
+        if self.training:
+            noise = torch.rand_like(x)
+            gumbel_noise = -torch.log(-torch.log(noise + 1e-10) + 1e-10)
+            concrete_p = torch.sigmoid((self.log_alpha + gumbel_noise) / self.temperature)
+            return x * concrete_p
+        else:
+            p = torch.sigmoid(self.log_alpha / self.temperature)
+            return x * (1.0 - p)
 
-
-# ── Single Normal Head (shared architecture per view) ──────────────────
-
-class NormalHead(nn.Module):
-    """Single view head: 128 → 32 → 1 with residual."""
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(128, 32)
-        self.bn = nn.BatchNorm1d(32)
-        self.act = nn.GELU()
-        self.proj = nn.Linear(128, 32)
-        self.output = nn.Linear(32, 1)
-
-    def forward(self, shared_repr):
-        identity = self.proj(shared_repr)
-        out = self.fc(shared_repr)
-        out = self.bn(out)
-        out = self.act(out)
-        return self.output(out + identity)
-
-
-# ── Diversity Loss ─────────────────────────────────────────────────────
-
-def diversity_loss(view_scores, target_corr=0.7):
-    """Penalize views that are too highly correlated.
-
-    L_div = max(0, mean_pearson_corr(views) - target_corr)
-
-    Args:
-        view_scores: list of K tensors, each (N, 1) scalar scores
-        target_corr: maximum allowed mean correlation
-
-    Returns:
-        scalar penalty (0 if views are already diverse enough)
-    """
-    K = len(view_scores)
-    if K < 2:
-        return torch.tensor(0.0, device=view_scores[0].device)
-
-    # Stack: (N, K)
-    stacked = torch.cat([s.squeeze(-1).unsqueeze(-1) for s in view_scores], dim=-1)
-
-    # Center
-    centered = stacked - stacked.mean(dim=0, keepdim=True)
-
-    # Covariance matrix: (K, K)
-    cov = (centered.T @ centered) / (centered.shape[0] - 1 + 1e-8)
-
-    # Standard deviations
-    stds = torch.sqrt(torch.diag(cov) + 1e-8)
-
-    # Correlation matrix
-    corr = cov / (stds.unsqueeze(0) * stds.unsqueeze(1) + 1e-8)
-
-    # Mean off-diagonal correlation
-    mask = ~torch.eye(K, dtype=torch.bool, device=corr.device)
-    mean_corr = corr[mask].mean()
-
-    return F.relu(mean_corr - target_corr)
-
-
-# ── V9.5 PredictModel: SE-Net + Multi-View Heads ───────────────────────
+# ── PredictModel（共享主干 512→256→64，3 个输出头分别预测 1d/5d/10d）─────────
 
 class PredictModel(nn.Module):
-    """SE-Net backbone → K parallel Normal Heads + shared Limit-Up Head."""
-    def __init__(self, args):
+    """MLP-Wide —— 共享主干 512→256→64，3 个输出头用于多周期联合训练"""
+    def __init__(self, args=None, input_dim=None, **kwargs):
         super(PredictModel, self).__init__()
-        input_dim = params.factor_num
+        if input_dim is None:
+            input_dim = params.factor_num
 
-        self.se_layer = SELayer(input_dim, reduction=params.se_reduction)
-
+        # 共享层
+        # 层 1: 输入投射 → 512 加宽首层
         self.input_layer = nn.Sequential(
-            nn.Linear(input_dim, 256),
+            nn.Linear(input_dim, 512),
             nn.LeakyReLU(inplace=True),
-            nn.Dropout(0.2)
+            ConcreteDropout(temperature=0.1, p_init=0.2)
         )
-        self.res_fc1 = nn.Linear(256, 128)
-        self.res_bn1 = nn.BatchNorm1d(128)
-        self.res_act1 = nn.GELU()
-        self.res_drop1 = nn.Dropout(0.1)
-        self.res_proj1 = nn.Linear(256, 128)
-
-        # K parallel Normal Heads
-        self.normal_heads = nn.ModuleList([
-            NormalHead() for _ in range(params.num_views)
-        ])
-
-        # Shared Limit-Up Head
-        self.limit_up_fc2 = nn.Linear(128, 32)
-        self.limit_up_bn2 = nn.BatchNorm1d(32)
-        self.limit_up_act2 = nn.GELU()
-        self.limit_up_proj2 = nn.Linear(128, 32)
-        self.limit_up_output = nn.Linear(32, 1)
-
+        # 层 2: 512 → 256
+        self.hidden1 = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.GELU(),
+            ConcreteDropout(temperature=0.1, p_init=0.1),
+        )
+        # 层 3: 256 → 64
+        self.hidden2 = nn.Sequential(
+            nn.Linear(256, 64),
+            nn.BatchNorm1d(64),
+            nn.GELU(),
+        )
+        # 三个输出头用于多周期预测
+        self.output_1d = nn.Linear(64, 1)
+        self.output_5d = nn.Linear(64, 1)
+        self.output_10d = nn.Linear(64, 1)
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -459,101 +367,16 @@ class PredictModel(nn.Module):
                 if m.bias is not None:
                     torch.nn.init.constant_(m.bias, 0)
 
-    def _make_feature_mask(self, x, rate, seed_offset=0):
-        """Create a Bernoulli feature dropout mask.
-        
-        Uses a deterministic seed based on global args.seed + offset
-        to ensure reproducibility across runs while maintaining
-        diversity across views.
-        """
-        n_features = x.shape[1]
-        keep_prob = 1.0 - rate
-        # Deterministic seed: global seed + offset (reproducible across runs)
-        generator = torch.Generator(device=x.device)
-        base_seed = 3253  # args.seed default
-        generator.manual_seed(base_seed + seed_offset)
-        mask = torch.bernoulli(
-            torch.full((1, n_features), keep_prob, device=x.device),
-            generator=generator)
-        return mask / keep_prob
-
-    def forward(self, tsdata, feature_dropout_rate=0.0, training_views=True):
-        """Forward pass.
-
-        Args:
-            tsdata: (N, F) input factor data
-            feature_dropout_rate: dropout rate for feature masking
-            training_views: if True, return all K view scores separately
-                           if False, return mean score (inference mode)
-
-        Returns:
-            If training_views: (list of K scores, gate, limit_up_score)
-            If not: (mean_score, gate, limit_up_score)
-        """
+    def forward(self, tsdata):
         x = tsdata.float()
-
-        x = self.se_layer(x)
-
-        if params.near_limit_up_idx is not None and params.near_limit_up_idx < x.shape[1]:
-            bias_20_zscore = x[:, params.near_limit_up_idx]
-        else:
-            bias_20_zscore = torch.zeros(x.shape[0], device=x.device)
-
-        # Feature dropout on input (before shared backbone)
-        if feature_dropout_rate > 0:
-            x = x * self._make_feature_mask(x, feature_dropout_rate, seed_offset=0)
-
         x = self.input_layer(x)
-        identity = self.res_proj1(x)
-        out = self.res_fc1(x)
-        out = self.res_bn1(out)
-        out = self.res_act1(out)
-        out = self.res_drop1(out)
-        shared_repr = out + identity  # (N, 128)
-
-        # Shared Limit-Up Head
-        lu_identity = self.limit_up_proj2(shared_repr)
-        lu_out = self.limit_up_fc2(shared_repr)
-        lu_out = self.limit_up_bn2(lu_out)
-        lu_out = self.limit_up_act2(lu_out)
-        limit_up_score = self.limit_up_output(lu_out + lu_identity)
-
-        gate = torch.sigmoid(
-            (bias_20_zscore - params.gate_threshold) * params.gate_temperature
-        ).unsqueeze(1)
-
-        # K parallel Normal Heads
-        view_scores = []
-        for head in self.normal_heads:
-            view_score = head(shared_repr)
-            final_view = gate * limit_up_score + (1.0 - gate) * view_score
-            view_scores.append(final_view)
-
-        if training_views:
-            return view_scores, gate, limit_up_score, shared_repr
-        else:
-            # Inference: mean of views
-            mean_score = torch.stack(view_scores, dim=0).mean(dim=0)
-            return mean_score, gate, limit_up_score
-
-
-# ── WarmupReduceLROnPlateau ────────────────────────────────────────────
-
-class WarmupReduceLROnPlateau(ReduceLROnPlateau):
-    def __init__(self, optimizer, warmup_epochs: int, **kwargs):
-        self._warmup_base_lrs = [float(g['lr']) for g in optimizer.param_groups]
-        super().__init__(optimizer, **kwargs)
-        self.warmup_epochs = warmup_epochs
-        self._warmup_step = 0
-    def step(self, metrics=None):
-        if self._warmup_step < self.warmup_epochs:
-            progress = float(self._warmup_step + 1) / float(max(1, self.warmup_epochs))
-            for param_group, base_lr in zip(self.optimizer.param_groups, self._warmup_base_lrs):
-                param_group['lr'] = base_lr * progress
-            self._last_lr = [group['lr'] for group in self.optimizer.param_groups]
-            self._warmup_step += 1
-        else:
-            super().step(metrics)
+        x = self.hidden1(x)
+        x = self.hidden2(x)
+        # 三个输出头分别输出 1d/5d/10d 收益预测
+        pred_1d = self.output_1d(x)
+        pred_5d = self.output_5d(x)
+        pred_10d = self.output_10d(x)
+        return pred_1d, pred_5d, pred_10d
 
 
 # ── Lightning Module ───────────────────────────────────────────────────
@@ -565,14 +388,16 @@ class DLLitModule(LightningModule):
         self.model = PredictModel(args)
         print(self.model)
         self.loss_fn = get_loss_fn(self.args.loss)
+        # V3.0: 可学习多周期权重 (V1.2)
+        self.log_horizon_weights = nn.Parameter(
+            torch.tensor([0.0, -0.6931, -1.2040], dtype=torch.float32))
         self.validation_step_outputs = []
         self.test_step_outputs = []
         self.test_times = set()
 
     def forward(self, tsdata):
-        """Inference: mean of all views."""
-        mean_score, gate, limit_up_score = self.model(tsdata, feature_dropout_rate=0.0, training_views=False)
-        return mean_score
+        """推理前向传播，返回 (pred_1d, pred_5d, pred_10d)。"""
+        return self.model(tsdata)
 
     @staticmethod
     def _pearson_corr(preds, ret):
@@ -586,85 +411,81 @@ class DLLitModule(LightningModule):
         return (preds_centered * ret_centered).sum() / denominator
 
     def training_step(self, batch, batch_idx):
-        tsdatas, rets, times, code_values, liquids, rets_1d = batch  # rets_1d not used in training loss
+        # 解包 3 个标签用于多周期训练
+        tsdatas, rets_1d, rets_5d, rets_10d, times, code_values, liquids, rets_1d_eval = batch
         total_loss_sum = 0.0
         for i in range(len(tsdatas)):
-            tsdata, ret, liquid = tsdatas[i], rets[i], liquids[i]
-            ret = ret.unsqueeze(1)
+            tsdata = tsdatas[i]
+            ret_1d = rets_1d[i].unsqueeze(1)
+            ret_5d = rets_5d[i].unsqueeze(1)
+            ret_10d = rets_10d[i].unsqueeze(1)
 
-            # Forward with all K views
-            view_scores, gate, limit_up_score, shared_repr = self.model(
-                tsdata, feature_dropout_rate=params.feature_dropout_rate, training_views=True)
+            # V3.0: 无 Mixup，直接使用原始数据
+            # 从共享主干获取 3 个预测值
+            pred_1d, pred_5d, pred_10d = self.model(tsdata)
 
-            # Per-view losses
-            view_losses = []
-            for v_score in view_scores:
-                v_wpcc = self.loss_fn(v_score, ret)
-                v_rank = pairwise_ranking_loss(v_score, ret)
-                view_losses.append(v_wpcc + params.ranknet_alpha * v_rank)
+            # 为每个周期计算 WPCC 损失
+            loss_1d = self.loss_fn(pred_1d, ret_1d)
+            loss_5d = self.loss_fn(pred_5d, ret_5d)
+            loss_10d = self.loss_fn(pred_10d, ret_10d)
 
-            mean_view_loss = torch.stack(view_losses).mean()
-
-            # Diversity loss: penalize high correlation between views
-            div_loss = diversity_loss(view_scores, target_corr=params.target_corr)
-
-            # Limit-up extra loss (on mean score)
-            mean_score = torch.stack(view_scores, dim=0).mean(dim=0)
-            lu_mask = (gate > 0.5).squeeze(1)
-            lu_extra = torch.tensor(0.0, device=mean_score.device)
-            if lu_mask.sum() > 5:
-                lu_extra = self.loss_fn(mean_score[lu_mask], ret[lu_mask])
+            # V3.0: 可学习权重 (softmax 归一化)
+            learned_weights = F.softmax(self.log_horizon_weights, dim=0)
+            weight_scale = 1.8
+            w1, w5, w10 = (learned_weights * weight_scale).unbind()
+            multi_loss = w1 * loss_1d + w5 * loss_5d + w10 * loss_10d
 
             time_str = times[i] if isinstance(times[i], str) else str(times[i])
             time_weight = _get_time_weight(time_str)
-
-            total_loss = (
-                mean_view_loss
-                + params.diversity_weight * div_loss
-                + params.limit_up_loss_weight * lu_extra
-            ) * time_weight
-            total_loss_sum += total_loss
+            total_loss_sum += multi_loss * time_weight
 
         avg_loss = total_loss_sum / len(tsdatas)
+        # V3.1: 添加 Concrete Dropout KL 正则化
+        reg_loss = 0.0
+        for m in self.model.modules():
+            if isinstance(m, ConcreteDropout):
+                reg_loss = reg_loss + m.get_regularization()
+        avg_loss = avg_loss + reg_loss / max(1, len(tsdatas))
         self.log('train_loss', avg_loss, prog_bar=True, on_step=True)
-        self.log('div_loss', div_loss.detach(), prog_bar=False, on_step=True)
         return avg_loss
 
     def _evaluate_step(self, batch, batch_idx, stage):
-        def get_excess_return(preds, ret, liquid, money):
-            topk = min(500, preds.shape[0])
-            sort = torch.argsort(preds.squeeze(1), descending=True, stable=True)[:topk]
-            sorted_liquid = liquid[sort].reshape(-1)
-            sorted_ret = ret[sort].reshape(-1)
-            money_tensor = preds.new_tensor(money)
-            previous_hold = torch.cat([sorted_liquid.new_zeros(1), sorted_liquid.cumsum(dim=0)[:-1]])
-            remaining_before_buy = money_tensor - previous_hold
-            hold_money = torch.minimum(remaining_before_buy, sorted_liquid)
-            hold_money = torch.where(remaining_before_buy >= 1, torch.clamp(hold_money, min=0.0), torch.zeros_like(hold_money))
-            total_ret = (sorted_ret * hold_money).sum() / money_tensor
-            return total_ret
 
-        excess_return_list = []
+        def get_personal_return(preds, ret):
+            """个人 ALL-IN 回测：选预测值最高的 1 只全仓买入，隔日开盘卖出，无流动性约束。
+
+            Args:
+                preds: (N, 1) 模型预测值
+                ret:  (N,) 或 (N, 1) 真实隔日收益率 Ret1d
+
+            Returns:
+                float: 选中股票的隔日真实收益率
+            """
+            best_idx = torch.argmax(preds.squeeze(1))
+            return ret[best_idx].item()
+
+        daily_return_list = []
         ic_list = []
-        tsdatas, rets, times, code_values, liquids, rets_1d = batch
+        # 解包全部 3 个标签（评估仅使用 ret_1d）
+        tsdatas, rets_1d_batch, rets_5d_batch, rets_10d_batch, times, code_values, liquids, rets_1d_eval = batch
         for i in range(len(tsdatas)):
-            tsdata, ret_10d, time, code_value, liquid, ret_1d = tsdatas[i], rets[i], times[i], code_values[i], liquids[i], rets_1d[i]
+            tsdata, time, code_value, liquid, ret_1d = tsdatas[i], times[i], code_values[i], liquids[i], rets_1d_eval[i]
             if isinstance(tsdata, str) and tsdata == 'out_sample':
                 pass
             else:
-                preds = self.forward(tsdata)
+                # 评估仅使用 pred_1d
+                pred_1d, _, _ = self.forward(tsdata)
                 if stage == "test":
                     self.test_times.add(time)
-                    preds_cpu = preds.detach().cpu().numpy()
+                    preds_cpu = pred_1d.detach().cpu().float().numpy()
                     res = pd.DataFrame(preds_cpu, index=code_value, columns=['value'])
                     res.index.name = 'Code'
                     res.to_pickle(f'{params.test_save_path}/{time}.pkl')
-                # 使用真实 1 日收益计算评估指标（非训练 10d label）
-                excess_return = get_excess_return(preds, ret_1d, liquid, money=1.5e9)
-                excess_return_list.append(excess_return)
-                ic_list.append(self._pearson_corr(preds.squeeze(), ret_1d))
+                daily_ret = get_personal_return(pred_1d, ret_1d)
+                daily_return_list.append(daily_ret)
+                ic_list.append(self._pearson_corr(pred_1d.squeeze(), ret_1d))
         try:
-            res_list = [sum(excess_return_list) / len(excess_return_list), sum(ic_list) / len(ic_list)]
+            res_list = [sum(daily_return_list) / len(daily_return_list), sum(ic_list) / len(ic_list)]
         except Exception:
             res_list = [np.nan, np.nan]
         if stage == 'val':
@@ -696,15 +517,15 @@ class DLLitModule(LightningModule):
         self.test_times.clear()
 
     def on_before_optimizer_step(self, optimizer):
-        """Manual gradient clipping — compatible with bf16-mixed precision.
-        
-        Lightning's built-in gradient_clip_val triggers
-        'No inf checks were recorded for this optimizer' under bf16 autocast.
-        Manual clipping in this hook runs outside autocast and avoids the bug.
-        """
+        """V3.0: 梯度中心化 (V2.8) + 手动梯度裁剪 —— 兼容 bf16-mixed 精度。"""
+        # V3.0 Step 1: 梯度中心化 (GC) - 对权重矩阵梯度做零均值化
+        for p in self.parameters():
+            if p.grad is not None and p.dim() > 1:
+                p.grad.data.sub_(p.grad.data.mean(dim=tuple(range(1, p.dim())), keepdim=True))
+        # Step 2: 梯度裁剪
         if params.gradient_clip_val is not None and params.gradient_clip_val > 0:
             torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=params.gradient_clip_val)
-    
+
     def configure_optimizers(self):
         kwargs = {'lr': self.args.lr, 'weight_decay': self.args.weight_decay}
         optimizer = {
@@ -712,19 +533,20 @@ class DLLitModule(LightningModule):
             'adamw': torch.optim.AdamW(self.model.parameters(), **kwargs),
         }[self.args.optimizer]
 
-        warmup_epochs = params.warmup_epochs
-        if warmup_epochs > 0:
-            scheduler = {
-                'scheduler': WarmupReduceLROnPlateau(
-                    optimizer, warmup_epochs=warmup_epochs,
-                    mode='max', factor=0.5, patience=3, min_lr=5e-6, cooldown=2),
-                'monitor': 'val_wei', 'interval': 'epoch', 'frequency': 1,
-            }
-        else:
-            scheduler = {
-                'scheduler': ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, min_lr=5e-6, cooldown=2),
-                'monitor': 'val_wei',
-            }
+        # OneCycleLR —— 快速探索 + 精细收敛
+        total_steps = self.args.max_epochs
+        scheduler = {
+            'scheduler': OneCycleLR(
+                optimizer,
+                max_lr=params.onecycle_max_lr,
+                total_steps=total_steps,
+                pct_start=params.onecycle_pct_start,
+                div_factor=params.onecycle_div_factor,
+                final_div_factor=params.onecycle_final_div_factor,
+            ),
+            'interval': 'epoch',
+            'frequency': 1,
+        }
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def configure_callbacks(self):
@@ -759,9 +581,11 @@ def train_single(args, name, seed, train_date_list, valid_date_list, test_date_l
             pass
     enable_tqdm_progress = sys.stdout.isatty() or os.environ.get("FORCE_TQDM_PROGRESS") == "1"
     trainer_callbacks = [TQDMProgressBar(refresh_rate=10)] if enable_tqdm_progress else []
+    # 梯度累积 batch_size=8 × 4 = 有效 batch 32
     trainer = Trainer(**args_for_trainer,
                       callbacks=trainer_callbacks,
                       num_sanity_val_steps=2,
+                      accumulate_grad_batches=4,
                       profiler=profiler, logger=logger,
                       enable_progress_bar=enable_tqdm_progress,
                       deterministic=False,
@@ -774,29 +598,18 @@ def train_single(args, name, seed, train_date_list, valid_date_list, test_date_l
     print(test_result)
 
 
-# ── Main train entry ───────────────────────────────────────────────────
+# ── 主训练入口 ───────────────────────────────────────────────────
 
 def get_train_date_split(fold, season, date_list):
-    """Fixed train split: 4yr train + random 1/4 valid + quarter test.
-
-    Args:
-        fold: fold index (1-4), used as random seed offset
-        season: e.g. "2025q1"
-        date_list: sorted list of date strings "YYYYMMDD"
-
-    Returns:
-        (train_dates, valid_dates, test_dates)
-    """
+    """固定训练集划分：4 年训练 + 随机 1/4 验证 + 季度测试。"""
     year = int(season[:4])
     q = int(season[5])
     test_start = datetime(year, (q - 1) * 3 + 1, 1)
     test_end = test_start + relativedelta(months=3)
 
-    # Test: 目标季度
     test_dates = [d for d in date_list
                   if test_start <= datetime.strptime(d, "%Y%m%d") < test_end]
 
-    # Valid: test 开始前 12 个月中随机抽取 1/4 天数
     valid_start = test_start - relativedelta(years=1)
     valid_end = test_start
     valid_pool = [d for d in date_list
@@ -806,7 +619,6 @@ def get_train_date_split(fold, season, date_list):
     sample_size = max(1, len(valid_pool) // 4)
     valid_dates = sorted(random.sample(valid_pool, sample_size))
 
-    # Train: valid 开始前固定 4 年
     train_start = valid_start - relativedelta(years=4)
     train_dates = [d for d in date_list
                    if train_start <= datetime.strptime(d, "%Y%m%d") < valid_start]
@@ -814,8 +626,8 @@ def get_train_date_split(fold, season, date_list):
     return train_dates, valid_dates, test_dates
 
 
-def train(args, name, market, season, fold, state='train'):
-    save_path = rf"{root_path}/model_test/{get_basic_name()}"
+def train(args, season, fold, state='train'):
+    save_path = rf"{root_path}/model_test"
     try:
         os.makedirs(save_path, exist_ok=True)
         current_file_path = os.path.abspath(__file__)
@@ -823,13 +635,12 @@ def train(args, name, market, season, fold, state='train'):
     except Exception as e:
         print(e)
 
-    params.model_name = f"{save_path}/{name[:len(market) + 19]}"
-    params.test_save_path = f"{save_path}/{name[:len(market)] + name[len(market) + 6:len(market) + 19]}--fold{fold}"
+    params.test_save_path = f"{save_path}/fold{fold}"
     os.makedirs(params.test_save_path, exist_ok=True)
 
     params.all_data = pd.read_feather(rf'{fac_path}/{fac_name}.fea')
     date_list = list(params.all_data["date"].unique())
-    date_list = [x for x in date_list if x in params.ret_data.index and x in params.liquid_data.index]
+    date_list = [x for x in date_list if x in params.ret_data.index and x in params.liquid_data.index and x in params.ret_5d_data.index and x in params.ret_10d_data.index]
     date_list.sort()
     params.all_data = params.all_data.set_index("date").sort_index()
 
@@ -839,36 +650,29 @@ def train(args, name, market, season, fold, state='train'):
 
     if len(test_date_list) == 0:
         test_date_list = ['out_sample']
-    elif market == 'ALL':
-        # Drop columns where ALL values are 0 (no signal)
-        all_zero_mask = (params.all_data == 0).all(axis=0)
-        params.all_data = params.all_data.loc[:, ~all_zero_mask]
-    else:
-        raise NotImplementedError
+    all_zero_mask = (params.all_data == 0).all(axis=0)
+    params.all_data = params.all_data.loc[:, ~all_zero_mask]
 
     feature_map = list(params.all_data.columns[1:])
     params.factor_list = feature_map[:]
-    try:
-        params.near_limit_up_idx = feature_map.index('bias_20')
-    except ValueError:
-        params.near_limit_up_idx = None
-
-    with open(rf'{save_path}/{market}{name[len(market):len(market) + 6]}-feature_map.fea', 'w') as file:
+    with open(rf'{save_path}/feature_map.fea', 'w') as file:
         for idx, factor_name in enumerate(feature_map):
             file.write(rf'{factor_name}={idx}\n')
 
     params.factor_num = params.all_data.shape[1] - 1
 
-    print(f"[V3.0] MVFP: num_views={params.num_views}, diversity_weight={params.diversity_weight}")
-    print(f"  Training window: 4 years (extended from baseline 2 years)")
-    print(f"  target_corr={params.target_corr}")
+    print(f"[V3.1] Concrete Dropout (1d+5d+10d)")
+    print(f"  Architecture: MLP-Wide Shared Body 512→256→64 → 3 Heads (1d/5d/10d)")
+    print(f"  V3.0 Clean Baseline + Concrete Dropout (learnable per-layer dropout rates)")
+    print(f"  ConcreteDropout(temp=0.1) + KL reg + LabelSmooth(0.02) + OneCycleLR + SWA")
+    print(f"  Training window: 4 years")
     print(f"season: {season}, fold: {fold}")
     print(f"train: {len(train_date_list)} dates:  {train_date_list} ")
     print(f"valid: {len(valid_date_list)} dates:  {valid_date_list} ")
     print(f"test: {len(test_date_list)} dates:  {test_date_list} ")
 
     if state == 'train':
-        train_name = f"{name}/{season}/fold{fold}"
+        train_name = f"{season}/fold{fold}"
         train_single(args, train_name, args.seed, train_date_list, valid_date_list, test_date_list)
     else:
         raise NotImplementedError

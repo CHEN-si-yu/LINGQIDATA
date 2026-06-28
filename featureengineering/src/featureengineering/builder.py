@@ -183,13 +183,14 @@ def _check_source_dates(dependencies: tuple[str, ...], source_root: Path) -> dic
 
 
 def _get_recent_trading_days(source_root: Path, n_days: int = 5, effective_end: str | None = None) -> list[str]:
-    """Return the last *n_days* trading days (YYYYMMDD) from the calendar.
+    """Return the last *n_days* trading days (YYYYMMDD) before *effective_end*.
 
     Reads ``calendar.parquet`` and returns the most recent dates where
     ``is_open == 1``, sorted ascending.
 
-    When *effective_end* is provided, dates beyond it are excluded so
-    the quality gate never compares against future trading days.
+    When *effective_end* is provided, only dates strictly before it are
+    returned — *effective_end* itself is excluded because it is the target
+    date for the upcoming incremental build, not a "past" trading day.
     """
     import pandas as pd
 
@@ -215,9 +216,12 @@ def _get_recent_trading_days(source_root: Path, n_days: int = 5, effective_end: 
         .unique()
         .tolist()
     )
-    # Cap at effective_end so we don't compare against future dates
+    # 取 effective_end *之前* 的过去 N 个交易日（不包含 effective_end 本身）。
+    # effective_end 是本次构建即将增量补充的目标日期，因子文件理所当然
+    # 还不包含它 —— 若将其纳入质量检查的范围，会误判为 missing_dates
+    # 从而触发不必要的全量重建。
     if effective_end is not None:
-        dates = [d for d in dates if d <= effective_end]
+        dates = [d for d in dates if d < effective_end]
     return dates[-n_days:]
 
 
@@ -229,13 +233,17 @@ def _check_factor_recent_quality(
 ) -> str:
     """Check whether recent trading days in a .fea file have valid data.
 
+    Only trading days **before** *effective_end* are checked — the factor
+    is not expected to contain *effective_end* itself because that is the
+    very date the upcoming incremental build will add.
+
     Returns one of:
 
-    - ``"ok"`` — all *n_days* recent trading days are present and have at
+    - ``"ok"`` — all *n_days* past trading days are present and have at
       least some non-NaN values.
-    - ``"all_nan"`` — the recent trading days exist in the file but every
+    - ``"all_nan"`` — the past trading days exist in the file but every
       value across all stocks is NaN (upstream data gap).
-    - ``"missing_dates"`` — at least one of the recent trading days is
+    - ``"missing_dates"`` — at least one of the past trading days is
       absent from the file entirely.
     - ``"no_calendar"`` — the calendar file is unavailable; cannot check.
     - ``"unreadable"`` — the .fea file exists but could not be read.

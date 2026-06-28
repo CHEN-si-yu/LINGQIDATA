@@ -37,11 +37,9 @@ def _load_pledge(context, value_cols):
     df = context.load_financial("pledge_stat.parquet", value_cols=value_cols, date_col="end_date")
     return df.groupby(level="Code").shift(_PLEDGE_LAG).groupby(level="Code").ffill()
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # A — Holder Concentration Dynamics
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="holder_concentration_speed",
@@ -62,7 +60,6 @@ def factor_holder_concentration_speed(context: FactorContext):
     # Negate: decreasing holder count = good concentration
     return cross_sectional_rank(-chg)
 
-
 @register_factor(
     name="holder_dispersion_index",
     description="股东分散度因子，1/股东人数截面排名（取负向=高分散排后=低集中度）。",
@@ -80,7 +77,6 @@ def factor_holder_dispersion_index(context: FactorContext):
 
     return cross_sectional_rank(-dispersion)
 
-
 @register_factor(
     name="holder_change_volatility",
     description="股东变化波动率因子，股东数季度环比变化的4季度标准差截面排名（取负向=剧烈变动排后）。",
@@ -97,7 +93,6 @@ def factor_holder_change_volatility(context: FactorContext):
     vol = rolling_group_std(chg, 4)
 
     return cross_sectional_rank(-vol)
-
 
 @register_factor(
     name="holder_seasonal_pattern",
@@ -122,11 +117,9 @@ def factor_holder_seasonal_pattern(context: FactorContext):
 
     return cross_sectional_rank(-seasonal)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # B — Retail/Institutional Ratio Proxies
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="holder_retail_inst_ratio",
@@ -153,7 +146,6 @@ def factor_holder_retail_inst_ratio(context: FactorContext):
 
     # Retail proxy: low avg holding = many retail investors
     return cross_sectional_rank(avg_holding)
-
 
 @register_factor(
     name="holder_smart_money_proxy",
@@ -183,7 +175,6 @@ def factor_holder_smart_money_proxy(context: FactorContext):
 
     smart = chg_rank * ret_rank
     return cross_sectional_rank(smart)
-
 
 @register_factor(
     name="holder_distribution_signal",
@@ -215,11 +206,9 @@ def factor_holder_distribution_signal(context: FactorContext):
     distribution = holder_inc_rank * price_weak_rank
     return cross_sectional_rank(-distribution)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # C — Holder-Price Divergence & Confirmation
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="holder_price_divergence_4q",
@@ -253,7 +242,6 @@ def factor_holder_price_divergence_4q(context: FactorContext):
     divergence = h_rank * p_rank
     return cross_sectional_rank(divergence)
 
-
 @register_factor(
     name="holder_momentum_confirmation",
     description="股东动量确认因子，价格动量+股东集中信号截面排名（趋势获筹码确认排前）。",
@@ -283,45 +271,9 @@ def factor_holder_momentum_confirmation(context: FactorContext):
     confirmation = h_rank * p_rank
     return cross_sectional_rank(confirmation)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # D — Pledge Risk Factors
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-@register_factor(
-    name="pledge_coverage_ratio",
-    description="质押覆盖倍数因子，总市值/(质押股数×质押时股价估算)截面排名（高覆盖=安全边际排前）。",
-    category="financial",
-    thesis="市值对质押金额的覆盖倍数是质押风险的核心指标——覆盖倍数>3倍则质押爆仓风险极低，<1.5倍则处于危险区域。股价每下跌一定幅度，覆盖倍数等比例下降。",
-    dependencies=("pledge_stat.parquet", "finance.parquet", "calendar.parquet"),
-)
-def factor_pledge_coverage_ratio(context: FactorContext):
-    pledge = _load_pledge(context, ["pledge_ratio", "total_share"])
-    finance = context.load("finance.parquet")
-
-    pledge_ratio = pledge["pledge_ratio"]
-    total_share_pledge = pledge["total_share"]
-
-    # Pledged shares
-    pledged_shares = pledge_ratio * total_share_pledge / 100.0  # ratio is in percent
-
-    # per-code latest close price (approximation)
-    close_per_code = finance["close"].groupby(level="Code").last()
-
-    total_mv = finance["total_mv"]
-
-    common = pledged_shares.index.intersection(total_mv.index)
-    pledged_aligned = pledged_shares.loc[common]
-    mv_aligned = total_mv.loc[common]
-
-    # Coverage = market cap / estimated pledge value
-    codes = pledged_aligned.index.get_level_values("Code")
-    estimated_pledge_value = pledged_aligned * close_per_code.reindex(codes).values
-    coverage = mv_aligned / estimated_pledge_value.replace(0, np.nan)
-
-    return cross_sectional_rank(coverage)
-
 
 @register_factor(
     name="pledge_liquidation_risk",
@@ -354,7 +306,6 @@ def factor_pledge_liquidation_risk(context: FactorContext):
 
     return cross_sectional_rank(-risk)
 
-
 @register_factor(
     name="pledge_market_impact",
     description="质押市场冲击因子，-(质押率×60日波动率)截面排名（高质押+高波动=尾部风险排后）。",
@@ -378,7 +329,6 @@ def factor_pledge_market_impact(context: FactorContext):
     impact = p_aligned * v_aligned
     return cross_sectional_rank(-impact)
 
-
 @register_factor(
     name="pledge_change_signal",
     description="质押率变动信号因子，-(质押率季度同比变化>20%)截面排名（大幅变动=不确定性排后）。",
@@ -400,7 +350,6 @@ def factor_pledge_change_signal(context: FactorContext):
     )
 
     return cross_sectional_rank(-signal)
-
 
 @register_factor(
     name="pledge_industry_comparison",
@@ -425,11 +374,9 @@ def factor_pledge_industry_comparison(context: FactorContext):
 
     return cross_sectional_rank(-df["relative_pledge"])
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # E — Governance & Composite Risk
 # ═══════════════════════════════════════════════════════════════════════════════
-
 
 @register_factor(
     name="governance_risk_composite",
@@ -462,7 +409,6 @@ def factor_governance_risk_composite(context: FactorContext):
     risk = (d_rank + p_rank + pc_rank) / 3.0
     return cross_sectional_rank(-risk)
 
-
 @register_factor(
     name="insider_confidence_proxy",
     description="内部人信心代理因子，-(低质押率排名+高股东集中度排名)/2截面排名（低质押+集中=内部信心足排前）。",
@@ -490,7 +436,6 @@ def factor_insider_confidence_proxy(context: FactorContext):
 
     confidence = (conc_rank + low_pledge_rank) / 2.0
     return cross_sectional_rank(confidence)
-
 
 @register_factor(
     name="corporate_governance_quality",
@@ -524,7 +469,6 @@ def factor_corporate_governance_quality(context: FactorContext):
     quality = -(d_rank + p_rank + hc_rank + pc_rank) / 4.0
     return cross_sectional_rank(quality)
 
-
 @register_factor(
     name="pledge_pressure_index",
     description="质押压力指数因子，-(质押率×max(0, 距高点跌幅-20%)×波动率)截面排名（三高=极端压力排后）。",
@@ -557,7 +501,6 @@ def factor_pledge_pressure_index(context: FactorContext):
 
     return cross_sectional_rank(-pressure)
 
-
 @register_factor(
     name="holder_concentration_momentum",
     description="股东集中度动量因子，股东集中度（1/股东数）的4季度变化截面排名（集中加速排前）。",
@@ -576,7 +519,6 @@ def factor_holder_concentration_momentum(context: FactorContext):
     momentum = concentration.groupby(level="Code").transform(lambda s: s.pct_change(4))
 
     return cross_sectional_rank(momentum)
-
 
 @register_factor(
     name="pledge_tail_risk",
@@ -603,7 +545,6 @@ def factor_pledge_tail_risk(context: FactorContext):
 
     tail_risk = high_pledge * deep_dd * p * d
     return cross_sectional_rank(-tail_risk)
-
 
 @register_factor(
     name="holder_structure_stability",

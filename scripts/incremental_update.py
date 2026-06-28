@@ -145,6 +145,46 @@ def _last_trading_day():
 EFFECTIVE_TODAY = _last_trading_day()
 
 
+# ── Trading-day arithmetic ───────────────────────────────────────────────
+def _trading_day_offset(date_str, offset_days):
+    """Return the date *offset_days* trading days before/after *date_str*.
+
+    Uses calendar.parquet to find actual trading days — NOT calendar
+    days.  Positive offset = forward, negative = backward.
+
+    Examples (with June 2026 calendar where 06-19 is a holiday):
+        _trading_day_offset("2026-06-22", -1) → "2026-06-18"
+        _trading_day_offset("2026-06-18",  1) → "2026-06-22"
+
+    Falls back to calendar-day arithmetic if the calendar file is
+    unavailable or corrupt.
+    """
+    cal_path = Path(DATA_DIR) / "calendar.parquet"
+    if not cal_path.exists():
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return (dt + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+    try:
+        cal = pd.read_parquet(cal_path)
+        trading_days = sorted(cal[cal["is_open"] == 1]["date"].tolist())
+        trading_strs = [str(d)[:10] for d in trading_days]
+        if offset_days == 0:
+            return date_str
+        if offset_days > 0:
+            future = [d for d in trading_strs if d > date_str]
+            if len(future) >= offset_days:
+                return future[offset_days - 1]
+            return future[-1] if future else date_str
+        else:
+            past = [d for d in trading_strs if d < date_str]
+            n = abs(offset_days)
+            if len(past) >= n:
+                return past[-n]
+            return past[0] if past else date_str
+    except Exception:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return (dt + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+
 # ── Pre-flight canary probe ──────────────────────────────────────────────
 def _probe_canary_endpoint(endpoint, target_date, api_key):
     """Check whether *endpoint* has rows for *target_date*.
@@ -201,7 +241,7 @@ def _all_canaries_ready(target_date=None):
         # Adjust target date for endpoints with a publication lag (T+1 data)
         lag = CANARY_LAG_DAYS.get(ep, 0)
         if lag:
-            ep_target = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=lag)).strftime("%Y-%m-%d")
+            ep_target = _trading_day_offset(target_date, -lag)
         else:
             ep_target = target_date
         has_data, count = _probe_canary_endpoint(ep, ep_target, api_key)
@@ -213,19 +253,109 @@ def _all_canaries_ready(target_date=None):
 
 
 def _canary_datasets_behind(target_date_str):
-    """Check whether the local canary datasets are behind *target_date_str*.
+    """Check whether local datasets are behind *target_date_str*.
 
-    Instead of blindly accepting a fallback date whose data was already
-    downloaded yesterday, this checks whether the two canary datasets
-    (cyq_chips and cyq_perf) actually have local data through
-    *target_date_str*.  If both are already up-to-date there is no real
-    work to do for the fallback date — the script should keep waiting
-    for today's data instead.
+    Only checks datasets that are expected to have data for every
+    trading day (daily-frequency).  Datasets without ``"backfill": True``
+    — quarterly financials, index_weight, etc. — are excluded because
+    they are naturally sparse and would falsely signal "incomplete".
 
-    Returns True if at least one canary dataset is behind target_date_str.
+    Accounts for per-dataset publication lag (lag_days) so that T+1
+    datasets aren't falsely flagged as behind.
+
+    Only returns True if at least one daily-frequency dataset genuinely
+    needs the fallback date's data — otherwise the script should keep
+    waiting for today's data instead of doing a pointless fallback.
     """
     target_dt = datetime.strptime(target_date_str, "%Y-%m-%d")
 
+    # ── Check only daily-frequency datasets in the registry ──
+    any_behind = False
+    checked = 0
+    cannot_determine = 0
+
+    for d in DATASETS:
+        name = d["name"]
+        dtype = d["type"]
+        lag = d.get("lag_days", 0)
+
+        # Adjust expected date for this dataset's publication lag
+        ds_target_str = _trading_day_offset(target_date_str, -lag) if lag else target_date_str
+        ds_target_dt = datetime.strptime(ds_target_str, "%Y-%m-%d")
+
+        if dtype == "reference":
+            continue  # reference datasets re-fetch entirely, always "behind" by design
+
+        if dtype == "consolidated":
+            # Only check datasets that are daily-frequency (marked with
+            # backfill=True).  Quarterly datasets (financials, index_weight, etc.)
+            # are naturally sparse and must not trigger "incomplete" detection.
+            if not d.get("backfill"):
+                continue
+            fpath = Path(DATA_DIR) / d["file"]
+            if not fpath.exists():
+                # Only count if we'd actually process this dataset
+                # (file must exist for consolidated incremental update)
+                continue
+            _, max_s = get_real_max_date(fpath)
+            if max_s is None:
+                cannot_determine += 1
+                continue
+            checked += 1
+            max_dt = datetime.strptime(max_s, "%Y-%m-%d")
+            if max_dt < ds_target_dt:
+                any_behind = True
+                break  # one behind is enough
+
+        elif dtype == "per_stock":
+            # Per-stock datasets (cyq_chips, history_1min) are always
+            # daily-frequency — check them unconditionally.
+            out_dir = Path(DATA_DIR) / d.get("out_subdir", "")
+            if not out_dir.exists():
+                continue
+            # Only consider stocks in the current stock list — orphan
+            # files from delisted/removed stocks are never updated by
+            # the incremental pipeline and would falsely signal "behind".
+            target_stocks = set(_filter_main_board_stocks())
+            all_files = list(out_dir.glob("*.parquet"))
+            stock_files = [f for f in all_files if f.stem in target_stocks]
+            if not stock_files:
+                continue
+            checked += 1
+            # Sample up to 30 stock files for this per-stock dataset
+            import random
+            sample = random.sample(stock_files, min(30, len(stock_files)))
+            ds_behind = False
+            for f in sample:
+                _, max_s = get_max_date(f)
+                if max_s is None:
+                    continue
+                max_dt = datetime.strptime(max_s, "%Y-%m-%d")
+                if max_dt < ds_target_dt:
+                    ds_behind = True
+                    break
+            if ds_behind:
+                any_behind = True
+                break
+
+    # If we couldn't check any dataset, be conservative and assume behind
+    if checked == 0 and cannot_determine == 0:
+        return True
+
+    # If we couldn't determine dates for some but none are confirmed behind,
+    # trust the canary endpoints as a fallback signal
+    if not any_behind and cannot_determine > 0:
+        # Fall back to the fast canary-only check
+        return _canary_fast_check(target_dt)
+
+    return any_behind
+
+
+def _canary_fast_check(target_dt):
+    """Fast check of just the two canary datasets (cyq_perf, cyq_chips).
+
+    Used when the full dataset scan couldn't determine status reliably.
+    """
     # ── cyq_perf (consolidated, single file) ──
     cyq_perf_path = Path(DATA_DIR) / "cyq_perf.parquet"
     if cyq_perf_path.exists():
@@ -235,7 +365,6 @@ def _canary_datasets_behind(target_date_str):
             if max_dt < target_dt:
                 return True
     else:
-        # File doesn't exist at all — definitely behind
         return True
 
     # ── cyq_chips (per-stock, sample up to 50 files) ──
@@ -243,7 +372,7 @@ def _canary_datasets_behind(target_date_str):
     if cyq_chips_dir.exists():
         stock_files = list(cyq_chips_dir.glob("*.parquet"))
         if not stock_files:
-            return True  # directory exists but no files — behind
+            return True
         import random
         sample = random.sample(stock_files, min(50, len(stock_files)))
         for f in sample:
@@ -252,66 +381,95 @@ def _canary_datasets_behind(target_date_str):
                 max_dt = datetime.strptime(max_s, "%Y-%m-%d")
                 if max_dt < target_dt:
                     return True
-            # If a file has no readable date, treat as behind (safety)
     else:
-        return True  # directory doesn't exist — behind
+        return True
 
     return False
 
 
 def _wait_for_server(target_date=None, interval=DEFAULT_WAIT_INTERVAL,
-                     max_wait=DEFAULT_MAX_WAIT, dry_run=False):
-    """Block until all canary endpoints have data for *target_date*.
+                     max_wait=DEFAULT_MAX_WAIT, dry_run=False,
+                     lookback_trading_days=3):
+    """Two-phase pre-flight check before running incremental updates.
 
-    If *target_date* data isn't ready yet, scans backwards through recent
-    trading days to find the most recent date that IS available on the
-    server.  This handles catch-up scenarios where historical data was
-    missed — the update proceeds immediately to backfill whatever the
-    server already has, without waiting for today's data to be published.
+    Phase 1 — Backfill historical gaps (local check, no server probe):
+      Walk backwards through the most recent *lookback_trading_days*
+      trading days (excluding target_date).  For each, check whether
+      ALL local canary datasets have data through that date.  The first
+      date where local data is incomplete wins — proceed immediately
+      with EFFECTIVE_TODAY set to that date.  No need to probe the
+      server because historical data is almost certainly complete.
 
-    Only waits when NO recent trading day has canary data (e.g. running
-    early morning before the overnight batch has completed for any date).
+    Phase 2 — Wait for today (server probe):
+      If all recent trading days are locally complete, block until
+      all three canary endpoints return data for *target_date* on the
+      server.  Polls every *interval* seconds, gives up after *max_wait*.
 
-    Returns True if ready, False if *max_wait* expired.
+    Returns True if ready to proceed, False if *max_wait* expired.
     """
     global EFFECTIVE_TODAY
 
     if target_date is None:
         target_date = EFFECTIVE_TODAY
 
-    # ── Pre-compute recent trading days for fallback scanning ──
     target_dt = datetime.strptime(target_date, "%Y-%m-%d")
-    recent_trading_days = []  # [target_date, prev, prev-1, ...] up to ~14 days back
+
+    # ── Build recent trading days list (most recent first) ──
+    recent_trading_days = []  # [target_date, prev, prev-1, ...]
     cal_path = Path(DATA_DIR) / "calendar.parquet"
     if cal_path.exists():
         try:
             cal = pd.read_parquet(cal_path)
             trading_days = sorted(cal[cal["is_open"] == 1]["date"].tolist())
-            # Collect trading days ≤ target_date, most recent first
             recent_trading_days = [
                 str(d)[:10] for d in reversed(trading_days)
                 if str(d)[:10] <= target_date
-            ][:15]  # look back up to ~3 weeks of trading days
+            ][:lookback_trading_days + 1]  # +1 includes target_date itself
         except Exception:
             pass
     if not recent_trading_days:
-        # Fallback: simple calendar-day walk back
         recent_trading_days = [
             (target_dt - timedelta(days=i)).strftime("%Y-%m-%d")
-            for i in range(15)
+            for i in range(lookback_trading_days + 1)
         ]
 
-    log_print(f"[preflight] Probing canary endpoints for {target_date}...")
-    log_print(f"[preflight] Endpoints: {', '.join(CANARY_ENDPOINTS)}")
-    log_print(f"[preflight] Wait interval={interval}s, max wait={max_wait}s")
-    log_print(f"[preflight] Fallback window: {recent_trading_days[0]} → "
-              f"{recent_trading_days[-1]} ({len(recent_trading_days)} trading days)")
+    log_print(f"[preflight] Today: {target_date} | "
+              f"Lookback window: {lookback_trading_days} trading days → "
+              f"{recent_trading_days}")
+
+    # ══════════════════════════════════════════════════════════════════
+    # Phase 1: Check historical trading days for LOCAL gaps.
+    # Historical data is almost certainly on the server — no API probe.
+    # ══════════════════════════════════════════════════════════════════
+    for candidate in recent_trading_days:
+        if candidate >= target_date:
+            continue  # skip today, handle in Phase 2
+
+        if _canary_datasets_behind(candidate):
+            log_print(f"[preflight] Phase 1: Local data incomplete for "
+                      f"{candidate}. Proceeding immediately "
+                      f"(target={candidate}).")
+            EFFECTIVE_TODAY = candidate
+            return True
+        else:
+            log_print(f"[preflight] Phase 1: Local data complete for "
+                      f"{candidate}.")
+
+    # ══════════════════════════════════════════════════════════════════
+    # Phase 2: All history is locally complete.
+    # Wait for today's data to be published on the server.
+    # ══════════════════════════════════════════════════════════════════
+    log_print(f"[preflight] Phase 2: All history complete locally. "
+              f"Waiting for {target_date} on server...")
+    log_print(f"[preflight] Endpoints: {', '.join(CANARY_ENDPOINTS)} "
+              f"(interval={interval}s, max_wait={max_wait}s)")
 
     if dry_run:
         ready, details = _all_canaries_ready(target_date)
         for ep, info in details.items():
             status = "READY" if info["ready"] else "NOT READY"
-            log_print(f"  [preflight] [dry-run] {ep}: {status} ({info['rows']} rows)")
+            log_print(f"  [preflight] [dry-run] {ep}: {status} "
+                      f"({info['rows']} rows)")
         return ready
 
     start = time.time()
@@ -325,58 +483,23 @@ def _wait_for_server(target_date=None, interval=DEFAULT_WAIT_INTERVAL,
 
         for ep, info in details.items():
             status = "READY" if info["ready"] else "WAITING"
-            log_print(f"  [preflight] attempt {attempt} | {ep}: {status} "
-                      f"({info['rows']} rows returned)")
+            log_print(f"  [preflight] Phase 2 attempt {attempt} | {ep}: "
+                      f"{status} ({info['rows']} rows)")
 
         if ready:
-            log_print(f"[preflight] All canary endpoints have data for "
-                      f"{target_date}. Proceeding with update.")
+            log_print(f"[preflight] Phase 2: All canary endpoints ready "
+                      f"for {target_date}. Proceeding with update.")
             return True
 
-        # ── Fallback: scan backwards through recent trading days ──
-        # Skip target_date (already checked above).  Walk from most recent
-        # to least recent; the first date with all canaries ready wins.
-        found_date = None
-        for candidate in recent_trading_days:
-            if candidate >= target_date:
-                continue  # skip target_date and any earlier computation artifacts
-            cand_ready, cand_details = _all_canaries_ready(candidate)
-            if all(info["ready"] for info in cand_details.values()):
-                found_date = candidate
-                break
-            else:
-                cand_status = " ".join(
-                    f"{ep}:{'READY' if info['ready'] else 'WAITING'}"
-                    for ep, info in cand_details.items()
-                )
-                log_print(f"  [preflight]   fallback {candidate}: {cand_status}")
-
-        if found_date:
-            # Only accept fallback if the canary datasets actually need it.
-            # If cyq_chips / cyq_perf already have local data through
-            # found_date, there's nothing to do — keep waiting for target_date.
-            if _canary_datasets_behind(found_date):
-                log_print(f"[preflight] {target_date} data not ready, but "
-                          f"{found_date} IS ready. Proceeding with update "
-                          f"(target={found_date}).")
-                EFFECTIVE_TODAY = found_date
-                return True
-            else:
-                log_print(f"[preflight] {target_date} data not ready. "
-                          f"{found_date} IS ready on server but local canary "
-                          f"datasets already up-to-date — waiting for "
-                          f"{target_date}...")
-
         if elapsed >= max_wait:
-            log_print(f"[preflight] Timed out after {elapsed:.0f}s "
-                      f"(max={max_wait}s). No recent trading day has "
-                      f"canary data. Proceeding despite missing data.")
+            log_print(f"[preflight] Phase 2: Timed out after "
+                      f"{elapsed:.0f}s (max={max_wait}s). "
+                      f"Proceeding despite missing data.")
             return False
 
         remaining = max_wait - elapsed
-        log_print(f"[preflight] No recent trading day has canary data ready. "
-                  f"Waiting {interval}s (elapsed: {elapsed:.0f}s, "
-                  f"remaining: {remaining:.0f}s)...")
+        log_print(f"[preflight] Phase 2: Waiting {interval}s "
+                  f"(elapsed: {elapsed:.0f}s, remaining: {remaining:.0f}s)...")
         time.sleep(interval)
 
 
@@ -444,7 +567,7 @@ def _get_effective_overlap(name, base_overlap, lag_days=0):
             last_actual = datetime.strptime(entry["last_fetch_max"], "%Y-%m-%d")
             today_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
             if lag_days:
-                today_dt = today_dt - timedelta(days=lag_days)
+                today_dt = datetime.strptime(_trading_day_offset(EFFECTIVE_TODAY, -lag_days), "%Y-%m-%d")
             gap = (today_dt - last_actual).days
             if gap > base_overlap:
                 return gap + base_overlap
@@ -476,7 +599,7 @@ def _record_state(name, fetch_max, lag_days=0):
                 max_dt = datetime.strptime(fetch_max, "%Y-%m-%d")
                 effective_dt = datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d")
                 if lag_days:
-                    effective_dt = effective_dt - timedelta(days=lag_days)
+                    effective_dt = datetime.strptime(_trading_day_offset(EFFECTIVE_TODAY, -lag_days), "%Y-%m-%d")
                 pending = max_dt < effective_dt
                 entry["pending"] = pending
                 if pending:
@@ -1424,7 +1547,8 @@ def update_per_stock_dataset(name, out_subdir, endpoint, start_date,
 # ── Consolidated dataset updater ──────────────────────────────────────────
 def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
                                date_col, dedup_keys, workers, dry_run,
-                               backfill_fn=None, backfill_kwargs=None):
+                               backfill_fn=None, backfill_kwargs=None,
+                               consolidate=True):
     """Update per-stock 1min dataset via daily_dump (local-first, one file per date).
 
     Reads already-downloaded daily dump parquet files from
@@ -1524,14 +1648,15 @@ def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
     if max_dt >= effective_today_dt and not new_dump_dates:
         log_print(f"[{name}] Up to date (max={last_date})")
         _record_state(name, last_date)
-        # Still consolidate if the consolidated file is missing
-        consolidated = Path(DATA_DIR) / f"{name}.parquet"
-        if not dry_run and not consolidated.exists():
-            log_print(f"[{name}] Consolidated file missing, creating...")
-            _consolidate_per_stock_dataset(
-                name=name, out_dir=out_dir, date_col=date_col,
-                workers=workers,
-            )
+        # Still consolidate if the consolidated file is missing (respects consolidate flag)
+        if consolidate:
+            consolidated = Path(DATA_DIR) / f"{name}.parquet"
+            if not dry_run and not consolidated.exists():
+                log_print(f"[{name}] Consolidated file missing, creating...")
+                _consolidate_per_stock_dataset(
+                    name=name, out_dir=out_dir, date_col=date_col,
+                    workers=workers,
+                )
         return
 
     log_print(f"[{name}] Last date: {last_date} | "
@@ -1757,7 +1882,7 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
     # latest expected data lag_days calendar days before EFFECTIVE_TODAY.
     effective_end = EFFECTIVE_TODAY
     if lag_days:
-        effective_end = (datetime.strptime(EFFECTIVE_TODAY, "%Y-%m-%d") - timedelta(days=lag_days)).strftime("%Y-%m-%d")
+        effective_end = _trading_day_offset(EFFECTIVE_TODAY, -lag_days)
 
     # Check if already up to date
     end_dt = datetime.strptime(effective_end, "%Y-%m-%d")
@@ -2162,7 +2287,7 @@ DATASETS = [
         "daily_dump_level": "1min",
         "backfill_module": "fetch_minute",
         "backfill_fn_name": "fetch_history",
-        "backfill_kwargs": {"level": "1min"},
+        "backfill_kwargs": {"level": "1min"}, "consolidate": False,
     },
 ]
 
@@ -2304,6 +2429,7 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                         dry_run=dry_run,
                         backfill_fn=backfill_fn,
                         backfill_kwargs=d.get("backfill_kwargs"),
+                        consolidate=d.get("consolidate", True),
                     )
                     return {"name": name, "status": "updated" if not dry_run else "dry_run"}
                 # Resolve backfill function for stocks without existing files
