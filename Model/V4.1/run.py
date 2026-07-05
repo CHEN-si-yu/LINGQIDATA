@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from model import parse_args, train
 
-SEASONS = ["2026q2", "2026q1", "2025q4", "2025q3", "2025q2", "2025q1"]
+SEASONS = ["2026q3"]
 
 if __name__ == '__main__':
     args = parse_args()

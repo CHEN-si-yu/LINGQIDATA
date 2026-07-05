@@ -1,0 +1,46 @@
+2026-07-03 21:45:36 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260703_214536.log
+2026-07-03 21:45:37 [INFO   ] root: Python    : 3.12.3
+2026-07-03 21:45:37 [INFO   ] root: pandas    : 3.0.3
+2026-07-03 21:45:37 [INFO   ] root: numpy     : 2.3.2
+2026-07-03 21:45:42 [INFO   ] build_factors: Factor build started — 4 stage(s)
+2026-07-03 21:45:42 [INFO   ] build_factors: 
+################################################################
+#  BUILD START
+################################################################
+2026-07-03 21:45:42 [INFO   ] build_factors: 
+################################################################
+#  STAGE 1/4: Class 1 (Panel)
+################################################################
+2026-07-03 21:45:42 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — launching subprocess
+2026-07-03 21:45:44 [INFO   ] featureengineering.builder: Effective end date: 20260703  |  989 factors to check
+2026-07-03 21:45:45 [INFO   ] featureengineering.builder: Dashboard disabled — stdout is not a TTY (likely piped to parent)
+2026-07-03 22:07:30 [INFO   ] featureengineering.builder: Build complete — 989 ok, 0 skip, 0 error | 40930 s wall | 0 total rows
+2026-07-03 22:07:30 [WARNING] py.warnings: /autodl-fs/data/lingqiData/featureengineering/build_factors.py:139: ResourceWarning: unclosed file <_io.TextIOWrapper name=31 encoding='UTF-8'>
+  rc = _stream_subprocess(cmd, label)
+
+2026-07-03 22:07:30 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — OK (1308s)
+2026-07-03 22:07:30 [INFO   ] build_factors: 
+################################################################
+#  STAGE 2/4: Class 2 (cyq_chips)
+################################################################
+2026-07-03 22:07:30 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — launching subprocess
+2026-07-03 22:11:02 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — OK (212s)
+2026-07-03 22:11:02 [INFO   ] build_factors: 
+################################################################
+#  STAGE 3/4: Class 3 (intraday)
+################################################################
+2026-07-03 22:11:02 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — launching subprocess
+2026-07-03 22:22:51 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — OK (709s)
+2026-07-03 22:22:51 [INFO   ] build_factors: 
+################################################################
+#  STAGE 4/4: Class 4 (Coupling)
+################################################################
+2026-07-03 22:22:51 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — launching subprocess
+2026-07-03 22:22:56 [INFO   ] featureengineering.builder: Effective end date: 20260703  |  136 factors to check
+2026-07-03 22:24:53 [INFO   ] featureengineering.builder: Build complete — 136 ok, 0 skip, 0 error | 992 s wall | 0 total rows
+2026-07-03 22:24:53 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — OK (122s)
+2026-07-03 22:24:53 [INFO   ] build_factors: Factor build finished — OK, total elapsed: 2351 s
+2026-07-03 22:24:53 [INFO   ] build_factors: 
+################################################################
+#  BUILD DONE — OK (total: 2351s)
+################################################################

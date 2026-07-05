@@ -308,3 +308,90 @@ for date in recent:
 2. **集成模型列表**随 `search_best_ensemble.py` 重新搜索后更新
 3. **衰减分类标准**基于经验法则，可通过回测（不同衰减速度因子的隔日 IC）进行校准
 4. 每次分析完成后将报告保存为 `reports/{YYYYMMDD}.md`
+
+---
+
+## 七、关键注意事项与常见陷阱（2026-06-29 更新）
+
+### 7.1 ⚠️ V4.1 单模型得分必须归一化（★ 极易出错 ★）
+
+**陷阱**: V4.1 模型的原始打分（如 `analysis.ipynb` Cell 8/9 中的 "+11.2466"）是**单模型原始预测值**，其量纲远大于集成模型得分（集成模型是 4 个基模型的均值）。
+
+**正确做法**:
+```python
+# V4.1 单模型得分 → 跨模型横向对比
+v4_score_raw = 11.2466                    # V4.1 原始输出
+v4_score_normalized = v4_score_raw / 4    # → +2.81，与集成得分可比
+
+# 对比
+ensemble_score = 2.9640                   # 集成模型对同一股票的得分
+# 归一化后 +2.81 vs 集成 +1.01 → V4.1 对该股有 2.8 倍的模型特异性看多
+```
+
+**教训**: 2026-06-29 报告中，柯力传感 V4.1 +11.2466 若不除以 4，会错误地认为其得分远超珍宝岛 +2.9640。实际上归一化后 +2.81 在量级上相近，但集成模型仅给柯力 +1.01（排 132 名），这才是真正的共识信号。
+
+### 7.2 ⚡ 历史轨迹优先使用 ensemble_pred（★ 数据源优先级 ★）
+
+**陷阱**: 各基模型（V2.1/V3.2/V3.7/V1.2）的 `model_res/ALL_zscore_score.fea` 更新可能存在严重滞后（如 2026-06-29 时仅更新至 06-09/10，滞后 13 个交易日）。使用过期数据会导致结论完全错误。
+
+**正确做法**: **优先使用集成预测 pickle 文件作为历史轨迹数据源**:
+
+| 优先级 | 数据源 | 路径 | 时效性 | 用途 |
+|--------|--------|------|--------|------|
+| 🥇 第一优先 | **集成预测 pickle** | `ensemble_pred/{组合名}/2026q2/{YYYYMMDD}.pkl` | 每日更新，与预测同步 | **历史轨迹、当前排名、截面 z-score** |
+| 🥈 第二优先 | 基模型得分 | `Model/{version}/model_res/ALL_zscore_score.fea` | 滞后 1-3 周 | 基模型分歧分析（辅助验证） |
+| 🥉 第三参考 | 因子数据 | `trainingdata/fac_all.fea` | 每日更新 | 因子画像、衰减分类 |
+
+**代码模板（正确方式）**:
+```python
+import pickle, pandas as pd, numpy as np, os, glob
+
+# Step 1: 找到最新 ensemble_pred
+ENSEMBLE_DIR = '/root/autodl-fs/lingqiData/Model/mixed_model/ensemble_pred'
+# 优先使用当前活跃组合
+active_ensemble = 'V1-2_V2-1_V3-2_V3-7'  # 从 ensemble_analysis.ipynb 确认
+pred_dir = os.path.join(ENSEMBLE_DIR, active_ensemble, '2026q2')
+files = sorted(glob.glob(os.path.join(pred_dir, '*.pkl')))
+
+# Step 2: 加载最新预测
+with open(files[-1], 'rb') as f:
+    latest_scores = pickle.load(f)           # pd.Series: index=Code, values=score
+latest_date = os.path.basename(files[-1]).replace('.pkl', '')
+
+# Step 3: 计算截面 z-score
+z_scores = (latest_scores - latest_scores.mean()) / latest_scores.std()
+top10 = z_scores.sort_values(ascending=False).head(10)
+
+# Step 4: 加载完整历史轨迹
+history = {}
+for f in files:
+    date = os.path.basename(f).replace('.pkl', '')
+    with open(f, 'rb') as fh:
+        history[date] = pickle.load(fh)
+
+# 对目标股票追踪历史
+for code in ['603567', '600510']:
+    print(f"\n{code} 历史轨迹:")
+    for date in sorted(history.keys()):
+        s = history[date]
+        print(f"  {date}: {s[code]:+.4f}")
+```
+
+### 7.3 多 ensemble 交叉验证
+
+当前有三个集成模型变体（排列组合不同），分析时应交叉验证：
+
+| 组合名 | 路径 | 说明 |
+|--------|------|------|
+| V1-2_V2-1_V3-2_V3-7 | `ensemble_pred/V1-2_V2-1_V3-2_V3-7/` | 当前活跃（V1.2 替代 V1.0） |
+| V1-0_V2-1_V3-2_V3-7 | `ensemble_pred/V1-0_V2-1_V3-2_V3-7/` | 前一版本（V1.0） |
+| V2-1_V3-2_V3-7_V1-2 | `ensemble_pred/V2-1_V3-2_V3-7_V1-2/` | 不同排列顺序 |
+
+**规则**: 如果一只股票在至少两个 ensemble 变体中同时排名前 10，信号可靠性大幅提升。如果仅在一个变体中排名靠前，需标注为"模型排列敏感"。
+
+### 7.4 负向因子数量/比例也是信号
+
+不要只看正向极端因子。负向因子远多于正向（如珍宝岛 201 vs 66 = 3:1）意味着：
+- 集成模型的高得分来自少数因子的极端权重
+- 如果这些关键因子在下一天失效，信号可能急转直下
+- 需要特别关注正向因子中的"假正向"（如高质押、高现金周期）和负向因子中的"假负向"（如低商誉、低负债）

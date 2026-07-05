@@ -252,6 +252,37 @@ def _all_canaries_ready(target_date=None):
     return all_ready, details
 
 
+
+def _get_stock_expected_dates(target_date_str):
+    """Return dict {stock_code: expected_date_str} for per-stock behind checks.
+
+    A stock is only expected to have per-stock data up to its last actual
+    trading day (from daily.parquet), capped at *target_date_str*.  This
+    prevents suspended / halted stocks from falsely signalling "incomplete"
+    when they have no data for recent dates.
+
+    Returns None if daily.parquet is unavailable so the caller can fall
+    back to checking against the raw target date.
+    """
+    try:
+        daily_path = Path(DATA_DIR) / "daily.parquet"
+        if not daily_path.exists():
+            return None
+        table = pq.read_table(daily_path, columns=["trade_date", "stock_code"])
+        df = table.to_pandas()
+        df["trade_date"] = pd.to_datetime(df["trade_date"])
+
+        target_dt = pd.Timestamp(target_date_str)
+        last_trade = df.groupby("stock_code")["trade_date"].max()
+        result = {}
+        for stock, last_dt in last_trade.items():
+            expected = last_dt if last_dt < target_dt else target_dt
+            result[stock] = expected.strftime("%Y-%m-%d")
+        return result
+    except Exception:
+        return None
+
+
 def _canary_datasets_behind(target_date_str):
     """Check whether local datasets are behind *target_date_str*.
 
@@ -322,16 +353,27 @@ def _canary_datasets_behind(target_date_str):
             if not stock_files:
                 continue
             checked += 1
+            # Smart per-stock check: each stock is only expected to have
+            # data up to its own last trading day (from daily.parquet).
+            # Suspended / halted stocks won't falsely trigger "incomplete".
+            stock_expected = _get_stock_expected_dates(target_date_str)
             # Sample up to 30 stock files for this per-stock dataset
             import random
             sample = random.sample(stock_files, min(30, len(stock_files)))
             ds_behind = False
             for f in sample:
+                code = f.stem
+                # Per-stock expected date = min(last trade date, target)
+                if stock_expected is not None:
+                    exp_str = stock_expected.get(code, target_date_str)
+                else:
+                    exp_str = ds_target_str  # fallback: as before
+                exp_dt = datetime.strptime(exp_str, "%Y-%m-%d")
                 _, max_s = get_max_date(f)
                 if max_s is None:
                     continue
                 max_dt = datetime.strptime(max_s, "%Y-%m-%d")
-                if max_dt < ds_target_dt:
+                if max_dt < exp_dt:
                     ds_behind = True
                     break
             if ds_behind:
@@ -1069,7 +1111,7 @@ def _filter_main_board_stocks():
 _PER_STOCK_BATCH_SIZE = 100
 
 
-def _merge_per_stock_batch(batch_results, out_dir, date_col, cache_ns=None, dedup_keys=None, workers=8):
+def _merge_per_stock_batch(batch_results, out_dir, date_col, cache_ns=None, dedup_keys=None, workers=16):
     """Split a batch result by stock_code and merge each into its file (parallel).
 
     *batch_results* is a list of dict rows or a DataFrame (all stocks mixed).
@@ -1114,24 +1156,53 @@ def _merge_per_stock_batch(batch_results, out_dir, date_col, cache_ns=None, dedu
         new_chunk["stock_code"] = code
         if existing.empty:
             merged = new_chunk
-        else:
-            merged = pd.concat([existing, new_chunk], ignore_index=True)
+        elif date_col and date_col in existing.columns and date_col in new_chunk.columns:
+            # ── Optimised path: only dedup + sort the overlap window ──
+            # Existing data is already sorted by date; new data is always
+            # chronological (from max_date - overlap to today).  Only the
+            # overlap window (existing rows >= min_new_date) can conflict
+            # with new data, so we isolate that tail slice and avoid a
+            # full O(n log n) sort of the entire history.
+            if not pd.api.types.is_datetime64_any_dtype(existing[date_col]):
+                existing[date_col] = pd.to_datetime(existing[date_col])
+            if not pd.api.types.is_datetime64_any_dtype(new_chunk[date_col]):
+                new_chunk[date_col] = pd.to_datetime(new_chunk[date_col])
+
+            min_new = new_chunk[date_col].min()
+            # Rows strictly before the new data — no overlap possible
+            tail = existing[existing[date_col] < min_new]
+            # Rows that might overlap with the new fetch
+            overlap = existing[existing[date_col] >= min_new]
+
             if dk:
-                available_dedup = [k for k in dk if k in merged.columns]
+                available_dedup = [k for k in dk if k in overlap.columns and k in new_chunk.columns]
             else:
                 available_dedup = None
+            deduped = pd.concat([overlap, new_chunk], ignore_index=True) \
+                        .drop_duplicates(subset=available_dedup or None, keep="last")
+            # Only sort the small overlap window (tail is already sorted)
+            deduped = deduped.sort_values(date_col).reset_index(drop=True)
+            # tail + sorted(deduped) ⇒ globally sorted — no full sort needed
+            merged = pd.concat([tail, deduped], ignore_index=True)
+        else:
+            # Fallback: no date column usable, do full dedup as before
+            merged = pd.concat([existing, new_chunk], ignore_index=True)
+            available_dedup = [k for k in dk if k in merged.columns] if dk else None
             merged = merged.drop_duplicates(subset=available_dedup or None, keep="last")
+            if date_col and date_col in merged.columns:
+                if not pd.api.types.is_datetime64_any_dtype(merged[date_col]):
+                    merged[date_col] = pd.to_datetime(merged[date_col])
+                merged = merged.sort_values(date_col).reset_index(drop=True)
 
         max_str = None
         if date_col and date_col in merged.columns:
-            # Normalise date column to avoid str/Timestamp type mismatch during sort
-            merged[date_col] = pd.to_datetime(merged[date_col])
-            merged = merged.sort_values(date_col).reset_index(drop=True)
+            # Normalise column type for parquet write consistency
+            if not pd.api.types.is_datetime64_any_dtype(merged[date_col]):
+                merged[date_col] = pd.to_datetime(merged[date_col])
             max_val = merged[date_col].max()
             if not pd.isna(max_val):
-                max_str = str(max_val)[:10] if hasattr(max_val, "strftime") \
-                          else max_val.strftime("%Y-%m-%d") if hasattr(max_val, "strftime") \
-                          else str(max_val)[:10]
+                max_str = (max_val.strftime("%Y-%m-%d") if hasattr(max_val, "strftime")
+                           else str(max_val)[:10])
 
         tmp = out_file.with_suffix(".parquet.tmp")
         merged.to_parquet(tmp, index=False)
@@ -1782,18 +1853,44 @@ def update_daily_dump_dataset(name, out_subdir, level, start_date, end_date,
 
         if existing.empty:
             merged = new_data
+        elif date_col and date_col in existing.columns and date_col in new_data.columns:
+            # ── Optimised path: only dedup + sort the overlap window ──
+            # Existing data is already sorted; new data is always
+            # chronological.  Only the overlap window (existing rows >=
+            # min_new_date) can conflict with new data, so we isolate
+            # that tail slice to avoid full O(n log n) sort of all history.
+            if not pd.api.types.is_datetime64_any_dtype(existing[date_col]):
+                existing[date_col] = pd.to_datetime(existing[date_col])
+            if not pd.api.types.is_datetime64_any_dtype(new_data[date_col]):
+                new_data[date_col] = pd.to_datetime(new_data[date_col])
+
+            min_new = new_data[date_col].min()
+            # Rows strictly before the new data — no overlap possible
+            tail = existing[existing[date_col] < min_new]
+            # Rows that might overlap with the new fetch
+            overlap = existing[existing[date_col] >= min_new]
+            deduped = pd.concat([overlap, new_data], ignore_index=True) \
+                        .drop_duplicates(subset=[date_col], keep="last")
+            # Only sort the small overlap window (tail is already sorted)
+            deduped = deduped.sort_values(date_col).reset_index(drop=True)
+            # tail + sorted(deduped) ⇒ globally sorted — no full sort needed
+            merged = pd.concat([tail, deduped], ignore_index=True)
         else:
+            # Fallback: no date column usable, do full dedup as before
             merged = pd.concat([existing, new_data], ignore_index=True)
             if date_col and date_col in merged.columns:
                 merged = merged.drop_duplicates(subset=[date_col], keep="last")
             else:
                 merged = merged.drop_duplicates(keep="last")
+            if date_col and date_col in merged.columns:
+                if not pd.api.types.is_datetime64_any_dtype(merged[date_col]):
+                    merged[date_col] = pd.to_datetime(merged[date_col])
+                merged = merged.sort_values(date_col).reset_index(drop=True)
 
-        # Normalise date column to avoid str/Timestamp type mismatch during sort
+        # Normalise column type for parquet write consistency
         if date_col and date_col in merged.columns:
-            merged[date_col] = pd.to_datetime(merged[date_col])
-
-        merged = merged.sort_values(date_col).reset_index(drop=True)
+            if not pd.api.types.is_datetime64_any_dtype(merged[date_col]):
+                merged[date_col] = pd.to_datetime(merged[date_col])
 
         # Atomic write via temp file
         tmp = out_file.with_suffix(".parquet.tmp")
@@ -2242,6 +2339,7 @@ DATASETS = [
         "sort": ["index_code", "stock_code"],
         "start": "2019-01-01",
         "type": "reference",
+        "weekly_update_day": 4,  # Friday only (Mon=0 … Sun=6)
     },
     # ═══ Per-stock data ═══
     {
@@ -2425,7 +2523,7 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                         end_date=EFFECTIVE_TODAY,
                         date_col=d["date_col"],
                         dedup_keys=d.get("dedup"),
-                        workers=workers,
+                        workers=16,
                         dry_run=dry_run,
                         backfill_fn=backfill_fn,
                         backfill_kwargs=d.get("backfill_kwargs"),
@@ -2467,6 +2565,14 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
                 if skip_reference:
                     log_print(f"[{name}] Skipped (reference disabled)")
                     return {"name": name, "status": "skip", "reason": "reference_disabled"}
+                # ── Weekly-update gate: only re-fetch on the specified weekday ──
+                weekly_day = d.get("weekly_update_day")
+                if weekly_day is not None and date.today().weekday() != weekly_day:
+                    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                    log_print(f"[{name}] Skipped (weekly update, next fetch on "
+                              f"{day_names[weekly_day]})")
+                    return {"name": name, "status": "skip",
+                            "reason": f"not_{day_names[weekly_day]}"}
                 # Reference data: fetch entirely, small enough to just replace
                 if dry_run:
                     log_print(f"[{name}] DRY-RUN: would re-fetch entirely")

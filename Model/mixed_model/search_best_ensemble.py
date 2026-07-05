@@ -35,11 +35,11 @@ import numpy as np, pandas as pd
 # ============================================================
 # Config
 # ============================================================
-MODEL_BASE = '/root/autodl-fs/lingqiData/Model'
-OUTPUT_DIR = os.path.join(MODEL_BASE, 'mixed_model', 'ensemble_search')
+MODEL_BASE = '/autodl-fs/data/lingqiData/Model'
+OUTPUT_DIR = "/tmp/ensemble_search"
 START, END = '20250101', '20260331'
 MONEY = 1.5e9
-CACHE_DIR = os.path.join(OUTPUT_DIR, 'cache')  # 每个 combo 的结果缓存
+CACHE_DIR = "/tmp/ensemble_search/cache"  # 每个 combo 的结果缓存
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -70,8 +70,8 @@ def load_all_data(exclude_copy=True):
     _exclude_copy = exclude_copy
 
     print("[1/4] Loading base data...")
-    _ret_1d = pd.read_feather('/root/autodl-fs/lingqiData/trainingdata/label_ret_1d.fea').set_index("index")
-    _liquid = pd.read_feather('/root/autodl-fs/lingqiData/trainingdata/trade_amt.fea').set_index("index")
+    _ret_1d = pd.read_feather('/autodl-fs/data/lingqiData/trainingdata/label_ret_1d.fea').set_index("index")
+    _liquid = pd.read_feather('/autodl-fs/data/lingqiData/trainingdata/trade_amt.fea').set_index("index")
     print(f"  ret_1d: {_ret_1d.shape}, liquid: {_liquid.shape}")
 
     # Discover models — 优先 model_res，其次 model_pred（兼容新旧目录结构）

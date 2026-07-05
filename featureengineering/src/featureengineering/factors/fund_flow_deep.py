@@ -183,3 +183,92 @@ def factor_mf_sector_relative(context: FactorContext):
     relative = df["net_ratio"] - industry_mean
 
     return cross_sectional_rank(relative)
+
+# ── 订单规模结构分析 ─────────────────────────────────────────────────────
+
+@register_factor(
+    name="smart_money_concentration",
+    description="聪明钱集中度因子，(特大单净买-小单净卖)/abs(all net)截面排名（聪明钱相对噪音交易者越集中排前）。",
+    category="fund_flow",
+    thesis="将订单按规模分为聪明钱(特大+大单)和噪音(小+中单)——"
+           "聪明钱净买入远大于噪音交易者净买入时=机构主导定价权、方向可靠；"
+           "噪音交易者主导时=散户情绪驱动、方向不确定。"
+           "该比率度量的是谁的边际定价权更强。",
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_smart_money_concentration(context: FactorContext):
+    ff = context.load("main_fund_flow.parquet")
+    smart = (
+        ff["buy_elg_amount"] - ff["sell_elg_amount"]
+        + ff["buy_lg_amount"] - ff["sell_lg_amount"]
+    )
+    noise = (
+        ff["buy_sm_amount"] - ff["sell_sm_amount"]
+        + ff["buy_md_amount"] - ff["sell_md_amount"]
+    )
+    total = _total_amount(ff)
+    # Smart money net minus noise net, scaled by total turnover
+    score = (smart - noise) / total
+    return cross_sectional_rank(score)
+
+
+@register_factor(
+    name="order_size_concentration",
+    description="订单规模集中度因子，四个规模档的成交额HHI截面排名（集中度高=机构交易主导排前）。",
+    category="fund_flow",
+    thesis="四个订单规模档位(sm/md/lg/elg)的成交额赫芬达尔指数(HHI)——"
+           "HHI高=交易集中在某个规模档(通常是特大单或小单)=交易者类型单一、方向明确；"
+           "HHI低=交易分散在四个档=多空分歧大、方向不明。"
+           "特大单主导的高HHI=机构行动一致(排前)；小单主导的高HHI=散户情绪集中(排后)。"
+           "结合方向判断后区分两种高HHI情形。",
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_order_size_concentration(context: FactorContext):
+    ff = context.load("main_fund_flow.parquet")
+    sm_total = ff["buy_sm_amount"] + ff["sell_sm_amount"]
+    md_total = ff["buy_md_amount"] + ff["sell_md_amount"]
+    lg_total = ff["buy_lg_amount"] + ff["sell_lg_amount"]
+    elg_total = ff["buy_elg_amount"] + ff["sell_elg_amount"]
+    total_amount = sm_total + md_total + lg_total + elg_total
+
+    # HHI = sum of squared market shares
+    hhi = (
+        (sm_total / total_amount) ** 2
+        + (md_total / total_amount) ** 2
+        + (lg_total / total_amount) ** 2
+        + (elg_total / total_amount) ** 2
+    )
+    # Direction sign: large+elg net direction
+    big_net = (lg_total - 2 * (ff["sell_lg_amount"] - ff["buy_lg_amount"]).abs() / total_amount)  # proxy
+    # Simplified: if ELG+LG net is positive, HHI is positive; if negative, HHI is negative
+    smart_direction = (
+        ff["buy_elg_amount"] - ff["sell_elg_amount"]
+        + ff["buy_lg_amount"] - ff["sell_lg_amount"]
+    )
+    signed_hhi = hhi * np.sign(smart_direction)
+    return cross_sectional_rank(signed_hhi)
+
+
+@register_factor(
+    name="mf_flow_acceleration_ext",
+    description="资金流加速度因子，主力净流入率的5日变化截面排名（流入在加速=趋势加强排前）。",
+    category="fund_flow",
+    thesis="资金流的二阶导(加速度)比一阶导(方向)更具前瞻性——"
+           "净流入从正到更正向=买盘在加速(最强信号)；"
+           "净流入从负到正(转正)=趋势可能反转(注意跟进)；"
+           "净流入从正到负(减弱)=主力在撤退(预警信号)。"
+           "加速度为正意味着资金的边际态度在改善。",
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_mf_flow_acceleration_ext(context: FactorContext):
+    ff = context.load("main_fund_flow.parquet")
+    net = ff["net_mf_amount"]
+    total = _total_amount(ff)
+    net_ratio = net / total
+    # 5-day change in net_ratio (acceleration)
+    accel = net_ratio.groupby(level="Code").transform(
+        lambda s: s.diff(5)
+    )
+    return cross_sectional_rank(accel)
+
+
