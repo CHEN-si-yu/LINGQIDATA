@@ -57,8 +57,10 @@ def _fill_source_gaps(df, extend_to_date: str | None = None):
     from pathlib import Path as _Path
     import pandas as _pd
 
+    # Resolve daily_adj path from settings rather than hardcoding
+    from .settings import PATHS
     ref_daily = _pd.read_parquet(
-        _Path("/root/autodl-fs/lingqiData/data/daily_adj.parquet"),
+        PATHS.source_root / "daily_adj.parquet",
         columns=["trade_date"],
     )
     ref_dates_raw = (

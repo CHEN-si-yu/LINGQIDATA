@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
@@ -1187,3 +1187,4 @@ def build_many_parallel(
                 ok_count, skip_count, err_count, total_elapsed, total_rows)
 
     return results
+

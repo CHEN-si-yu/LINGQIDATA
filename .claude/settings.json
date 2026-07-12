@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**/*)",
+      "Edit(**/*)",
+      "Write(**/*)",
+      "Glob(**/*)",
+      "Grep(**/*)",
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(mkdir *)",
+      "Bash(mv *)",
+      "Bash(rm *)",
+      "Bash(cp *)",
+      "Bash(conda *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(powershell *)",
+      "Bash(taskkill *)",
+      "WebFetch",
+      "WebSearch",
+      "mcp__ide__executeCode",
+      "mcp__ide__getDiagnostics",
+      "Bash(git *)"
+    ]
+  }
+}

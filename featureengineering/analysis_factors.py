@@ -48,7 +48,7 @@ OUTPUT_DIR = _SCRIPT_DIR / "quality"
 N_SAMPLE_DATES = 20       # 相关性采样日期数
 N_SAMPLE_STOCKS = 500     # 相关性采样股票数
 CORR_THRESHOLD = 0.95     # 相关性阈值
-DEFAULT_WORKERS = 16
+DEFAULT_WORKERS = 32
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗

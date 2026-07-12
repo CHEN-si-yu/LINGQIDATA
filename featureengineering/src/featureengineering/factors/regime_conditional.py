@@ -121,8 +121,7 @@ def _make_vol_regime_factor(base_name, desc_en, regime_level, regime_label):
         dates = raw.index.get_level_values("Date")
         regime_aligned = regime.reindex(dates)
         mask = regime_aligned.values == regime_level
-        result = raw.copy()
-        result.values[~mask] = np.nan
+        result = raw.where(mask)
         return cross_sectional_rank(result)
 
     _compute.__name__ = "factor_" + base_name + "_" + regime_label
@@ -174,8 +173,7 @@ def _make_trend_regime_factor(base_name, desc_en, is_bull):
         regime_aligned = regime.reindex(dates)
         target = 1 if is_bull else 0
         mask = regime_aligned.values == target
-        result = raw.copy()
-        result.values[~mask] = np.nan
+        result = raw.where(mask)
         return cross_sectional_rank(result)
 
     _compute.__name__ = "factor_" + base_name + "_" + label

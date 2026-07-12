@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # 获取可用 GPU 数量（若没有 GPU 则返回 0）
     gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
     # 根据 GPU 数量决定并行任务数
-    jobs_value = "33" if gpu_count >= 2 else "16"
+    jobs_value = "25" if gpu_count >= 2 else "50"
 
     stages = [
         ("Class 1 (Panel)",     ["--only-class", "1", "--jobs", jobs_value,
@@ -133,8 +133,8 @@ if __name__ == "__main__":
     for i, (label, args) in enumerate(stages, 1):
         stage_t0 = time.perf_counter()
         _log_banner(f"STAGE {i}/{len(stages)}: {label}")
-        logger.info("Stage %d/%d: %s — launching subprocess", i, len(stages), label)
 
+        logger.info("Stage %d/%d: %s — launching subprocess", i, len(stages), label)
         cmd = [sys.executable, str(script)] + args
         rc = _stream_subprocess(cmd, label)
         stage_elapsed = time.perf_counter() - stage_t0
