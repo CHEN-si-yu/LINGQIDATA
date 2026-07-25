@@ -1,4 +1,6 @@
 import gc
+import json
+import os
 import shutil
 import calendar
 
@@ -15,6 +17,7 @@ from tqdm import tqdm
 # ============================================================
 code_num_path = PROJECT_ROOT / "Code_num.txt"
 factor_dir = PROJECT_ROOT / "featureengineering/data/factors"
+manifest_dir = PROJECT_ROOT / "featureengineering/data/manifests"
 label_ret_1d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_1d.fea"
 label_ret_3d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_3d.fea"
 label_ret_5d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_5d.fea"
@@ -88,6 +91,7 @@ fac_ic_positive_path = out_dir / "fac_IC_positive.fea"
 fac_diverse_path = out_dir / "fac_diverse.fea"
 fac_model_importance_path = out_dir / "fac_model_importance.fea"
 fac_hybrid_path = out_dir / "fac_hybrid.fea"
+fac_continuous_path = out_dir / "fac_continuous.fea"
 
 # ============================================================
 # Helper: load factor file, filter by cutoff date
@@ -120,7 +124,141 @@ def _generate_fac_sample(fac_df, n_factors=SAMPLE_N_FACTORS, seed=SAMPLE_SEED):
 
 
 # ============================================================
-# Helper: factor selection strategies (used in Sections 5-9)
+# Helper: identify continuous daily-frequency factors from upstream manifests
+# ============================================================
+
+# -- Classification of upstream data sources by frequency --
+_DAILY_SOURCES = {
+    "daily_adj.parquet", "daily.parquet", "finance.parquet",
+    "cyq_perf.parquet", "main_fund_flow.parquet", "margin_detail.parquet",
+    "limit_up.parquet", "dragon_tiger.parquet", "top_list.parquet",
+    "limit_list.parquet", "ths_daily.parquet", "ths_sector_categories.parquet",
+    "ths_constituent_stocks.parquet", "pledge_stat.parquet",
+    "history_1min", "cyq_chips",       # raw upstream names (no .parquet suffix)
+}
+
+_NON_DAILY_SOURCES = {
+    "financial_indicator.parquet", "balancesheet.parquet",
+    "income.parquet", "cashflow.parquet",
+    "holder_number.parquet", "index_weight.parquet",
+    "stock_list.parquet",
+}
+
+_META_SOURCES = {"calendar.parquet"}
+_FACTOR_MARKER = "__factors__"
+
+
+def _identify_continuous_daily_factors(manifest_dir):
+    """Identify factors whose upstream data sources are all daily-frequency.
+
+    Reads every factor's manifest JSON and classifies it as daily or non-daily
+    based on its dependency chain.  A factor is **daily** when all of its
+    upstream data sources deliver new information every trading day (market
+    data, intraday, fund flows, margin, etc.).  Factors that depend on
+    quarterly/annual financial statements, shareholder registers, or index
+    rebalance tables are **non-daily** even if their values are forward-filled
+    to a daily grid.
+
+    Coupling / enhanced factors (those whose manifest lists other factor names
+    as dependencies) are resolved recursively: if every referenced factor is
+    daily, the derived factor is also daily.
+
+    Parameters
+    ----------
+    manifest_dir : Path
+        Directory containing ``<factor_name>.json`` manifest files.
+
+    Returns
+    -------
+    set of str
+        Factor names classified as continuous daily-frequency.
+    """
+    if not manifest_dir.exists():
+        print(f"  [ContinuousDaily] Manifest dir not found: {manifest_dir}")
+        return set()
+
+    # ---- load all manifests ----
+    factors = {}       # name -> {category, factor_refs, data_refs}
+    for fname in os.listdir(str(manifest_dir)):
+        if not fname.endswith(".json"):
+            continue
+        with open(os.path.join(str(manifest_dir), fname)) as fh:
+            data = json.load(fh)
+        name = data["name"]
+        deps = data.get("dependencies", [])
+
+        factor_refs = []
+        data_refs = []
+        for d in deps:
+            if d == _FACTOR_MARKER:
+                continue
+            if (d in _DAILY_SOURCES or d in _NON_DAILY_SOURCES
+                    or d in _META_SOURCES or d.endswith(".parquet")):
+                data_refs.append(d)
+            else:
+                factor_refs.append(d)          # reference to another factor
+
+        factors[name] = {
+            "category": data.get("category", "unknown"),
+            "factor_refs": factor_refs,
+            "data_refs": data_refs,
+        }
+
+    if not factors:
+        print("  [ContinuousDaily] No manifests found.")
+        return set()
+
+    # ---- iterative resolution ----
+    daily = set()
+    non_daily = set()
+
+    # First pass: classify by direct data sources
+    for name, info in factors.items():
+        real_sources = set(info["data_refs"]) - _META_SOURCES
+        if real_sources & _NON_DAILY_SOURCES:
+            non_daily.add(name)
+        elif real_sources & _DAILY_SOURCES:
+            daily.add(name)
+
+    # Iteratively resolve factor references
+    changed = True
+    while changed:
+        changed = False
+        for name, info in factors.items():
+            if name in daily or name in non_daily:
+                continue
+            # Re-check data refs (some may have been added after first pass)
+            real_sources = set(info["data_refs"]) - _META_SOURCES
+            if real_sources & _NON_DAILY_SOURCES:
+                non_daily.add(name)
+                changed = True
+                continue
+            elif real_sources & _DAILY_SOURCES:
+                daily.add(name)
+                changed = True
+                continue
+            # Resolve through factor references
+            if info["factor_refs"]:
+                if all(r in daily for r in info["factor_refs"]):
+                    daily.add(name)
+                    changed = True
+                elif any(r in non_daily for r in info["factor_refs"]):
+                    non_daily.add(name)
+                    changed = True
+
+    unresolved = set(factors) - daily - non_daily
+    if unresolved:
+        print(f"  [ContinuousDaily] WARNING: {len(unresolved)} factors could not be classified:")
+        for n in sorted(unresolved)[:10]:
+            print(f"    {n}: refs={factors[n]['factor_refs']}, data={factors[n]['data_refs']}")
+
+    return daily
+
+
+
+
+# ============================================================
+# Helper: factor selection strategies (used in Sections 7-13)
 # ============================================================
 
 def _strategy_minimal_filter(fac_df, quality_df):
@@ -889,7 +1027,54 @@ del fac_sample_df
 gc.collect()
 
 # ============================================================
-# 5. Load quality metrics for factor selection strategies
+# 5. Generate fac_continuous.fea (continuous daily-frequency factors only)
+# ============================================================
+print(f"\n{'='*60}")
+print(f"[5] Generating fac_continuous.fea (continuous daily-frequency factors)...")
+
+fac_all = pd.read_feather(fac_path)
+print(f"  Loaded fac_all: {fac_all.shape}")
+
+# Identify which columns in fac_all are continuous daily-frequency factors
+daily_factor_names = _identify_continuous_daily_factors(manifest_dir)
+print(f"  Identified {len(daily_factor_names)} continuous daily-frequency factors from manifests")
+
+# Intersect with columns actually present in fac_all
+fac_all_cols = set(c for c in fac_all.columns if c not in ("date", "Code"))
+continuous_factors = sorted(daily_factor_names & fac_all_cols)
+
+n_total = len(fac_all_cols)
+n_continuous = len(continuous_factors)
+n_missing = len(daily_factor_names - fac_all_cols)
+
+print(f"  Total factor columns in fac_all: {n_total}")
+print(f"  Continuous daily factors matched: {n_continuous}")
+if n_missing > 0:
+    print(f"  Factors in manifests but not in fac_all: {n_missing}")
+
+# Show category breakdown
+daily_cats = {}
+for name in continuous_factors:
+    # Read manifest for category (we already loaded it but let's use a lightweight check)
+    manifest_path = manifest_dir / f"{name}.json"
+    try:
+        with open(manifest_path) as fh:
+            manifest_data = json.load(fh)
+        cat = manifest_data.get("category", "unknown")
+    except Exception:
+        cat = "unknown"
+    daily_cats[cat] = daily_cats.get(cat, 0) + 1
+
+print(f"  Category breakdown:")
+for cat, cnt in sorted(daily_cats.items(), key=lambda x: -x[1]):
+    print(f"    {cat}: {cnt}")
+
+_save_factor_subset(fac_all, continuous_factors, fac_continuous_path, "ContinuousDaily")
+del fac_all
+gc.collect()
+
+# ============================================================
+# 6. Load quality metrics for factor selection strategies
 # ============================================================
 print(f"\n{'='*60}")
 print(f"[5] Loading factor quality metrics...")
@@ -914,34 +1099,8 @@ else:
           f"P95={quality_df['nan_ratio'].quantile(0.95):.4f}")
 
 
-# # ============================================================
-# # 7. Strategy B: IC Top-K
-# # ============================================================
-# if quality_df is not None:
-#     print(f"\n{'='*60}")
-#     print(f"[7] Strategy B: IC Top-K (K={IC_TOPK_K})...")
-
-#     fac_all = pd.read_feather(fac_path)
-#     keep_ic = _strategy_ic_topk(quality_df, k=IC_TOPK_K)
-#     _save_factor_subset(fac_all, keep_ic, fac_ic_topk_path, "IC-TopK")
-#     del fac_all
-#     gc.collect()
-
-# # ============================================================
-# # 8. Strategy C: IC Positive (directional filter)
-# # ============================================================
-# if quality_df is not None:
-#     print(f"\n{'='*60}")
-#     print(f"[8] Strategy C: IC Positive (min |ICIR| = {IC_POSITIVE_MIN_ICIR})...")
-
-#     fac_all = pd.read_feather(fac_path)
-#     keep_pos = _strategy_ic_positive(quality_df, min_icir=IC_POSITIVE_MIN_ICIR)
-#     _save_factor_subset(fac_all, keep_pos, fac_ic_positive_path, "IC-Positive")
-#     del fac_all
-#     gc.collect()
-
 # ============================================================
-# 9. Strategy D: Diverse Greedy Selection
+# 10. Strategy D: Diverse Greedy Selection
 # ============================================================
 if quality_df is not None:
     print(f"\n{'='*60}")
@@ -965,70 +1124,9 @@ if quality_df is not None:
     del fac_all
     gc.collect()
 
-# # ============================================================
-# # 10. Generate fac_select.fea using the default strategy
-# # ============================================================
-# print(f"\n{'='*60}")
-# print(f"[10] Generating fac_select.fea (strategy: {FAC_SELECT_STRATEGY})...")
-
-# fac_all = pd.read_feather(fac_path)
-
-# if quality_df is None:
-#     # No quality data -> fac_select = fac_all (no filtering)
-#     all_factor_cols = sorted(c for c in fac_all.columns if c not in ("date", "Code"))
-#     keep_factors = all_factor_cols
-#     print(f"  No quality data, keeping all {len(keep_factors)} factors")
-# elif FAC_SELECT_STRATEGY == "minimal_filter":
-#     keep_factors = _strategy_minimal_filter(fac_all, quality_df)
-# elif FAC_SELECT_STRATEGY == "ic_topk":
-#     keep_factors = _strategy_ic_topk(quality_df, k=IC_TOPK_K)
-# elif FAC_SELECT_STRATEGY == "ic_positive":
-#     keep_factors = _strategy_ic_positive(quality_df, min_icir=IC_POSITIVE_MIN_ICIR)
-# elif FAC_SELECT_STRATEGY == "diverse":
-#     try:
-#         keep_factors = _strategy_diverse_greedy(
-#             fac_all, quality_df, k=DIVERSE_K,
-#             n_dates=DIVERSE_N_SAMPLE_DATES, n_stocks=DIVERSE_N_SAMPLE_STOCKS
-#         )
-#     except Exception as e:
-#         print(f"  [Diverse] ERROR: {e}, falling back to minimal_filter")
-#         keep_factors = _strategy_minimal_filter(fac_all, quality_df)
-# elif FAC_SELECT_STRATEGY == "model_importance":
-#     all_factor_cols = sorted(c for c in fac_all.columns if c not in ("date", "Code"))
-#     keep_factors = _strategy_model_importance(all_factor_cols, k=MODEL_IMPORTANCE_TOP_K)
-# else:
-#     print(f"  Unknown strategy '{FAC_SELECT_STRATEGY}', falling back to minimal_filter")
-#     keep_factors = _strategy_minimal_filter(fac_all, quality_df)
-
-# _save_factor_subset(fac_all, keep_factors, fac_select_path, "fac_select")
-# del fac_all
-# gc.collect()
-
-# # ============================================================
-# # 11. Generate fac_model_importance.fea (model-learned factor ranking)
-# # ============================================================
-# if quality_df is not None:
-#     print(f"\n{'='*60}")
-#     print(f"[11] Strategy E: Model Importance Top-K (K={MODEL_IMPORTANCE_TOP_K})...")
-#     print(f"  Source: {MODEL_IMPORTANCE_ORDER_PATH}")
-
-#     fac_all = pd.read_feather(fac_path)
-#     all_factor_cols = sorted(c for c in fac_all.columns if c not in ("date", "Code"))
-#     try:
-#         keep_model_imp = _strategy_model_importance(
-#             all_factor_cols, order_path=MODEL_IMPORTANCE_ORDER_PATH, k=MODEL_IMPORTANCE_TOP_K
-#         )
-#         _save_factor_subset(fac_all, keep_model_imp, fac_model_importance_path, "ModelImportance")
-#     except Exception as e:
-#         print(f"  [ModelImportance] ERROR: {e}")
-#         print(f"  [ModelImportance] Ensure factors_order.txt exists at {MODEL_IMPORTANCE_ORDER_PATH}")
-#         import traceback
-#         traceback.print_exc()
-#     del fac_all
-#     gc.collect()
 
 # ============================================================
-# 12. Strategy F: Hybrid (IC + Model Importance + Diverse)
+# 13. Strategy F: Hybrid (IC + Model Importance + Diverse)
 # ============================================================
 if quality_df is not None:
     print(f"\n{'='*60}")
@@ -1052,7 +1150,9 @@ print(f"\n{'='*60}")
 print(f"Factor Selection Summary")
 print(f"{'='*60}")
 print(f"  Default strategy: {FAC_SELECT_STRATEGY}")
+print(f"  fac_all.fea:      {fac_path}")
 print(f"  fac_select.fea:   {fac_select_path}")
+print(f"  fac_continuous.fea: {fac_continuous_path}")
 if quality_df is not None:
     print(f"  Also generated:")
     print(f"    fac_IC_topK.fea:              {fac_ic_topk_path}")

@@ -32,6 +32,15 @@ from fetch_ths_sector_categories import fetch_ths_sector_categories
 from fetch_ths_constituent_stocks import fetch_ths_constituent_stocks
 from fetch_index_weight import fetch_index_weight
 
+# Technical indicators (1min)
+from fetch_indicator import (
+    fetch_macd_1min,
+    fetch_kdj_1min,
+    fetch_rsi_1min,
+    fetch_boll_1min,
+    fetch_ma_1min,
+)
+
 # ── Task registry ──────────────────────────────────────────────────
 # Comment out any line to skip that endpoint.
 # Each task's final output file is checked: if it already exists the
@@ -203,11 +212,43 @@ TASKS = [
     #     "output": f"{DATA_DIR}/cyq_chips/.done",
     # },
 
+    # {
+    #     "name": "history",
+    #     "fn": fetch_history,
+    #     "start": "2019-01-01",
+    #     "output": f"{DATA_DIR}/history_1min/.done",
+    # },
+
+    # ════════════════════ 技术指标 — 1分钟线 ════════════════════
     {
-        "name": "history",
-        "fn": fetch_history,
+        "name": "macd_1min",
+        "fn": fetch_macd_1min,
         "start": "2019-01-01",
-        "output": f"{DATA_DIR}/history_1min/.done",
+        "output": f"{DATA_DIR}/macd_1min/.done",
+    },
+    {
+        "name": "kdj_1min",
+        "fn": fetch_kdj_1min,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/kdj_1min/.done",
+    },
+    {
+        "name": "rsi_1min",
+        "fn": fetch_rsi_1min,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/rsi_1min/.done",
+    },
+    {
+        "name": "boll_1min",
+        "fn": fetch_boll_1min,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/boll_1min/.done",
+    },
+    {
+        "name": "ma_1min",
+        "fn": fetch_ma_1min,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/ma_1min/.done",
     },
 ]
 

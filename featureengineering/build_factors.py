@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # 获取可用 GPU 数量（若没有 GPU 则返回 0）
     gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
     # 根据 GPU 数量决定并行任务数
-    jobs_value = "25" if gpu_count >= 2 else "50"
+    jobs_value = "28" if gpu_count >= 2 else "50"
 
     stages = [
         ("Class 1 (Panel)",     ["--only-class", "1", "--jobs", jobs_value,

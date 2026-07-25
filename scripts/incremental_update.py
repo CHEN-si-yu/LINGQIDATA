@@ -341,6 +341,14 @@ def _canary_datasets_behind(target_date_str):
         elif dtype == "per_stock":
             # Per-stock datasets (cyq_chips, history_1min) are always
             # daily-frequency — check them unconditionally.
+            # EXCEPTION: datasets with batch_size <= 1 make one API call
+            # per stock and are inherently slow to update.  Individual
+            # stocks will frequently lag behind; they must not block the
+            # preflight check or the script will loop forever on the same
+            # historical date (Phase 1 → incomplete → ineffective update
+            # → incomplete again).
+            if d.get("batch_size", _PER_STOCK_BATCH_SIZE) <= 1:
+                continue
             out_dir = Path(DATA_DIR) / d.get("out_subdir", "")
             if not out_dir.exists():
                 continue
@@ -2216,6 +2224,7 @@ DATASETS = [
         "type": "consolidated",
         "strict_dedup": True,
         "backfill": True,
+        "lag_days": 1,
     },
     {
         "name": "index_weight",
@@ -2242,6 +2251,7 @@ DATASETS = [
         "start": "2019-01-01",
         "type": "consolidated",
         "overlap_days": 95,
+        "lag_days": 1,
     },
     {
         "name": "pledge_stat",
@@ -2387,6 +2397,98 @@ DATASETS = [
         "backfill_fn_name": "fetch_history",
         "backfill_kwargs": {"level": "1min"}, "consolidate": False,
     },
+
+    # # ════════════════════ 技术指标 — 1分钟线 ════════════════════
+    # {
+    #     "name": "macd_1min",
+    #     "module": None, "fn_name": None,
+    #     "file": "macd_1min/.done",
+    #     "date_col": "trade_time",
+    #     "dedup": ["trade_time", "stock_code"],
+    #     "sort": ["trade_time"],
+    #     "start": "2019-01-01",
+    #     "type": "per_stock",
+    #     "out_subdir": "macd_1min",
+    #     "endpoint": "stock/macd",
+    #     "extra_payload": {"level": "1min", "fast_period": 12, "slow_period": 26, "signal_period": 9},
+    #     "backfill_module": "fetch_indicator",
+    #     "backfill_fn_name": "fetch_macd_1min",
+    #     "batch_size": 1,
+    #     "stock_code_as_list": True,
+    #     "consolidate": False,
+    # },
+    # {
+    #     "name": "kdj_1min",
+    #     "module": None, "fn_name": None,
+    #     "file": "kdj_1min/.done",
+    #     "date_col": "trade_time",
+    #     "dedup": ["trade_time", "stock_code"],
+    #     "sort": ["trade_time"],
+    #     "start": "2019-01-01",
+    #     "type": "per_stock",
+    #     "out_subdir": "kdj_1min",
+    #     "endpoint": "stock/kdj",
+    #     "extra_payload": {"level": "1min", "kdj_period": 9, "k_period": 3, "d_period": 3},
+    #     "backfill_module": "fetch_indicator",
+    #     "backfill_fn_name": "fetch_kdj_1min",
+    #     "batch_size": 1,
+    #     "stock_code_as_list": True,
+    #     "consolidate": False,
+    # },
+    # {
+    #     "name": "rsi_1min",
+    #     "module": None, "fn_name": None,
+    #     "file": "rsi_1min/.done",
+    #     "date_col": "trade_time",
+    #     "dedup": ["trade_time", "stock_code"],
+    #     "sort": ["trade_time"],
+    #     "start": "2019-01-01",
+    #     "type": "per_stock",
+    #     "out_subdir": "rsi_1min",
+    #     "endpoint": "stock/rsi",
+    #     "extra_payload": {"level": "1min", "rsi_period": 6},
+    #     "backfill_module": "fetch_indicator",
+    #     "backfill_fn_name": "fetch_rsi_1min",
+    #     "batch_size": 1,
+    #     "stock_code_as_list": True,
+    #     "consolidate": False,
+    # },
+    # {
+    #     "name": "boll_1min",
+    #     "module": None, "fn_name": None,
+    #     "file": "boll_1min/.done",
+    #     "date_col": "trade_time",
+    #     "dedup": ["trade_time", "stock_code"],
+    #     "sort": ["trade_time"],
+    #     "start": "2019-01-01",
+    #     "type": "per_stock",
+    #     "out_subdir": "boll_1min",
+    #     "endpoint": "stock/boll",
+    #     "extra_payload": {"level": "1min", "boll_period": 20, "boll_std": 2},
+    #     "backfill_module": "fetch_indicator",
+    #     "backfill_fn_name": "fetch_boll_1min",
+    #     "batch_size": 1,
+    #     "stock_code_as_list": True,
+    #     "consolidate": False,
+    # },
+    # {
+    #     "name": "ma_1min",
+    #     "module": None, "fn_name": None,
+    #     "file": "ma_1min/.done",
+    #     "date_col": "trade_time",
+    #     "dedup": ["trade_time", "stock_code"],
+    #     "sort": ["trade_time"],
+    #     "start": "2019-01-01",
+    #     "type": "per_stock",
+    #     "out_subdir": "ma_1min",
+    #     "endpoint": "stock/ma",
+    #     "extra_payload": {"level": "1min", "ma_periods": [5, 10, 20, 30, 60]},
+    #     "backfill_module": "fetch_indicator",
+    #     "backfill_fn_name": "fetch_ma_1min",
+    #     "batch_size": 1,
+    #     "stock_code_as_list": True,
+    #     "consolidate": False,
+    # },
 ]
 
 
@@ -2482,6 +2584,29 @@ def run_updates(datasets=None, exclude=None, overlap_days=OVERLAP_DAYS,
               f"{len(selected)} datasets | overlap={overlap_days} days | "
               f"workers={workers} | parallel={parallel}")
     log_print(f"[incremental] Datasets: {[d['name'] for d in selected]}")
+
+    # ── Batch local_indicator datasets (0 API, read daily_dump_1min) ──
+    local_ind_ds = [d for d in selected if d.get("local_indicator")]
+    if local_ind_ds:
+        log_print(f"[incremental] Batch-processing {len(local_ind_ds)} "
+                  f"local indicators: {[d['name'] for d in local_ind_ds]}")
+        try:
+            update_indicators_from_daily_dump(
+                indicator_datasets=local_ind_ds,
+                start_date=local_ind_ds[0]["start"],
+                end_date=EFFECTIVE_TODAY,
+                workers=workers,
+                dry_run=dry_run,
+                overlap_days=overlap_days,
+            )
+            for d in local_ind_ds:
+                _record_state(d["name"], EFFECTIVE_TODAY)
+        except Exception as e:
+            log_print(f"[incremental] Local indicator batch FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+        # Remove from selected — they've been handled
+        selected = [d for d in selected if not d.get("local_indicator")]
 
     # ── Monitor thread ──
     stop_event = threading.Event()

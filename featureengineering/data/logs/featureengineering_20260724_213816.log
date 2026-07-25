@@ -1,0 +1,667 @@
+2026-07-24 21:38:16 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260724_213816.log
+2026-07-24 21:38:39 [INFO   ] root: Python    : 3.12.3
+2026-07-24 21:38:39 [INFO   ] root: pandas    : 3.0.3
+2026-07-24 21:38:39 [INFO   ] root: numpy     : 2.3.2
+2026-07-24 21:39:46 [INFO   ] build_factors: Factor build started — 4 stage(s)
+2026-07-24 21:39:46 [INFO   ] build_factors: 
+################################################################
+#  BUILD START
+################################################################
+2026-07-24 21:39:46 [INFO   ] build_factors: 
+################################################################
+#  STAGE 1/4: Class 1 (Panel)
+################################################################
+2026-07-24 21:39:46 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — launching subprocess
+2026-07-24 21:39:56 [INFO   ] featureengineering.builder: Effective end date: 20260724  |  1028 factors to check
+2026-07-24 21:39:57 [INFO   ] featureengineering.builder: Dashboard disabled — stdout is not a TTY (likely piped to parent)
+2026-07-24 22:00:16 [ERROR  ] featureengineering.builder: concept_momentum_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1043, in factor_concept_momentum_5d
+    return cross_sectional_rank(pd.Series(dtype=float))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:16 [ERROR  ] featureengineering.builder: concept_overlap_premium: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1268, in factor_concept_overlap_premium
+    return cross_sectional_rank(pd.Series(dtype=float))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:16 [ERROR  ] featureengineering.builder: concept_rotation_signal: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1201, in factor_concept_rotation_signal
+    return cross_sectional_rank(pd.Series(dtype=float))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:19 [ERROR  ] featureengineering.builder: concept_turnover_heat: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1099, in factor_concept_turnover_heat
+    return cross_sectional_rank(pd.Series(dtype=float))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:21 [ERROR  ] featureengineering.builder: sector_advance_decline_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 657, in factor_sector_advance_decline_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:26 [ERROR  ] featureengineering.builder: sector_amount_flow_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 561, in factor_sector_amount_flow_5d
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:32 [ERROR  ] featureengineering.builder: sector_cipin_concentration: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1357, in factor_sector_cipin_concentration
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:33 [ERROR  ] featureengineering.builder: sector_alpha_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 395, in factor_sector_alpha_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:36 [ERROR  ] featureengineering.builder: sector_beta_60: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 334, in factor_sector_beta_60
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:37 [ERROR  ] featureengineering.builder: sector_beta_change_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 363, in factor_sector_beta_change_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:40 [ERROR  ] featureengineering.builder: sector_corr_to_leader_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 274, in factor_sector_corr_to_leader_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:46 [ERROR  ] featureengineering.builder: sector_margin_trend_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1330, in factor_sector_margin_trend_5d
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:47 [ERROR  ] featureengineering.builder: sector_fund_flow_heat_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1303, in factor_sector_fund_flow_heat_5d
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:49 [ERROR  ] featureengineering.builder: sector_mc_share_change_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 680, in factor_sector_mc_share_change_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:51 [ERROR  ] featureengineering.builder: sector_corr_stability_60: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 301, in factor_sector_corr_stability_60
+    return cross_sectional_rank(-result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:51 [ERROR  ] featureengineering.builder: sector_rotation_accel_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 423, in factor_sector_rotation_accel_5d
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:51 [ERROR  ] featureengineering.builder: sector_momentum_reversal_5d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 469, in factor_sector_momentum_reversal_5d
+    return cross_sectional_rank(-result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:53 [ERROR  ] featureengineering.builder: sector_corr_to_market_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 239, in factor_sector_corr_to_market_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:53 [ERROR  ] featureengineering.builder: sector_spillover_impact_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 892, in factor_sector_spillover_impact_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:54 [ERROR  ] featureengineering.builder: sector_new_high_ratio_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 596, in factor_sector_new_high_ratio_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:55 [ERROR  ] featureengineering.builder: sector_new_low_ratio_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 625, in factor_sector_new_low_ratio_20
+    return cross_sectional_rank(-result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:56 [ERROR  ] featureengineering.builder: sector_pe_expansion_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 950, in factor_sector_pe_expansion_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:00:58 [ERROR  ] featureengineering.builder: sector_relative_pe_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 923, in factor_sector_relative_pe_20
+    return cross_sectional_rank(-result)  # low percentile = cheap = good
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:01:04 [ERROR  ] featureengineering.builder: sector_up_volume_ratio_20: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 533, in factor_sector_up_volume_ratio_20
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:01:06 [ERROR  ] featureengineering.builder: sector_turnover_divergence: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 500, in factor_sector_turnover_divergence
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:01:10 [ERROR  ] featureengineering.builder: sector_relative_strength_60d: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 447, in factor_sector_relative_strength_60d
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:01:28 [ERROR  ] featureengineering.builder: sector_multi_dimension_score: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 863, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/sector_cross.py", line 1424, in factor_sector_multi_dimension_score
+    return cross_sectional_rank(result)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/utils.py", line 44, in cross_sectional_rank
+    lo = series.groupby(level="Date").quantile(lower)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/util/_decorators.py", line 336, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/series.py", line 2057, in groupby
+    return SeriesGroupBy(
+           ^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/groupby.py", line 1095, in __init__
+    grouper, exclusions, obj = get_grouper(
+                               ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/pandas/core/groupby/grouper.py", line 789, in get_grouper
+    raise ValueError(f"level name {level} is not the name of the index")
+ValueError: level name Date is not the name of the index
+2026-07-24 22:04:32 [INFO   ] featureengineering.builder: Build complete — 1001 ok, 0 skip, 27 error | 39558 s wall | 0 total rows
+2026-07-24 22:04:32 [WARNING] py.warnings: /autodl-fs/data/lingqiData/featureengineering/build_factors.py:139: ResourceWarning: unclosed file <_io.TextIOWrapper name=31 encoding='UTF-8'>
+  rc = _stream_subprocess(cmd, label)
+
+2026-07-24 22:04:32 [INFO   ] build_factors: Stage 1/4: Class 1 (Panel) — OK (1486s)
+2026-07-24 22:04:32 [INFO   ] build_factors: 
+################################################################
+#  STAGE 2/4: Class 2 (cyq_chips)
+################################################################
+2026-07-24 22:04:32 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — launching subprocess
+2026-07-24 22:07:56 [INFO   ] build_factors: Stage 2/4: Class 2 (cyq_chips) — OK (204s)
+2026-07-24 22:07:56 [INFO   ] build_factors: 
+################################################################
+#  STAGE 3/4: Class 3 (intraday)
+################################################################
+2026-07-24 22:07:56 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — launching subprocess
+2026-07-24 22:19:33 [INFO   ] build_factors: Stage 3/4: Class 3 (intraday) — OK (697s)
+2026-07-24 22:19:33 [INFO   ] build_factors: 
+################################################################
+#  STAGE 4/4: Class 4 (Coupling)
+################################################################
+2026-07-24 22:19:33 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — launching subprocess
+2026-07-24 22:19:39 [INFO   ] featureengineering.builder: Effective end date: 20260724  |  211 factors to check
+2026-07-24 22:21:50 [INFO   ] featureengineering.builder: Build complete — 211 ok, 0 skip, 0 error | 1550 s wall | 0 total rows
+2026-07-24 22:21:51 [INFO   ] build_factors: Stage 4/4: Class 4 (Coupling) — OK (138s)
+2026-07-24 22:21:51 [INFO   ] build_factors: Factor build finished — OK, total elapsed: 2524 s
+2026-07-24 22:21:51 [INFO   ] build_factors: 
+################################################################
+#  BUILD DONE — OK (total: 2524s)
+################################################################
