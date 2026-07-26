@@ -217,4 +217,13 @@ def configure_paths(
         stock_pool_file=resolved_project_root.parent / "Code_num.txt",
     )
     _setup_file_logging(PATHS.project_root / "data" / "logs")
+
+    # Ensure output directories exist so downstream code (factor_loader, storage)
+    # does not emit spurious "directory not found" warnings on first run.
+    for _dir in (PATHS.factor_output_dir, PATHS.manifest_output_dir, PATHS.target_output_dir):
+        try:
+            _dir.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            pass
+
     return PATHS

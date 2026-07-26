@@ -1,5 +1,5 @@
 """
-Extended factor coupling (扩展因子耦合) — Class 4.
+Extended factor coupling (扩展因子耦合) — Class 5.
 
 These factors load pre-computed .fea factors and build high-dimensional
 derived signals: triple interactions, factor quality metrics, orthogonalization,
@@ -59,22 +59,6 @@ def _rolling_corr(a: pd.Series, b: pd.Series, window: int, min_periods: int | No
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
-    name="value_quality_momentum_triple",
-    description="价值质量动量三因子，(bp排名×roe排名×mom_20排名)截面排名。三维共振=最强信号。",
-    category="coupling",
-    thesis="BP(便宜)+ROE(优质)+动量(趋势)的三维共振是量化选股的'圣杯'组合——三个维度同时排名靠前的股票历史上超额收益最稳定。单维度好可能是陷阱，三维共振才是真正的alpha。",
-    dependencies=("__factors__", "bp", "roe", "mom_20"),
-)
-def factor_value_quality_momentum_triple(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    roe = ctx.load_factor("roe")
-    mom = ctx.load_factor("mom_20")
-
-    common = bp.index.intersection(roe.index).intersection(mom.index)
-    triple = _rank(bp.loc[common]) * _rank(roe.loc[common]) * _rank(mom.loc[common])
-    return cross_sectional_rank(triple)
-
-@register_factor(
     name="bp_mom_resonance",
     description="BP-动量共振因子，(bp排名-0.5)×(mom_20排名-0.5)×2截面排名（正向共振=高估值+正动量排前）。",
     category="coupling",
@@ -90,21 +74,6 @@ def factor_bp_mom_resonance(ctx: FactorContext) -> pd.Series:
     mom_dev = _rank(mom.loc[common]) - 0.5
     resonance = bp_dev * mom_dev * 2.0  # range [-0.5, 0.5]
     return cross_sectional_rank(resonance)
-
-@register_factor(
-    name="roe_turnover_interaction",
-    description="ROE-换手率交互因子，(roe排名)×(1-换手率排名)截面排名（高质量+低换手=价值沉淀排前）。",
-    category="coupling",
-    thesis="ROE和换手率的交互识别'被低估的优质公司'——高ROE但低换手意味着优质公司尚未被市场充分发现，是价值投资的核心标的。高ROE+高换手则可能已被充分定价。",
-    dependencies=("__factors__", "roe", "turnover_20"),
-)
-def factor_roe_turnover_interaction(ctx: FactorContext) -> pd.Series:
-    roe = ctx.load_factor("roe")
-    turnover = ctx.load_factor("turnover_20")
-
-    common = roe.index.intersection(turnover.index)
-    interaction = _rank(roe.loc[common]) * (1 - _rank(turnover.loc[common]))
-    return cross_sectional_rank(interaction)
 
 @register_factor(
     name="size_momentum_interaction",
@@ -137,22 +106,6 @@ def factor_volatility_reversal_interaction(ctx: FactorContext) -> pd.Series:
     return cross_sectional_rank(interaction)
 
 @register_factor(
-    name="chip_momentum_quality",
-    description="筹码-动量-质量三因子，(筹码集中排名×动量排名×ROE排名)截面排名。",
-    category="coupling",
-    thesis="筹码集中度、价格动量和盈利质量的三维共振是中线选股的最强组合——筹码集中意味着主力在收集，动量确认趋势，质量保证基本面支撑。三维共振的股票是中线最确定的alpha来源。",
-    dependencies=("__factors__", "winner_rate", "mom_20", "roe"),
-)
-def factor_chip_momentum_quality(ctx: FactorContext) -> pd.Series:
-    wr = ctx.load_factor("winner_rate")
-    mom = ctx.load_factor("mom_20")
-    roe = ctx.load_factor("roe")
-
-    common = wr.index.intersection(mom.index).intersection(roe.index)
-    triple = (1 - _rank(wr.loc[common])) * _rank(mom.loc[common]) * _rank(roe.loc[common])
-    return cross_sectional_rank(triple)
-
-@register_factor(
     name="fundflow_value_interaction",
     description="资金流-价值交互因子，主力净流入排名×bp排名截面排名（资金流入+低估=戴维斯双击前兆排前）。",
     category="coupling",
@@ -181,40 +134,6 @@ def factor_sector_momentum_coupling(ctx: FactorContext) -> pd.Series:
     common = sector.index.intersection(mom.index)
     coupling = _rank(sector.loc[common]) * _rank(mom.loc[common])
     return cross_sectional_rank(coupling)
-
-@register_factor(
-    name="index_weight_momentum_coupling",
-    description="指数权重-动量耦合因子，沪深300权重变化排名×动量排名截面排名。被动资金调仓方向+趋势双击。",
-    category="coupling",
-    thesis="指数权重正在提升的股票叠加正动量是'被动调仓+主动趋势'双驱动——权重边际改善意味着更多被动资金增量，叠加主动趋势资金的顺势参与。这种双驱动在指数调仓窗口附近表现最优。",
-    dependencies=("__factors__", "index_weight_change", "mom_20"),
-)
-def factor_index_weight_momentum_coupling(ctx: FactorContext) -> pd.Series:
-    iw = ctx.load_factor("index_weight_change")
-    mom = ctx.load_factor("mom_20")
-
-    common = iw.index.intersection(mom.index)
-    coupling = _rank(iw.loc[common]) * _rank(mom.loc[common])
-    return cross_sectional_rank(coupling)
-
-@register_factor(
-    name="low_vol_quality_coupling",
-    description="低波-质量耦合因子，(1-波动率排名)×ROE排名截面排名（高质量+低波动=防御成长排前）。",
-    category="coupling",
-    thesis="低波动+高质量是防御型成长策略的核心——此类公司在熊市中跌幅小(低波的保护)，在牛市中也能涨(质量的驱动)。低波质量组合在A股中长期夏普比率最高。",
-    dependencies=("__factors__", "volatility_20", "roe"),
-)
-def factor_low_vol_quality_coupling(ctx: FactorContext) -> pd.Series:
-    vol = ctx.load_factor("volatility_20")
-    roe = ctx.load_factor("roe")
-
-    common = vol.index.intersection(roe.index)
-    coupling = (1 - _rank(vol.loc[common])) * _rank(roe.loc[common])
-    return cross_sectional_rank(coupling)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# B — Factor Quality & Dynamics
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
     name="factor_trend_strength_60",
@@ -286,21 +205,6 @@ def factor_factor_turnover_ratio_20(ctx: FactorContext) -> pd.Series:
     chg = rank.groupby(level="Code").diff(20).abs()
     return cross_sectional_rank(-chg)
 
-@register_factor(
-    name="factor_outlier_frequency",
-    description="因子极端值频率因子，-(bp 60日滚动|zscore|>2的次数占比)截面排名（频繁极端=不稳定排后）。",
-    category="coupling",
-    thesis="因子值频繁出现极端值(zscore>2)意味着该股票在该因子维度上波动剧烈——可能是数据质量问题，也可能是公司基本面确实在大幅变动。无论原因，高极端值频率都会降低因子信号的可靠性。",
-    dependencies=("__factors__", "bp"),
-)
-def factor_factor_outlier_frequency(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    z = _zscore(bp)
-    is_outlier = (z.abs() > 2.0).astype(float)
-    freq = is_outlier.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=30).mean()
-    )
-    return cross_sectional_rank(-freq)
 
 @register_factor(
     name="factor_consistency_score",
@@ -408,28 +312,6 @@ def factor_factor_rolling_drawdown_60(ctx: FactorContext) -> pd.Series:
     dd = (bp / peak.replace(0, np.nan)) - 1.0
     return cross_sectional_rank(dd)
 
-@register_factor(
-    name="factor_anti_crowding",
-    description="反拥挤信号因子，bp排名处于中位(0.3-0.7)+近期从极端回归截面排名（均值回复机会排前）。",
-    category="coupling",
-    thesis="因子从极端分位回归到中位是'反拥挤'机会——被过度追捧或抛弃的股票正在回归正常，拥挤风险在下降。反拥挤是逆向投资在因子维度的应用。",
-    dependencies=("__factors__", "bp"),
-)
-def factor_factor_anti_crowding(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    rank = _rank(bp)
-    is_mid = ((rank > 0.3) & (rank < 0.7)).astype(float)
-
-    # Was extreme 20 days ago
-    rank_20 = rank.groupby(level="Code").shift(20)
-    was_extreme = ((rank_20 > 0.85) | (rank_20 < 0.15)).astype(float)
-
-    anti_crowd = is_mid * was_extreme
-    return cross_sectional_rank(anti_crowd)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# E — Sentiment & Regime
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
     name="sentiment_value_gap",
@@ -445,21 +327,6 @@ def factor_sentiment_value_gap(ctx: FactorContext) -> pd.Series:
     common = mf.index.intersection(bp.index)
     gap = _rank(mf.loc[common]) - _rank(bp.loc[common])
     return cross_sectional_rank(-gap.abs())
-
-@register_factor(
-    name="sentiment_quality_conflict",
-    description="情绪-质量背离因子，-(资金流高排名+ROE低排名)截面排名（炒作无业绩=危险信号排后）。",
-    category="coupling",
-    thesis="资金追捧但盈利质量差是'题材炒作'的典型特征——这种背离在A股中短期可能赚钱，但中长期必然回归。情绪-质量背离度高的股票应回避。",
-    dependencies=("__factors__", "mf_net_inflow_ratio", "roe"),
-)
-def factor_sentiment_quality_conflict(ctx: FactorContext) -> pd.Series:
-    mf = ctx.load_factor("mf_net_inflow_ratio")
-    roe = ctx.load_factor("roe")
-
-    common = mf.index.intersection(roe.index)
-    conflict = _rank(mf.loc[common]) * (1 - _rank(roe.loc[common]))
-    return cross_sectional_rank(-conflict)
 
 @register_factor(
     name="sentiment_momentum_confirmation",
@@ -493,29 +360,6 @@ def factor_momentum_value_resonance_deep(ctx: FactorContext) -> pd.Series:
 
     resonance = mom_r * bp_r * (1 - np.abs(mom_r - bp_r))
     return cross_sectional_rank(resonance)
-
-@register_factor(
-    name="quality_growth_nonlinear",
-    description="质量成长非线性因子，roe排名×or_yoy因子排名×(两者同向=正否则负)截面排名。",
-    category="coupling",
-    thesis="质量和成长的交互是非线性的——高ROE+高成长是最优组合，但高ROE+负成长(成熟期)和低ROE+高成长(投入期)各有不同的投资逻辑。两者同向时(高高或低低)信号更明确，异向时需要更细致的分析。",
-    dependencies=("__factors__", "roe", "mom_20"),
-)
-def factor_quality_growth_nonlinear(ctx: FactorContext) -> pd.Series:
-    roe = ctx.load_factor("roe")
-    mom = ctx.load_factor("mom_20")
-
-    common = roe.index.intersection(mom.index)
-    roe_r = _rank(roe.loc[common])
-    mom_r = _rank(mom.loc[common])
-
-    # Same direction = positive product
-    nonlinear = roe_r * mom_r * np.sign(roe_r - 0.5) * np.sign(mom_r - 0.5)
-    return cross_sectional_rank(nonlinear)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# F — Factor Dynamics Extended
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
     name="factor_cycle_position",
@@ -599,59 +443,6 @@ def factor_factor_ic_ir_proxy_60(ctx: FactorContext) -> pd.Series:
     )
     ir = (ma60.abs() / std60.replace(0, np.nan)) * np.sqrt(60)
     return cross_sectional_rank(ir)
-
-@register_factor(
-    name="factor_diversification_ratio",
-    description="因子分散化比率因子，(bp+mom_20+roe)三个因子排名差异的std截面排名（取负向=差异大=互补强排后）。",
-    category="coupling",
-    thesis="多个因子排名之间的差异(分散化比率)衡量因子组合的多样性——三个因子排名差异越大,组合的分散化越充分。分散化比率高的股票在单一因子失效时仍有其他因子提供支撑。",
-    dependencies=("__factors__", "bp", "mom_20", "roe"),
-)
-def factor_factor_diversification_ratio(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    mom = ctx.load_factor("mom_20")
-    roe = ctx.load_factor("roe")
-
-    common = bp.index.intersection(mom.index).intersection(roe.index)
-    bp_r = _rank(bp.loc[common])
-    mom_r = _rank(mom.loc[common])
-    roe_r = _rank(roe.loc[common])
-
-    # Standard deviation of the 3 ranks (higher = more diverse)
-    rank_df = pd.DataFrame({"bp": bp_r, "mom": mom_r, "roe": roe_r})
-    dispersion = rank_df.std(axis=1)
-
-    return cross_sectional_rank(dispersion)
-
-@register_factor(
-    name="factor_weight_ewma_vol",
-    description="逆波动率加权因子，(bp/std_bp+mom_20/std_mom+roe/std_roe)截面排名。低波动因子权重更高。",
-    category="coupling",
-    thesis="逆波动率加权是最简单的动态因子配置方法——给近期波动率低的因子更高权重(信号更稳定)，波动率高的因子低权重(信号噪音大)。相比等权组合，逆波动率加权的IR通常更高。",
-    dependencies=("__factors__", "bp", "mom_20", "roe"),
-)
-def factor_factor_weight_ewma_vol(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    mom = ctx.load_factor("mom_20")
-    roe = ctx.load_factor("roe")
-
-    common = bp.index.intersection(mom.index).intersection(roe.index)
-    bp_a = bp.loc[common]
-    mom_a = mom.loc[common]
-    roe_a = roe.loc[common]
-
-    bp_std = rolling_group_std(bp_a, 60)
-    mom_std = rolling_group_std(mom_a, 60)
-    roe_std = rolling_group_std(roe_a, 60)
-
-    # Inverse vol weighted
-    w_bp = 1.0 / bp_std.replace(0, np.nan)
-    w_mom = 1.0 / mom_std.replace(0, np.nan)
-    w_roe = 1.0 / roe_std.replace(0, np.nan)
-    w_sum = w_bp + w_mom + w_roe
-
-    composite = (bp_a * w_bp + mom_a * w_mom + roe_a * w_roe) / w_sum.replace(0, np.nan)
-    return cross_sectional_rank(composite)
 
 @register_factor(
     name="factor_multi_horizon_momentum",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
+from ..utils import cross_sectional_rank, safe_divide
 
 
 @register_factor(
@@ -300,13 +300,13 @@ def factor_consecutive_down_days(context: FactorContext):
 # ── Volume-price divergence ──────────────────────────────────────────────
 
 @register_factor(
-    name="volume_price_elasticity_20",
-    description="量价弹性因子，20日收益率/20日均换手率变化截面排名。",
+    name="volume_turnover_elasticity_20",
+    description="换手率弹性因子，20日收益率/20日均换手率变化截面排名。",
     category="price",
     thesis="量价弹性衡量单位换手率变化能撬动多少价格变动——高弹性意味着少量资金就能推动股价大幅上涨(效率高分)，但也可能在下跌时同样放大跌幅。综合而言高弹性在牛市中更优。",
     dependencies=("daily_adj.parquet", "finance.parquet"),
 )
-def factor_volume_price_elasticity_20(context: FactorContext):
+def factor_volume_turnover_elasticity_20(context: FactorContext):
     daily_adj = context.load("daily_adj.parquet")
     finance = context.load("finance.parquet")
     close = daily_adj["close"]
@@ -332,3 +332,152 @@ def factor_gap_up_ratio_20d(context: FactorContext):
         lambda s: s.rolling(20, min_periods=10).mean()
     )
     return cross_sectional_rank(ratio)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# New: Price Microstructure & Intraday Patterns (daily.parquet / daily_adj.parquet)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@register_factor(
+    name="close_position_ratio",
+    description="收盘价在日内高低点区间中的位置：(close-low)/(high-low)，强势收盘=排名高。",
+    category="price",
+    thesis=(
+        "收盘价在日内高低点区间中的相对位置。接近1=收于日内高点附近(强势收盘、多头主导)，"
+        "接近0=收于低点附近(弱势收盘、空头主导)。该指标比单看涨跌幅更能反映日内多空博弈结果——"
+        "同样的涨幅，收于高点vs收于低点代表完全不同的日内走势质量。"
+    ),
+    dependencies=("daily.parquet",),
+)
+def factor_close_position_ratio(context: FactorContext) -> np.ndarray:
+    daily = context.load("daily.parquet")
+    range_hl = daily["high"] - daily["low"]
+    position = safe_divide(daily["close"] - daily["low"], range_hl)
+    position = position.clip(0, 1)
+    return cross_sectional_rank(position)
+
+
+@register_factor(
+    name="gap_reversal_5d",
+    description="跳空反转信号——跳空方向与日内走势方向相反时标记强度取反。高开低走/低开高走=趋势陷阱。",
+    category="price",
+    thesis=(
+        "识别跳空方向与日内走势方向相反的趋势陷阱。高开低走=多头陷阱(开盘诱多后出货)；"
+        "低开高走=空头陷阱(开盘诱空后吸筹)。趋势陷阱是强烈的反转信号，"
+        "该因子对陷阱日给予高排名(预期发生反转)。"
+    ),
+    dependencies=("daily.parquet",),
+)
+def factor_gap_reversal_5d(context: FactorContext) -> np.ndarray:
+    daily = context.load("daily.parquet")
+    gap = safe_divide(daily["open"] - daily["pre_close"], daily["pre_close"])
+    intraday = safe_divide(daily["close"] - daily["open"], daily["open"])
+    # Trapped: gap direction != intraday direction
+    trapped = ((np.sign(gap) * np.sign(intraday)) < 0).astype(float)
+    reversal_5d = trapped.groupby(level="Code").transform(
+        lambda s: s.rolling(5, min_periods=1).mean()
+    )
+    return cross_sectional_rank(reversal_5d)
+
+
+@register_factor(
+    name="price_change_acceleration",
+    description="价格变化加速度=收益率一阶差分。正加速=动量加强，负加速=动能衰竭，排名高。",
+    category="price",
+    thesis=(
+        "收益率的一阶差分(价格的二阶导)捕捉趋势的加速或减速。"
+        "正加速度意味着上涨加速或下跌减速(趋势加强)；"
+        "负加速度意味着上涨减速或下跌加速(趋势减弱)。"
+        "该指标比动量更快地捕捉趋势拐点——动量还在高位但加速度已转负=趋势即将反转。"
+    ),
+    dependencies=("daily_adj.parquet",),
+)
+def factor_price_change_acceleration(context: FactorContext) -> np.ndarray:
+    d = context.load("daily_adj.parquet")
+    ret = d["close"].groupby(level="Code").transform(lambda s: s.pct_change(1))
+    accel = ret.groupby(level="Code").transform(lambda s: s.diff(1))
+    accel = accel.clip(-0.1, 0.1)
+    return cross_sectional_rank(accel)
+
+
+@register_factor(
+    name="volume_weighted_price_change",
+    description="量价交互=收益率×成交量。放量涨=趋势可靠(排名高)，放量跌=压力确认(排名低)。",
+    category="price",
+    thesis=(
+        "收益率乘以成交量的量价交互信号。同向涨跌时成交量是确认信号——"
+        "上涨放量=趋势可靠(买盘踊跃)，下跌放量=压力确认(卖盘坚决)。"
+        "价量背离时(缩量上涨/放量下跌)反映趋势脆弱性。"
+    ),
+    dependencies=("daily_adj.parquet",),
+)
+def factor_volume_weighted_price_change(context: FactorContext) -> np.ndarray:
+    d = context.load("daily_adj.parquet")
+    vwpc = d["pct_chg"] * d["vol"]
+    vwpc = vwpc.clip(-1e9, 1e9)
+    return cross_sectional_rank(vwpc)
+
+
+@register_factor(
+    name="high_low_expansion",
+    description="日内振幅相对20日均值的扩张程度。振幅扩大=分歧加剧，振幅收缩=方向选择在即。",
+    category="price",
+    thesis=(
+        "日内振幅(high-low)相对20日均值的扩张倍数。振幅突然扩大意味着多空分歧加剧、"
+        "波动率突变——通常是重大信息冲击(利好或利空)或主力洗盘/出货的信号。"
+        "振幅持续收缩意味着市场关注度下降或方向即将选择(暴风雨前的平静)。"
+    ),
+    dependencies=("daily_adj.parquet",),
+)
+def factor_high_low_expansion(context: FactorContext) -> np.ndarray:
+    d = context.load("daily_adj.parquet")
+    hl_range = d["high"] - d["low"]
+    mean_range = hl_range.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).mean()
+    )
+    expansion = safe_divide(hl_range, mean_range)
+    expansion = expansion.clip(0, 5)
+    return cross_sectional_rank(expansion)
+
+
+@register_factor(
+    name="open_price_shock",
+    description="开盘跳空幅度取正。大幅跳空=隔夜信息冲击强→短期反转概率高，排名高。",
+    category="price",
+    thesis=(
+        "开盘跳空幅度(绝对值)的截面排名。大幅跳空(无论正负)意味着隔夜信息冲击强烈——"
+        "集合竞价阶段出现极端不平衡。这种情况往往导致开盘后短期反转(跳空回补效应)。"
+        "高幅度排名意味着反转交易机会更大。"
+    ),
+    dependencies=("daily.parquet",),
+)
+def factor_open_price_shock(context: FactorContext) -> np.ndarray:
+    daily = context.load("daily.parquet")
+    gap_abs = safe_divide(
+        (daily["open"] - daily["pre_close"]).abs(),
+        daily["pre_close"],
+    )
+    return cross_sectional_rank(gap_abs)
+
+
+@register_factor(
+    name="overnight_skewness_20d",
+    description="20日隔夜收益偏度的绝对值取反。极端偏度=信息冲击不稳定，排名低。",
+    category="price",
+    thesis=(
+        "20日隔夜收益(open/pre_close-1)的偏度。正偏度=偶尔大幅高开(利好集中释放)，"
+        "负偏度=偶尔大幅低开(利空突袭)。极端偏度(无论正负)反映信息冲击的不稳定性——"
+        "公司基本面存在不确定性或信息不对称严重。取绝对值后排名取反。"
+    ),
+    dependencies=("daily.parquet",),
+)
+def factor_overnight_skewness_20d(context: FactorContext) -> np.ndarray:
+    daily = context.load("daily.parquet")
+    overnight = safe_divide(daily["open"] - daily["pre_close"], daily["pre_close"])
+    skew = overnight.groupby(level="Code").transform(
+        lambda s: s.rolling(20, min_periods=10).skew()
+    )
+    skew = skew.clip(-5, 5)
+    return cross_sectional_rank(-skew.abs())
+
+
+    return cross_sectional_rank(corr)

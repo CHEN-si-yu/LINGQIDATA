@@ -1,10 +1,9 @@
 """
 Valuation extended factors -- Class 1 panel factors.
 
-These use untapped columns from finance.parquet and financial_indicator.parquet:
+These use untapped columns from finance.parquet:
   - dv_ratio / dv_ttm: dividend yield (completely new signal)
   - ps_ttm: price-to-sales TTM (more responsive than annual ps)
-  - q_eps: quarterly EPS yield (faster than annual eps)
   - turnover_rate: raw daily turnover rate from finance.parquet
 """
 
@@ -136,103 +135,5 @@ def factor_ps_ttm_sector_neutral(context: FactorContext):
     ps_rank = df.groupby(["Date", "industry"])["ps"].rank(pct=True)
     return cross_sectional_rank(-ps_rank)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Quarterly Earnings Factors (from financial_indicator.parquet)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="q_eps_yield_rank",
-    description="季度EPS收益率因子，(q_eps*4/close)截面排名（高盈利收益率排前）。",
-    category="valuation",
-    thesis=(
-        "Quarterly EPS annualized and divided by price gives a fast-updating "
-        "earnings yield. Unlike annual/ttm EPS which lags by quarters, "
-        "quarterly EPS yield captures the most recent quarter earnings power. "
-        "Early detection of earnings acceleration before annual figures update."
-    ),
-    dependencies=("financial_indicator.parquet", "calendar.parquet", "daily_adj.parquet"),
-)
-def factor_q_eps_yield_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["q_eps"],
-    )
-    daily = context.load("daily_adj.parquet")
-    close = daily["close"]
-
-    # Annualize quarterly EPS
-    eps_annual = fin["q_eps"] * 4
-
-    # Align to daily dates
-    common = eps_annual.index.intersection(close.index)
-    eps_a = eps_annual.loc[common]
-    price = close.loc[common]
-    eps_yield = safe_divide(eps_a, price + 1e-10)
-    eps_yield = eps_yield.clip(-1, 1)
-    return cross_sectional_rank(eps_yield)
-
-
-@register_factor(
-    name="q_gr_qoq_rank",
-    description="季度营收环比增长因子，q_gr_qoq截面排名（高环比增速排前）。",
-    category="financial",
-    thesis=(
-        "Quarter-over-quarter revenue growth captures sequential business "
-        "momentum missed by YoY comparisons. A company can have weak YoY "
-        "growth (tough comparison) but strong QoQ (improving trajectory). "
-        "QoQ growth is a leading indicator for future YoY growth acceleration."
-    ),
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_q_gr_qoq_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["q_gr_qoq"],
-    )
-    growth = fin["q_gr_qoq"].clip(-200, 500)
-    return cross_sectional_rank(growth)
-
-
-@register_factor(
-    name="q_gsprofit_margin_rank",
-    description="季度毛利率因子，q_gsprofit_margin截面排名（高毛利率排前）。",
-    category="financial",
-    thesis=(
-        "Quarterly gross margin is the fastest-updating profitability metric. "
-        "Changes in gross margin precede changes in operating/net margins "
-        "because COGS is the first line item affected by input costs and "
-        "pricing power. Quarterly margin compression is an early warning."
-    ),
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_q_gsprofit_margin_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["q_gsprofit_margin"],
-    )
-    margin = fin["q_gsprofit_margin"].clip(-100, 100)
-    return cross_sectional_rank(margin)
-
-
-@register_factor(
-    name="q_netprofit_yoy_rank",
-    description="季度利润同比增长因子，q_netprofit_yoy截面排名（高利润增速排前）。",
-    category="financial",
-    thesis=(
-        "Quarterly net profit YoY growth is the most direct measure of "
-        "earnings momentum. Unlike annual growth which averages 4 quarters, "
-        "quarterly growth captures the exact inflection point. "
-        "Faster signal for earnings surprises than annual figures."
-    ),
-    dependencies=("financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_q_netprofit_yoy_rank(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["q_netprofit_yoy"],
-    )
-    growth = fin["q_netprofit_yoy"].clip(-500, 500)
-    return cross_sectional_rank(growth)
 
 

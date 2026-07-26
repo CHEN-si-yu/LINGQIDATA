@@ -533,6 +533,11 @@ class DataRepository:
         stacked.index = stacked.index.set_names(["Date", "Code"])
         stacked.name = name
 
+        # Ensure numeric dtype: PyArrow-backed feather files may produce
+        # object-dtype Series after stacking, which breaks numpy ufuncs
+        # (np.log, np.sign, etc.) that rely on native float64.
+        stacked = pd.to_numeric(stacked, errors="coerce")
+
         # Filter by date range
         if min_date is not None:
             from datetime import datetime, timedelta

@@ -444,13 +444,13 @@ def coskewness_60(ctx: FactorContext) -> pd.Series:
 # ── Volatility of volatility ────────────────────────────────────────────────
 
 @register_factor(
-    name="vol_of_vol_20",
-    description="20日波动率的波动率因子 (低波动稳定排前, 负向)",
+    name="vol_stability_20",
+    description="20日波动率稳定性因子 (低波动稳定排前, 负向)",
     category="risk",
     thesis="波动率波动大的股票面临不确定性风险，市场偏好波动率稳定的股票",
     dependencies=("daily_adj.parquet", "calendar.parquet"),
 )
-def vol_of_vol_20(ctx: FactorContext) -> pd.Series:
+def vol_stability_20(ctx: FactorContext) -> pd.Series:
     daily = ctx.load("daily_adj.parquet")
     ret = _daily_returns(daily)
     vol_5 = ret.groupby(level="Code").transform(

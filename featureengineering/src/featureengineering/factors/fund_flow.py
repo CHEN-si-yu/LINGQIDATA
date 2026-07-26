@@ -5,7 +5,6 @@ import numpy as np
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
 
-
 def _total_amount(ff):
     """Return total turnover amount from main fund flow, zero replaced with NaN."""
     return (
@@ -14,7 +13,6 @@ def _total_amount(ff):
         + ff["buy_lg_amount"] + ff["sell_lg_amount"]
         + ff["buy_elg_amount"] + ff["sell_elg_amount"]
     ).replace(0, np.nan)
-
 
 # ── Main Fund Net Inflow ────────────────────────────────────────────────
 
@@ -30,7 +28,6 @@ def factor_mf_net_inflow_ratio(context: FactorContext):
     ratio = ff["net_mf_amount"] / _total_amount(ff)
     return cross_sectional_rank(ratio)
 
-
 @register_factor(
     name="mf_net_inflow_5d",
     description="5日累计主力净流入率因子截面排名。",
@@ -45,7 +42,6 @@ def factor_mf_net_inflow_5d(context: FactorContext):
         lambda s: s.rolling(5, min_periods=3).sum()
     )
     return cross_sectional_rank(cum_ratio)
-
 
 # ── Order-size analysis ─────────────────────────────────────────────────
 
@@ -65,7 +61,6 @@ def factor_mf_big_order_ratio(context: FactorContext):
     ratio = big_net / _total_amount(ff)
     return cross_sectional_rank(ratio)
 
-
 @register_factor(
     name="mf_small_order_ratio",
     description="小单净买入率因子（负值=散户净卖出，排名高=散户流出多）。",
@@ -78,7 +73,6 @@ def factor_mf_small_order_ratio(context: FactorContext):
     small_net = ff["buy_sm_amount"] - ff["sell_sm_amount"]
     ratio = small_net / _total_amount(ff)
     return cross_sectional_rank(-ratio)
-
 
 @register_factor(
     name="mf_big_small_divergence",
@@ -97,53 +91,7 @@ def factor_mf_big_small_divergence(context: FactorContext):
     divergence = (big_net - small_net) / _total_amount(ff)
     return cross_sectional_rank(divergence)
 
-
 # ── Margin trading ──────────────────────────────────────────────────────
-
-@register_factor(
-    name="margin_buy_strength",
-    description="融资买入强度因子，融资买入额/成交额截面排名。",
-    category="fund_flow",
-    thesis="融资买入强度反映杠杆做多意愿，高融资买入意味着投资者对后市乐观。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_margin_buy_strength(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    # margin doesn't have amount, skip this approach
-    # Use financing buy vs financing repay
-    net_finance = margin["rzmre"] - margin["rzche"]  # buy - repay
-    ratio = net_finance / margin["rzye"].replace(0, np.nan)  # relative to balance
-    return cross_sectional_rank(ratio)
-
-
-@register_factor(
-    name="margin_balance_change",
-    description="融资余额变化率因子，融资余额日变动率截面排名。",
-    category="fund_flow",
-    thesis="融资余额变化反映杠杆资金对后市的边际看法。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_margin_balance_change(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    rzye = margin["rzye"]
-    change = rzye.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    return cross_sectional_rank(change)
-
-
-@register_factor(
-    name="margin_short_pressure",
-    description="融券压力因子，融券余额/两融总余额截面排名（高比例排后=看空压力）。",
-    category="fund_flow",
-    thesis="融券余额占比反映做空力量强度，高融券占比对股价构成压力。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_margin_short_pressure(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    short_ratio = margin["rqye"] / margin["rzrqye"].replace(0, np.nan)
-    return cross_sectional_rank(-short_ratio)
-
-
-# ── Fund flow trend ───────────────────────────────────────────────────────
 
 @register_factor(
     name="mf_net_inflow_trend_5d",
@@ -173,7 +121,6 @@ def factor_mf_net_inflow_trend_5d(context: FactorContext):
     )
     return cross_sectional_rank(slope)
 
-
 # ── Big order divergence ─────────────────────────────────────────────────
 
 @register_factor(
@@ -202,43 +149,7 @@ def factor_big_order_divergence(context: FactorContext):
     divergence = rank_big.loc[common] - rank_pct.loc[common]
     return cross_sectional_rank(divergence)
 
-
 # ── Margin net open interest ─────────────────────────────────────────────
-
-@register_factor(
-    name="margin_net_open",
-    description="融资净开仓强度因子，(融资买入额-融资偿还额)/融资余额截面排名。",
-    category="fund_flow",
-    thesis="融资净开仓是杠杆资金日内净流向的度量——净买入>净偿还=资金净流入。该比率标准化后可跨股票比较杠杆资金的边际参与意愿。",
-    dependencies=("margin_detail.parquet",),
-)
-def factor_margin_net_open(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    net_open = (margin["rzmre"] - margin["rzche"]) / margin["rzye"].replace(0, np.nan)
-    return cross_sectional_rank(net_open)
-
-
-# ── Short selling intensity ──────────────────────────────────────────────
-
-@register_factor(
-    name="short_sell_intensity",
-    description="融券卖出强度因子，(融券卖出量-融券偿还量)/融券余量截面排名（高=做空增加，排后）。",
-    category="fund_flow",
-    thesis="融券净卖出代表空头力量的边际变化——净卖出增加意味着更多投资者在借券做空，是负面信号。与margin_short_pressure互补：一个看空头余额占比（存量），一个看空头行为变化（流量）。",
-    dependencies=("margin_detail.parquet", "daily_adj.parquet"),
-)
-def factor_short_sell_intensity(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    daily_adj = context.load("daily_adj.parquet")
-    rqmcl = margin["rqmcl"]
-    vol = daily_adj["vol"]
-    common = rqmcl.index.intersection(vol.index)
-    intensity = rqmcl.loc[common] / vol.loc[common].replace(0, np.nan)
-    return cross_sectional_rank(-intensity)
-
-
-# ── Volume-based fund flow ─────────────────────────────────────────────
-
 
 @register_factor(
     name="net_mf_amount_intensity",
@@ -251,7 +162,6 @@ def factor_net_mf_amount_intensity(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
     ratio = ff["net_mf_amount"] / _total_amount(ff)
     return cross_sectional_rank(ratio)
-
 
 # ── ELG (extra-large order) ratio ────────────────────────────────────────────
 
@@ -268,7 +178,6 @@ def factor_mf_elg_order_ratio(context: FactorContext):
     ratio = elg_net / _total_amount(ff)
     return cross_sectional_rank(ratio)
 
-
 # ── Medium order ratio ──────────────────────────────────────────────────────
 
 @register_factor(
@@ -283,7 +192,6 @@ def factor_mf_mid_order_ratio(context: FactorContext):
     md_net = ff["buy_md_amount"] - ff["sell_md_amount"]
     ratio = md_net / _total_amount(ff)
     return cross_sectional_rank(ratio)
-
 
 # ── Fund flow continuity ───────────────────────────────────────────────────
 
@@ -307,7 +215,6 @@ def factor_mf_flow_continuity(context: FactorContext):
     streak = positive.groupby(level="Code").transform(_streak_series)
     return cross_sectional_rank(streak)
 
-
 # ── Net inflow volatility ──────────────────────────────────────────────────
 
 @register_factor(
@@ -325,7 +232,6 @@ def factor_mf_net_inflow_volatility_20d(context: FactorContext):
     )
     return cross_sectional_rank(-vol_20d)
 
-
 # ── ELG vs small divergence ────────────────────────────────────────────────
 
 @register_factor(
@@ -341,7 +247,6 @@ def factor_mf_elg_small_divergence(context: FactorContext):
     small_net = ff["buy_sm_amount"] - ff["sell_sm_amount"]
     divergence = (elg_net - small_net) / _total_amount(ff)
     return cross_sectional_rank(divergence)
-
 
 # ── Big order turnover ratio ───────────────────────────────────────────────
 
@@ -365,7 +270,6 @@ def factor_mf_big_order_turnover_ratio(context: FactorContext):
     ).replace(0, np.nan)
     ratio = big_vol / total_vol
     return cross_sectional_rank(ratio)
-
 
 # ── Amount-weighted direction composite ─────────────────────────────────────
 
@@ -395,9 +299,7 @@ def factor_mf_amount_weighted_direction(context: FactorContext):
     composite = sm_dir * sm_w + md_dir * md_w + lg_dir * lg_w + elg_dir * elg_w
     return cross_sectional_rank(composite)
 
-
 # ── Supplementary fund flow factors ────────────────────────────────────────
-
 
 @register_factor(
     name="mf_cumulative_flow_20d",
@@ -416,7 +318,6 @@ def factor_mf_cumulative_flow_20d(context: FactorContext):
     )
     return cross_sectional_rank(cum_rate)
 
-
 @register_factor(
     name="mf_flow_reversal_20d",
     description="20日主力资金反转因子 (从流出的流出反转为流入)。",
@@ -434,7 +335,6 @@ def factor_mf_flow_reversal_20d(context: FactorContext):
     reversal = cum_10 - cum_20
     return cross_sectional_rank(reversal)
 
-
 @register_factor(
     name="mf_big_order_stability_20d",
     description="20日大单净买入率稳定性因子 (高稳定排前)。",
@@ -451,7 +351,6 @@ def factor_mf_big_order_stability_20d(context: FactorContext):
     rate_mean = rolling_group_mean(big_rate, 20)
     stability = safe_divide(rate_mean.abs() + 1e-8, rate_std + 1e-8)
     return cross_sectional_rank(stability)
-
 
 @register_factor(
     name="mf_big_small_convergence_20d",
@@ -472,7 +371,6 @@ def factor_mf_big_small_convergence_20d(context: FactorContext):
     convergence = big_trend - small_trend
     return cross_sectional_rank(convergence)
 
-
 @register_factor(
     name="mf_open_close_divergence_10d",
     description="10日开盘/收盘资金流向背离因子。",
@@ -490,47 +388,6 @@ def factor_mf_open_close_divergence_10d(context: FactorContext):
     div_std = rolling_group_std(divergence, 10)
     return cross_sectional_rank(div_std)
 
-
-@register_factor(
-    name="margin_net_buy_pressure_10d",
-    description="10日融资净买入压力因子 (融资买入增加排前)。",
-    category="fund_flow",
-    thesis="融资净买入加速是杠杆资金看多的信号，融资余额趋势性增加预示短期强势",
-    dependencies=("margin_detail.parquet", "calendar.parquet"),
-)
-def factor_margin_net_buy_pressure_10d(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    rzmre = margin["rzmre"]  # margin buy amount
-    rzche = margin["rzche"]  # margin repayment
-    net_buy = rzmre - rzche
-    net_pressure = net_buy.groupby(level="Code").transform(
-        lambda s: s.rolling(10, min_periods=5).sum()
-    )
-    return cross_sectional_rank(net_pressure)
-
-
-@register_factor(
-    name="short_sell_change_5d",
-    description="5日融券卖出量变化因子 (增加排后, 负向)。",
-    category="fund_flow",
-    thesis="融券卖出增加意味着空头力量增强，是负向信号",
-    dependencies=("margin_detail.parquet", "calendar.parquet"),
-)
-def factor_short_sell_change_5d(context: FactorContext):
-    margin = context.load("margin_detail.parquet")
-    rqmcl = margin["rqmcl"]
-    ma_5 = rqmcl.groupby(level="Code").transform(
-        lambda s: s.rolling(5, min_periods=3).mean()
-    )
-    ma_20 = rqmcl.groupby(level="Code").transform(
-        lambda s: s.rolling(20, min_periods=10).mean()
-    )
-    change = safe_divide(ma_5 - ma_20, ma_20 + 1e-8)
-    return cross_sectional_rank(-change)
-
-
-# ── Order size divergence depth ───────────────────────────────────────────
-
 @register_factor(
     name="big_vs_small_divergence_5d",
     description="大小单背离5日因子，(大单净流入率-小单净流入率)的5日变化截面排名。",
@@ -546,7 +403,6 @@ def factor_big_vs_small_divergence_5d(context: FactorContext):
     div_5d = divergence.groupby(level="Code").transform(lambda s: s.diff(5))
     return cross_sectional_rank(div_5d)
 
-
 @register_factor(
     name="medium_order_flow",
     description="中单资金流因子，中单净买入/总成交量截面排名。",
@@ -558,7 +414,6 @@ def factor_medium_order_flow(context: FactorContext):
     mf = context.load("main_fund_flow.parquet")
     md_net = (mf["buy_md_amount"] - mf["sell_md_amount"]) / _total_amount(mf)
     return cross_sectional_rank(md_net)
-
 
 @register_factor(
     name="super_large_order_intensity",
@@ -572,7 +427,6 @@ def factor_super_large_order_intensity(context: FactorContext):
     elg_net = (mf["buy_elg_amount"] - mf["sell_elg_amount"]) / _total_amount(mf)
     return cross_sectional_rank(elg_net)
 
-
 @register_factor(
     name="small_order_crowding",
     description="小单拥挤度因子，-(小单买入量/总成交量)截面排名（高小单占比=散户追涨排后）。",
@@ -584,7 +438,6 @@ def factor_small_order_crowding(context: FactorContext):
     mf = context.load("main_fund_flow.parquet")
     small_pct = (mf["buy_sm_amount"] + mf["sell_sm_amount"]) / _total_amount(mf)
     return cross_sectional_rank(-small_pct)
-
 
 @register_factor(
     name="net_mf_flow_persistence",
@@ -600,7 +453,6 @@ def factor_net_mf_flow_persistence(context: FactorContext):
         lambda s: s.rolling(5, min_periods=3).sum()
     )
     return cross_sectional_rank(persistence)
-
 
 @register_factor(
     name="mf_net_amount_intensity",
@@ -618,7 +470,6 @@ def factor_mf_net_amount_intensity(context: FactorContext):
     intensity = net_amount.loc[common] / circ_mv.loc[common].replace(0, np.nan)
     return cross_sectional_rank(intensity)
 
-
 @register_factor(
     name="order_concentration",
     description="订单集中度因子，-(中单+小单)/总成交截面排名（大单+超大单占比高=机构主导排前）。",
@@ -634,7 +485,6 @@ def factor_order_concentration(context: FactorContext):
     concentration = small_mid / total.replace(0, np.nan)
     return cross_sectional_rank(-concentration)
 
-
 @register_factor(
     name="net_mf_amount_momentum_5d",
     description="主力资金净额5日动量因子，net_mf_amount的5日变化截面排名。",
@@ -647,7 +497,6 @@ def factor_net_mf_amount_momentum_5d(context: FactorContext):
     net_amt = mf["net_mf_amount"]
     mom = net_amt.groupby(level="Code").transform(lambda s: s.diff(5))
     return cross_sectional_rank(mom)
-
 
 @register_factor(
     name="fund_flow_volatility_20",
@@ -663,7 +512,6 @@ def factor_fund_flow_volatility_20(context: FactorContext):
         lambda s: s.rolling(20, min_periods=10).std()
     )
     return cross_sectional_rank(-vol_20)
-
 
 @register_factor(
     name="large_order_timing_signal",

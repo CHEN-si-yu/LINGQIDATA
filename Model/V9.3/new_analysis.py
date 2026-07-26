@@ -703,7 +703,7 @@ def _load_name_map():
         return code_to_name
     except NameError:
         pass
-    stock_info = pd.read_parquet(PROJECT_ROOT + 'data/list.parquet')
+    stock_info = pd.read_parquet(PROJECT_ROOT + 'data/stock_list.parquet')
     stock_info = stock_info[stock_info['list_status'] == 'L']
     return {
         re.sub(r'\.(SZ|SH|BJ)$', '', row['stock_code']): row['name']

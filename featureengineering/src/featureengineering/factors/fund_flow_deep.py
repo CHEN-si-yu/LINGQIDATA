@@ -15,7 +15,6 @@ import numpy as np
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
 
-
 def _total_amount(ff):
     """Return total turnover amount from main fund flow."""
     return (
@@ -25,7 +24,6 @@ def _total_amount(ff):
         + ff["buy_elg_amount"] + ff["sell_elg_amount"]
     ).replace(0, np.nan)
 
-
 def _big_net(ff):
     """大单+特大单净买入额。"""
     return (
@@ -33,28 +31,11 @@ def _big_net(ff):
         + ff["buy_elg_amount"] - ff["sell_elg_amount"]
     )
 
-
 def _small_net(ff):
     """小单净买入额（散户方向）。"""
     return ff["buy_sm_amount"] - ff["sell_sm_amount"]
 
-
 # ── 订单规模分析 ─────────────────────────────────────────────────────────
-
-@register_factor(
-    name="lg_order_imbalance",
-    description="超大单不平衡因子，(特大买-特大卖)/(特大买+特大卖)截面排名（特大单净买=机构抢筹排前）。",
-    category="fund_flow",
-    thesis="特大单（>100万元/笔）几乎完全代表机构行为——特大单净买入占比高说明机构在主动收集筹码，方向信号极其可靠。特大单的方向性比大单更纯粹（排除了游资干扰）。",
-    dependencies=("main_fund_flow.parquet",),
-)
-def factor_lg_order_imbalance(context: FactorContext):
-    ff = context.load("main_fund_flow.parquet")
-    elg_buy = ff["buy_elg_amount"]
-    elg_sell = ff["sell_elg_amount"]
-    imbalance = (elg_buy - elg_sell) / (elg_buy + elg_sell).replace(0, np.nan)
-    return cross_sectional_rank(imbalance)
-
 
 @register_factor(
     name="lg_sm_divergence",
@@ -70,7 +51,6 @@ def factor_lg_sm_divergence(context: FactorContext):
     total = _total_amount(ff)
     divergence = (big - small) / total
     return cross_sectional_rank(divergence)
-
 
 @register_factor(
     name="mf_net_persistent_5d",
@@ -88,7 +68,6 @@ def factor_mf_net_persistent_5d(context: FactorContext):
     )
     return cross_sectional_rank(persist)
 
-
 @register_factor(
     name="mf_flow_volatility_20d",
     description="资金流波动率因子，-(主力净流入20日标准差)截面排名（资金流稳定=有序建仓排前）。",
@@ -105,7 +84,6 @@ def factor_mf_flow_volatility_20d(context: FactorContext):
         lambda s: s.rolling(20, min_periods=10).std()
     )
     return cross_sectional_rank(-vol)
-
 
 @register_factor(
     name="order_size_ratio_change",
@@ -126,7 +104,6 @@ def factor_order_size_ratio_change(context: FactorContext):
         lambda s: s.diff(5)
     )
     return cross_sectional_rank(chg)
-
 
 @register_factor(
     name="mf_price_divergence",
@@ -155,37 +132,6 @@ def factor_mf_price_divergence(context: FactorContext):
     divergence = net_rank - ret_rank
     return cross_sectional_rank(divergence)
 
-
-@register_factor(
-    name="mf_sector_relative",
-    description="行业相对资金流因子，个股主力净流入率-行业均值截面排名（行业内资金吸引力排前）。",
-    category="fund_flow",
-    thesis="行业内相对资金流捕捉的是'板块内轮动选股'——即使整个板块资金在流出，相对流出更少（或流入更多）的个股说明其在板块内获得资金偏好，是板块轮动策略的核心指标。",
-    dependencies=("main_fund_flow.parquet", "stock_list.parquet"),
-)
-def factor_mf_sector_relative(context: FactorContext):
-    ff = context.load("main_fund_flow.parquet")
-    industry_map = context.repo.load_industry_map()
-
-    net = ff["net_mf_amount"]
-    total = _total_amount(ff)
-    net_ratio = net / total
-
-    codes = net_ratio.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-
-    df = net_ratio.to_frame("net_ratio")
-    df["industry"] = industries.values
-    df = df.dropna(subset=["industry"])
-
-    # Subtract industry mean
-    industry_mean = df.groupby(["Date", "industry"])["net_ratio"].transform("mean")
-    relative = df["net_ratio"] - industry_mean
-
-    return cross_sectional_rank(relative)
-
-# ── 订单规模结构分析 ─────────────────────────────────────────────────────
-
 @register_factor(
     name="smart_money_concentration",
     description="聪明钱集中度因子，(特大单净买-小单净卖)/abs(all net)截面排名（聪明钱相对噪音交易者越集中排前）。",
@@ -210,7 +156,6 @@ def factor_smart_money_concentration(context: FactorContext):
     # Smart money net minus noise net, scaled by total turnover
     score = (smart - noise) / total
     return cross_sectional_rank(score)
-
 
 @register_factor(
     name="order_size_concentration",
@@ -248,7 +193,6 @@ def factor_order_size_concentration(context: FactorContext):
     signed_hhi = hhi * np.sign(smart_direction)
     return cross_sectional_rank(signed_hhi)
 
-
 @register_factor(
     name="mf_flow_acceleration_ext",
     description="资金流加速度因子，主力净流入率的5日变化截面排名（流入在加速=趋势加强排前）。",
@@ -270,5 +214,4 @@ def factor_mf_flow_acceleration_ext(context: FactorContext):
         lambda s: s.diff(5)
     )
     return cross_sectional_rank(accel)
-
 

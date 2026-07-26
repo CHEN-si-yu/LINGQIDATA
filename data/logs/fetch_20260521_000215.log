@@ -1,3 +1,0 @@
-[2026-05-21 00:02:15] [daily_dump] POST https://data.diemeng.chat/api/stock/daily_dump  date=2026-05-20  level=1min
-[2026-05-21 00:02:42] [daily_dump] 1325018 rows | 5498 stocks in 25.3s
-[2026-05-21 00:02:43] [daily_dump] Saved → /root/shared-nvme/lingqiData/data/daily_dump_1min/2026-05-20.parquet  (1,325,018 rows, 18.9 MB)

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
+from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide, stack_date_code
 
 
 # ── Risk-adjusted momentum ──────────────────────────────────────────────
@@ -144,102 +144,6 @@ def factor_price_volume_corr_20(context: FactorContext):
 
 
 @register_factor(
-    name="quality_volatility_composite",
-    description="质量×低波复合因子，(rank(ROE)+rank(-vol_60))/2截面排名。",
-    category="enhanced",
-    thesis="高质量+低波动是'防御性增长'主题的核心——高ROE企业的盈利稳定性天然伴随更低的股价波动。两者交集捕捉的是经营质量高且不被市场过度交易、定价有效的好公司。在A股中质量和低波的联合信号比单独信号更不易被套利。",
-    dependencies=("financial_indicator.parquet", "daily_adj.parquet", "calendar.parquet"),
-)
-def factor_quality_volatility_composite(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["roe"],
-    )
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    low_vol = -ret.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=30).std()
-    )
-    common = fin["roe"].index.intersection(low_vol.index)
-    with np.errstate(invalid="ignore"):
-        rank_q = fin["roe"].loc[common].groupby(level="Date").rank(pct=True)
-        rank_v = low_vol.loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_q + rank_v) / 2.0
-    return composite.rename("quality_volatility_composite")
-
-
-# ── Acceleration × Value ───────────────────────────────────────────────
-
-
-@register_factor(
-    name="acceleration_value_composite",
-    description="盈利加速度×价值复合因子，(rank(ROE动量)+rank(BP))/2截面排名。",
-    category="enhanced",
-    thesis="寻找'正在改善的便宜公司'——ROE在加速提升且估值仍低（高BP）。这是GARP的动态版本：不仅看增长水平，更关注增长方向。盈利改善中的低估值公司享受基本面拐点和估值修复的双重驱动力。",
-    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
-)
-def factor_acceleration_value_composite(context: FactorContext):
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["roe"],
-    )
-    roe_mom = fin["roe"].groupby(level="Code").transform(lambda s: s.diff(4))
-    fin_panel = context.load("finance.parquet")
-    bp = 1.0 / fin_panel["pb"].replace(0, np.nan)
-    common = roe_mom.index.intersection(bp.index)
-    with np.errstate(invalid="ignore"):
-        rank_roe_mom = roe_mom.loc[common].groupby(level="Date").rank(pct=True)
-        rank_bp = bp.loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_roe_mom + rank_bp) / 2.0
-    return composite.rename("acceleration_value_composite")
-
-
-# ── Momentum × Earnings stability ──────────────────────────────────────
-
-
-@register_factor(
-    name="momentum_quality_trend",
-    description="动量质量趋势因子，(rank(mom_60_vol_adj)+rank(eps_stability_8q))/2截面排名。使用eps（非q_eps）的8期滚动变异系数度量盈利稳定性。",
-    category="enhanced",
-    thesis="由高盈利稳定性支撑的上涨趋势比单纯的动量更可靠——稳定盈利公司享受更低的投资者分歧和更集中的买方共识。动量质量趋势捕捉的是'好公司正在上涨'而非'任何东西在上涨'，对动量崩盘风险有更好的抵御力。",
-    dependencies=("daily_adj.parquet", "financial_indicator.parquet", "calendar.parquet"),
-)
-def factor_momentum_quality_trend(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret_60 = close.groupby(level="Code").transform(lambda s: s.pct_change(60))
-    daily_ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    vol_60 = daily_ret.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=30).std()
-    )
-    mom_vol_adj = ret_60 / vol_60.replace(0, np.nan)
-
-    fin = context.load_financial(
-        "financial_indicator.parquet",
-        value_cols=["eps"],
-    )
-    eps = fin["eps"]
-    eps_std_8 = eps.groupby(level="Code").transform(
-        lambda s: s.rolling(8, min_periods=4).std()
-    )
-    eps_mean_8 = eps.groupby(level="Code").transform(
-        lambda s: s.rolling(8, min_periods=4).mean()
-    )
-    stability = -eps_std_8 / eps_mean_8.replace(0, np.nan)
-
-    common = mom_vol_adj.index.intersection(stability.index)
-    with np.errstate(invalid="ignore"):
-        rank_mom = mom_vol_adj.loc[common].groupby(level="Date").rank(pct=True)
-        rank_stab = stability.loc[common].groupby(level="Date").rank(pct=True)
-    composite = (rank_mom + rank_stab) / 2.0
-    return composite.rename("momentum_quality_trend")
-
-
-# ── Winner rate × reversal divergence ───────────────────────────────────
-
-
-@register_factor(
     name="winner_rate_reversal_divergence",
     description="获利盘-反转背离因子，(rank(-winner_rate)+rank(reversal_5))/2截面排名。",
     category="enhanced",
@@ -287,7 +191,7 @@ def factor_residual_momentum_20(context: FactorContext):
         {c: mkt_ret for c in ret_20_panel.columns}, index=ret_20_panel.index
     )
     residual_panel = ret_20_panel - beta_panel * mkt_panel
-    residual = residual_panel.stack().reorder_levels(["Date", "Code"]).sort_index()
+    residual = stack_date_code(residual_panel)
     return cross_sectional_rank(residual)
 
 
@@ -374,26 +278,6 @@ def factor_bp_x_mom_20(context: FactorContext):
     bp_rank = bp.loc[common].groupby(level="Date").rank(pct=True)
     mom_rank = ret.loc[common].groupby(level="Date").rank(pct=True)
     combo = (bp_rank + mom_rank) / 2.0
-    return cross_sectional_rank(combo)
-
-
-@register_factor(
-    name="quality_x_value",
-    description="质量x价值综合因子 (ROE排名 x BP排名) 截面排名。",
-    category="enhanced",
-    thesis="高ROE+低PB是最经典的价值投资框架，GARP的极端形式",
-    dependencies=("financial_indicator.parquet", "finance.parquet", "calendar.parquet"),
-)
-def factor_quality_x_value(context: FactorContext):
-    fin = context.load_financial("financial_indicator.parquet", value_cols=["roe"])
-    finance = context.load("finance.parquet")
-    roe = fin["roe"]
-    pb = finance["pb"]
-    bp = safe_divide(1.0, pb)
-    common = roe.index.intersection(bp.index)
-    roe_rank = roe.loc[common].groupby(level="Date").rank(pct=True)
-    bp_rank = bp.loc[common].groupby(level="Date").rank(pct=True)
-    combo = (roe_rank + bp_rank) / 2.0
     return cross_sectional_rank(combo)
 
 
@@ -490,22 +374,6 @@ def factor_sentiment_momentum_composite(context: FactorContext):
 # ── Value-Momentum composites ─────────────────────────────────────────────
 
 @register_factor(
-    name="bp_x_roe",
-    description="价值×质量交互因子，bp截面排名×roe截面排名（高=低估+高质量排前）。",
-    category="enhanced",
-    thesis="BP×ROE是经典的价值+质量交叉——避免'价值陷阱'（低BP但ROE差）和'质量溢价过高'（高ROE但估值太贵），同时满足便宜+优质的条件。",
-    dependencies=("__factors__", "bp", "roe"),
-)
-def factor_bp_x_roe(context: FactorContext):
-    bp = context.load_factor("bp")
-    roe = context.load_factor("roe")
-    common = bp.index.intersection(roe.index)
-    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
-    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
-    return cross_sectional_rank(bp_r * roe_r)
-
-
-@register_factor(
     name="mom_x_winner",
     description="动量×筹码验证因子，mom_20截面排名×winner_rate截面排名（有筹码支撑的动量更可靠排前）。",
     category="enhanced",
@@ -522,91 +390,6 @@ def factor_mom_x_winner(context: FactorContext):
 
 
 @register_factor(
-    name="margin_of_safety",
-    description="安全边际因子，bp排名×(1-资产负债率排名)截面排名。",
-    category="enhanced",
-    thesis="BP(低估值)×低杠杆=安全边际——既便宜又财务稳健的公司在市场下行时有双重保护：估值支撑+财务不爆雷。",
-    dependencies=("__factors__", "bp", "debt_to_assets"),
-)
-def factor_margin_of_safety(context: FactorContext):
-    bp = context.load_factor("bp")
-    debt = context.load_factor("debt_to_assets")
-    common = bp.index.intersection(debt.index)
-    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
-    debt_r = debt.loc[common].groupby(level="Date").rank(pct=True)
-    safety = bp_r * (1 - debt_r)
-    return cross_sectional_rank(safety)
-
-
-@register_factor(
-    name="quality_momentum_composite",
-    description="质量动量综合因子，roe_momentum_4q排名×mom_20排名截面排名。",
-    category="enhanced",
-    thesis="盈利改善+价格动量同时发生=基本面和技术面共振——是最可靠的趋势信号，盈利驱动+价格验证。",
-    dependencies=("__factors__", "roe_momentum_4q", "mom_20"),
-)
-def factor_quality_momentum_composite(context: FactorContext):
-    roe_mom = context.load_factor("roe_momentum_4q")
-    mom = context.load_factor("mom_20")
-    common = roe_mom.index.intersection(mom.index)
-    roe_r = roe_mom.loc[common].groupby(level="Date").rank(pct=True)
-    mom_r = mom.loc[common].groupby(level="Date").rank(pct=True)
-    return cross_sectional_rank(roe_r * mom_r)
-
-
-@register_factor(
-    name="value_quality_volatility",
-    description="价值质量低波综合因子，(bp+roe-振幅)三维度截面排名。",
-    category="enhanced",
-    thesis="低估值+高质量+低波动的三维交叉——低估值提供安全边际、高质量提供盈利保障、低波动提供持有体验，是长线资金最偏好的组合特征。",
-    dependencies=("__factors__", "bp", "roe", "volatility_20"),
-)
-def factor_value_quality_volatility(context: FactorContext):
-    bp = context.load_factor("bp")
-    roe = context.load_factor("roe")
-    vol = context.load_factor("volatility_20")
-    common = bp.index.intersection(roe.index).intersection(vol.index)
-    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
-    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
-    vol_r = vol.loc[common].groupby(level="Date").rank(pct=True)
-    composite = bp_r + roe_r + (1 - vol_r)
-    return cross_sectional_rank(composite)
-
-
-@register_factor(
-    name="growth_at_reasonable_price",
-    description="GARP因子，or_yoy排名/(1+bp排名)截面排名（成长性/估值=性价比排前）。",
-    category="enhanced",
-    thesis="Growth At Reasonable Price(GARP)策略——寻找成长性好但估值合理(不过贵)的股票，是成长投资和价值投资的交汇点。",
-    dependencies=("__factors__", "bp", "or_yoy"),
-)
-def factor_growth_at_reasonable_price(context: FactorContext):
-    bp = context.load_factor("bp")
-    growth = context.load_factor("or_yoy")
-    common = bp.index.intersection(growth.index)
-    bp_r = bp.loc[common].groupby(level="Date").rank(pct=True)
-    growth_r = growth.loc[common].groupby(level="Date").rank(pct=True)
-    garp = growth_r / (1 + bp_r)
-    return cross_sectional_rank(garp)
-
-
-@register_factor(
-    name="earnings_momentum_quality",
-    description="盈利动量质量因子，ROE动量×OCF/利润排名截面排名（盈利改善+现金流确认排前）。",
-    category="enhanced",
-    thesis="盈利改善但需要现金流的确认——ROE动量提升+高现金流质量的组合过滤了'纸面利润改善'，确保盈利改善是真正有现金支撑的。",
-    dependencies=("__factors__", "roe_momentum_4q", "ocf_to_profit"),
-)
-def factor_earnings_momentum_quality(context: FactorContext):
-    roe_mom = context.load_factor("roe_momentum_4q")
-    ocf_q = context.load_factor("ocf_to_profit")
-    common = roe_mom.index.intersection(ocf_q.index)
-    roe_r = roe_mom.loc[common].groupby(level="Date").rank(pct=True)
-    ocf_r = ocf_q.loc[common].groupby(level="Date").rank(pct=True)
-    return cross_sectional_rank(roe_r * ocf_r)
-
-
-@register_factor(
     name="reversal_with_volume_confirmation",
     description="放量反转确认因子，-mom_5排名×volume_ratio排名截面排名（放量反转=信号确认排前）。",
     category="enhanced",
@@ -620,22 +403,6 @@ def factor_reversal_with_volume_confirmation(context: FactorContext):
     reversal = (1 - mom5.loc[common].groupby(level="Date").rank(pct=True))
     vol_r = vol_ratio.loc[common].groupby(level="Date").rank(pct=True)
     return cross_sectional_rank(reversal * vol_r)
-
-
-@register_factor(
-    name="quality_turnover_divergence",
-    description="质量换手背离因子，roe排名×(1-turnover_20排名)截面排名（高质量+低换手=筹码锁定排前）。",
-    category="enhanced",
-    thesis="高质量股票+低换手率=机构长线持有不交易——是'被遗忘的优质股'信号，低换手意味着市场关注度低但基本面好，有重估潜力。",
-    dependencies=("__factors__", "roe", "turnover_20"),
-)
-def factor_quality_turnover_divergence(context: FactorContext):
-    roe = context.load_factor("roe")
-    turnover = context.load_factor("turnover_20")
-    common = roe.index.intersection(turnover.index)
-    roe_r = roe.loc[common].groupby(level="Date").rank(pct=True)
-    to_r = (1 - turnover.loc[common].groupby(level="Date").rank(pct=True))
-    return cross_sectional_rank(roe_r * to_r)
 
 
 @register_factor(

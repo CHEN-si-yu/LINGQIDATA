@@ -1,8 +1,8 @@
 """
-Advanced factor coupling (因子高级耦合) — Class 4.
+Advanced factor coupling (因子高级耦合) — Class 5.
 
 行业中性化耦合、IC自适应合成、拥挤度预警和宏观状态条件因子。
-这些因子加载已有的 .fea 文件进行二次加工，属于 Class 4 (__factors__)。
+这些因子加载已有的 .fea 文件进行二次加工，属于 Class 5 (__factors__)。
 
 依赖: 已生成的因子 .fea 文件
 """
@@ -22,56 +22,6 @@ def _rank(s: pd.Series) -> pd.Series:
 
 
 # ── 行业中性化 ────────────────────────────────────────────────────────────
-
-@register_factor(
-    name="sector_neutral_momentum",
-    description="行业中性动量因子，(mom_40-行业均值mom_40)截面排名（行业内相对动量排前）。",
-    category="coupling",
-    thesis="总动量=行业动量+选股alpha。行业中性动量剥离了行业beta，反映的是纯粹的选股能力——只做多行业内动量最强的股票、做空行业内动量最弱的。行业中性化后动量因子的IR通常提升30-50%。",
-    dependencies=("__factors__", "mom_40", "stock_list.parquet"),
-)
-def factor_sector_neutral_momentum(ctx: FactorContext) -> pd.Series:
-    mom = ctx.load_factor("mom_40")
-    industry_map = ctx.repo.load_industry_map()
-
-    codes = mom.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-    df = pd.DataFrame({"mom": mom.values, "industry": industries.values}, index=mom.index)
-    df = df.dropna(subset=["industry"])
-
-    ind_mean = df.groupby(["Date", "industry"])["mom"].transform("mean")
-    neutral = df["mom"] - ind_mean
-
-    return cross_sectional_rank(neutral)
-
-
-@register_factor(
-    name="sector_neutral_quality_momentum",
-    description="行业中性质量动量因子，(行业中性ROE排名×行业中性动量排名)截面排名（行业内又好又快排前）。",
-    category="coupling",
-    thesis="在行业内同时做到高质量+高动量是'板块龙头'的量化表达——在行业内既ROE领先又趋势领先的股票是板块的核心标的。行业中性化确保选出来的是各行业内部的最优股，而不是所有在大涨行业里的平庸股。",
-    dependencies=("__factors__", "roe", "mom_40", "stock_list.parquet"),
-)
-def factor_sector_neutral_quality_momentum(ctx: FactorContext) -> pd.Series:
-    roe = ctx.load_factor("roe")
-    mom = ctx.load_factor("mom_40")
-    industry_map = ctx.repo.load_industry_map()
-
-    common = roe.index.intersection(mom.index)
-    roe_a = roe.loc[common]
-    mom_a = mom.loc[common]
-
-    codes = common.get_level_values("Code")
-    industries = codes.map(industry_map)
-    df = pd.DataFrame({"roe": roe_a.values, "mom": mom_a.values, "industry": industries.values}, index=common)
-    df = df.dropna(subset=["industry"])
-
-    roe_neutral = df["roe"] - df.groupby(["Date", "industry"])["roe"].transform("mean")
-    mom_neutral = df["mom"] - df.groupby(["Date", "industry"])["mom"].transform("mean")
-
-    coupling = _rank(roe_neutral) * _rank(mom_neutral)
-    return cross_sectional_rank(coupling)
-
 
 @register_factor(
     name="size_neutral_reversal",
@@ -145,27 +95,6 @@ def factor_momentum_value_blend(ctx: FactorContext) -> pd.Series:
 
 
 @register_factor(
-    name="quality_value_garp",
-    description="GARP混合因子，(价值排名×0.5+成长排名×0.5)截面排名（合理价格下的成长排前）。",
-    category="coupling",
-    thesis="Growth At a Reasonable Price (GARP)兼顾成长性和估值合理性——单独买成长股太贵（高PE），单独买价值股无增长（价值陷阱）。GARP取两者交集：估值合理+有成长的公司。在A股中GARP策略年化超额稳定在6-10%。",
-    dependencies=("__factors__", "bp", "roe"),
-)
-def factor_quality_value_garp(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    roe = ctx.load_factor("roe")
-
-    common = bp.index.intersection(roe.index)
-    bp_rank = _rank(bp.loc[common])
-    roe_rank = _rank(roe.loc[common])
-
-    garp = 0.5 * bp_rank + 0.5 * roe_rank
-    return cross_sectional_rank(garp)
-
-
-# ── 拥挤度预警 ───────────────────────────────────────────────────────────
-
-@register_factor(
     name="factor_crowding_risk",
     description="因子拥挤度因子，-(因子20日累计收益)截面排名（涨幅过大=拥挤风险排后）。",
     category="coupling",
@@ -207,20 +136,3 @@ def factor_factor_reversal_risk(ctx: FactorContext) -> pd.Series:
     return cross_sectional_rank(risk)
 
 
-@register_factor(
-    name="vol_quality_defensive",
-    description="低波质量防御因子，((1-波动率排名)×质量排名)截面排名（低波+高质量=最优防御排前）。",
-    category="coupling",
-    thesis="低波动+高质量是防御型策略的黄金组合——在熊市中，低波动提供下行保护（跌得少），高质量提供复苏驱动（涨得快）。低波质量策略在A股最大回撤比纯动量策略低40-60%，是组合风险管理的基石。",
-    dependencies=("__factors__", "volatility_20", "roe"),
-)
-def factor_vol_quality_defensive(ctx: FactorContext) -> pd.Series:
-    vol = ctx.load_factor("volatility_20")
-    roe = ctx.load_factor("roe")
-
-    common = vol.index.intersection(roe.index)
-    vol_rank = _rank(vol.loc[common])
-    roe_rank = _rank(roe.loc[common])
-
-    defensive = (1 - vol_rank) * roe_rank
-    return cross_sectional_rank(defensive)

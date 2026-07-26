@@ -164,3 +164,63 @@ def factor_chip_support_strength(context: FactorContext):
     strength = density / distance
 
     return cross_sectional_rank(strength)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# New: Additional chip distribution factors (added 2026-07-26)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@register_factor(
+    name="winner_rate_change_20d",
+    description="获利盘比例20日变化。获利盘增加=上涨趋势中筹码逐步盈利，排名高。",
+    category="price",
+    thesis=(
+        "获利盘比例(winner_rate)的20日变化捕捉了筹码盈亏结构的边际变化。"
+        "获利盘比例上升=越来越多的持仓者处于盈利状态——上涨趋势确认；"
+        "获利盘比例下降=盈利持仓减少——趋势可能转弱。"
+    ),
+    dependencies=("cyq_perf.parquet",),
+)
+def factor_winner_rate_change_20d(context: FactorContext) -> np.ndarray:
+    cyq = context.load("cyq_perf.parquet")
+    wr = cyq["winner_rate"]
+    chg = wr.groupby(level="Code").transform(lambda s: s.diff(20))
+    return cross_sectional_rank(chg)
+
+
+@register_factor(
+    name="cost_support_strength",
+    description="筹码支撑强度=(收盘价-cost_50pct)/cost_50pct取反。价格在成本线下方=超跌,支撑强,排名高。",
+    category="price",
+    thesis=(
+        "收盘价相对筹码中位成本(cost_50pct)的偏离取反。价格远低于中位成本=多数持仓者亏损,"
+        "抛售意愿降低+抄底意愿增强=强支撑区域。价格远高于中位成本=获利盘充裕,"
+        "存在获利回吐压力。该因子做多超跌(远离成本线下方)的股票。"
+    ),
+    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+)
+def factor_cost_support_strength(context: FactorContext) -> np.ndarray:
+    cyq = context.load("cyq_perf.parquet")
+    d = context.load("daily_adj.parquet")
+    common = cyq.index.intersection(d.index)
+    cost50 = cyq.loc[common, "cost_50pct"]
+    close = d.loc[common, "close"]
+    deviation = safe_divide(close - cost50, cost50)
+    return cross_sectional_rank(-deviation)
+
+
+@register_factor(
+    name="chip_cost_convergence_20d",
+    description="筹码成本收敛=(cost_85pct-cost_5pct)/cost_50pct的20日变化取反。成本收敛=方向选择在即。",
+    category="price",
+    thesis=(
+        "筹码分布宽度(cost_85pct-cost_5pct的相对宽度)的20日变化。"
+        "宽度收敛=筹码在集中,多空成本趋于一致——通常是大行情前的蓄力阶段;"
+        "宽度发散=筹码在分散,多空分歧加大。收敛后往往出现方向性突破。"
+    ),
+    dependencies=("cyq_perf.parquet",),
+)
+def factor_chip_cost_convergence_20d(context: FactorContext) -> np.ndarray:
+    cyq = context.load("cyq_perf.parquet")
+    width = safe_divide(cyq["cost_85pct"] - cyq["cost_5pct"], cyq["cost_50pct"])
+    chg = width.groupby(level="Code").transform(lambda s: s.diff(20))
+    return cross_sectional_rank(-chg)

@@ -1,5 +1,5 @@
 """
-Microstructure factor distribution transformations — Class 4 coupling factors.
+Microstructure factor distribution transformations — Class 5 coupling factors.
 
 These factors load the highest-|IC| volatility/intraday/microstructure factors
 and apply distribution-normalizing transformations (log, sqrt, z-score) so the
@@ -80,7 +80,7 @@ def _make_log_vol_factor(base_name: str, desc_cn: str):
         dependencies=("__factors__", base_name),
     )
     def _compute(ctx: FactorContext) -> pd.Series:
-        raw = ctx.load_factor(base_name)
+        raw = pd.to_numeric(ctx.load_factor(base_name), errors="coerce")
         log_val = np.log(raw.clip(lower=1e-10))
         return cross_sectional_rank(-log_val)  # low vol ranks higher
 
@@ -105,7 +105,6 @@ _SQRT_FACTORS = [
     ("lottery_stock_indicator","彩票股指标"),
     ("relative_spread",        "相对价差"),
     ("am_hl_range_intraday",   "上午高低价差"),
-    ("high_low_spread_20",     "20日高低价差"),
     ("turnover_std_20",        "20日换手标准差"),
     ("turnover_vol_20",        "20日换手波动率"),
     ("ret_range_20",           "20日收益范围"),
@@ -125,7 +124,7 @@ def _make_sqrt_factor(base_name: str, desc_cn: str):
         dependencies=("__factors__", base_name),
     )
     def _compute(ctx: FactorContext) -> pd.Series:
-        raw = ctx.load_factor(base_name)
+        raw = pd.to_numeric(ctx.load_factor(base_name), errors="coerce")
         sqrt_val = np.sign(raw) * np.sqrt(np.abs(raw))
         return cross_sectional_rank(sqrt_val)
 

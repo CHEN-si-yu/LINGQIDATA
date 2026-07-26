@@ -1,0 +1,85 @@
+2026-07-26 22:35:43 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260726_223543.log
+2026-07-26 22:35:43 [INFO   ] root: Python    : 3.12.3
+2026-07-26 22:35:43 [INFO   ] root: pandas    : 3.0.3
+2026-07-26 22:35:43 [INFO   ] root: numpy     : 2.3.2
+2026-07-26 22:35:44 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:44 [INFO   ] featureengineering.builder: Effective end date: 20260724  |  425 factors to check
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:35:52 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-07-26 22:36:20 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:36:20 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:36:20 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:36:20 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:36:20 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:36:21 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:39:22 [DEBUG  ] featureengineering.factors.sector: sector: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:22 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:23 [DEBUG  ] featureengineering.factors.sector: sector: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:39:23 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: using stock_list industry (110 sectors, 5535 stocks). Note: factors depending on ths_daily.parquet will have reduced effectiveness.
+2026-07-26 22:39:25 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:25 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: using stock_list industry (110 sectors, 5535 stocks). Note: factors depending on ths_daily.parquet will have reduced effectiveness.
+2026-07-26 22:39:25 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:26 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: using stock_list industry (110 sectors, 5535 stocks). Note: factors depending on ths_daily.parquet will have reduced effectiveness.
+2026-07-26 22:39:27 [DEBUG  ] featureengineering.factors.sector: sector: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:27 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:27 [DEBUG  ] featureengineering.factors.sector: sector: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:39:28 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: type=I industry sectors not found in constituent data, trying stock_list.parquet industry field (申万行业) as fallback.
+2026-07-26 22:39:28 [DEBUG  ] featureengineering.factors.sector_cross: sector_cross: using stock_list industry (110 sectors, 5535 stocks).
+2026-07-26 22:39:28 [DEBUG  ] featureengineering.factors.sector_momentum: sector_momentum: using stock_list industry (110 sectors, 5535 stocks). Note: factors depending on ths_daily.parquet will have reduced effectiveness.
+2026-07-26 22:40:46 [INFO   ] featureengineering.builder: Build complete — 425 ok, 0 skip, 0 error | 7345 s wall | 0 total rows
+2026-07-26 23:05:54 [INFO   ] featureengineering.builder: Effective end date: 20260724  |  146 factors to check
+2026-07-26 23:06:29 [ERROR  ] featureengineering.builder: coupling_kdj_reversal_combo: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 892, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/coupling_indicator_cross.py", line 275, in factor_coupling_kdj_reversal_combo
+    rev = ctx.load_factor("mom_5_rev")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/registry.py", line 57, in load_factor
+    return self.repo.load_factor_panel(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/dataset.py", line 517, in load_factor_panel
+    raise FileNotFoundError(f"Factor file not found: {filepath}")
+FileNotFoundError: Factor file not found: /autodl-fs/data/lingqiData/featureengineering/data/factors/mom_5_rev.fea
+2026-07-26 23:06:31 [ERROR  ] featureengineering.builder: coupling_momentum_reversal_balance: failed
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/builder.py", line 892, in _build_factor_worker
+    raw_output = spec.compute(context)
+                 ^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/factors/coupling_extended.py", line 102, in factor_coupling_momentum_reversal_balance
+    rev = ctx.load_factor("mom_5_rev")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/registry.py", line 57, in load_factor
+    return self.repo.load_factor_panel(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/featureengineering/src/featureengineering/dataset.py", line 517, in load_factor_panel
+    raise FileNotFoundError(f"Factor file not found: {filepath}")
+FileNotFoundError: Factor file not found: /autodl-fs/data/lingqiData/featureengineering/data/factors/mom_5_rev.fea
+2026-07-26 23:08:43 [INFO   ] featureengineering.builder: Build complete — 144 ok, 0 skip, 2 error | 1593 s wall | 0 total rows

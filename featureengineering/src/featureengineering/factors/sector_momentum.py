@@ -17,11 +17,9 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank
-
+from ..utils import cross_sectional_rank, stack_date_code
 
 # ── THS 板块数据加载辅助 ───────────────────────────────────────────────────────
-
 
 def _pad_code(code: str) -> str:
     """Strip exchange suffix and zero-pad to 6 digits, e.g. '000001.SZ' -> '000001'."""
@@ -30,7 +28,6 @@ def _pad_code(code: str) -> str:
         if code.upper().endswith(suffix):
             code = code[: -len(suffix)]
     return code.zfill(6)
-
 
 def _load_ths_sector_panel(context: FactorContext) -> pd.DataFrame:
     """Load THS sector daily close prices as a Date x ths_code wide DataFrame."""
@@ -44,7 +41,6 @@ def _load_ths_sector_panel(context: FactorContext) -> pd.DataFrame:
     panel.index.name = "Date"
     panel.columns.name = "ths_code"
     return panel.sort_index()
-
 
 def _load_stock_sector_map(context: FactorContext, sector_types: tuple[str, ...] = ("I",)) -> dict[str, list[str]]:
     """Build a mapping: stock_code (6-digit) -> list of THS sector codes.
@@ -74,6 +70,46 @@ def _load_stock_sector_map(context: FactorContext, sector_types: tuple[str, ...]
 
     allowed_codes = set(sc[sc["type"].isin(sector_types)]["index_code"])
     cs_filtered = cs[cs["index_code"].isin(allowed_codes)]
+    if cs_filtered.empty and sector_types == ("I",):
+        import logging
+        _logger = logging.getLogger(__name__)
+        _logger.debug(
+            "sector_momentum: type=I industry sectors not found in constituent data, "
+            "trying stock_list.parquet industry field (申万行业) as fallback."
+        )
+        # ── Fallback 1: stock_list.parquet industry field ──
+        try:
+            stock_list = context.repo._read_parquet(src / "stock_list.parquet")
+            if "industry" in stock_list.columns:
+                stock_map_fb: dict[str, list[str]] = {}
+                for _, row in stock_list.iterrows():
+                    code = _pad_code(row["stock_code"])
+                    ind = (row.get("industry") or "").strip()
+                    if ind:
+                        stock_map_fb.setdefault(code, []).append(ind)
+                if stock_map_fb:
+                    n_sec = len({i for v in stock_map_fb.values() for i in v})
+                    _logger.debug(
+                        "sector_momentum: using stock_list industry "
+                        "(%d sectors, %d stocks). "
+                        "Note: factors depending on ths_daily.parquet "
+                        "will have reduced effectiveness.",
+                        n_sec, len(stock_map_fb),
+                    )
+                    cache[sector_types] = stock_map_fb
+                    return stock_map_fb
+        except Exception:
+            _logger.warning(
+                "sector_momentum: stock_list fallback failed, trying type=BB/N."
+            )
+
+        # ── Fallback 2: BB/N market-relative ──
+        _logger.warning(
+            "sector_momentum: falling back to type=BB/N "
+            "— factors become market-relative."
+        )
+        allowed_codes = set(sc[sc["type"].isin(["BB", "N"])]["index_code"])
+        cs_filtered = cs[cs["index_code"].isin(allowed_codes)]
 
     stock_map: dict[str, list[str]] = {}
     for _, row in cs_filtered.iterrows():
@@ -83,7 +119,6 @@ def _load_stock_sector_map(context: FactorContext, sector_types: tuple[str, ...]
 
     cache[sector_types] = stock_map
     return stock_map
-
 
 def _load_sector_turnover_panel(context: FactorContext) -> pd.DataFrame:
     """Load THS sector daily turnover_rate as a Date x ths_code wide DataFrame."""
@@ -98,9 +133,7 @@ def _load_sector_turnover_panel(context: FactorContext) -> pd.DataFrame:
     panel.columns.name = "ths_code"
     return panel.sort_index()
 
-
 # ── 通用构造／映射辅助 ─────────────────────────────────────────────────────────
-
 
 def _build_sector_stocks(
     stock_map: dict[str, list[str]],
@@ -113,7 +146,6 @@ def _build_sector_stocks(
             if ths in valid_sectors:
                 sector_stocks.setdefault(ths, []).append(code)
     return sector_stocks
-
 
 def _map_sector_metric_to_stocks(
     sector_metric: pd.DataFrame,
@@ -140,21 +172,20 @@ def _map_sector_metric_to_stocks(
         parts.append(df)
 
     if not parts:
-        return pd.Series(dtype=float)
+        idx = pd.MultiIndex.from_tuples([], names=['Date', 'Code'])
+        return pd.Series(dtype=float, index=idx, name='value')
 
     combined = pd.concat(parts, axis=1)
     # Average across sectors for stocks that belong to multiple sectors
     combined = combined.T.groupby(level=0).mean().T
     combined.columns.name = "Code"
-    combined = combined.stack().reorder_levels(["Date", "Code"]).sort_index()
+    combined = stack_date_code(combined)
     combined.name = "value"
     return combined
-
 
 # ── THS 全 A 指数代码 ─────────────────────────────────────────────────────────
 
 _ALL_A_CODE = "700001.TI"
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 1: sector_rel_strength_5d
@@ -204,7 +235,6 @@ def factor_sector_rel_strength_5d(context: FactorContext):
 
     return cross_sectional_rank(stock_metric)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 2: sector_rel_strength_20d
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -250,145 +280,17 @@ def factor_sector_rel_strength_20d(context: FactorContext):
 
     return cross_sectional_rank(stock_metric)
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 3: sector_turnover_breakout
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="sector_turnover_breakout",
-    description=(
-        "板块换手率突破因子：个股所属行业板块当日换手率/20日均换手率-1，"
-        "板块内均值后截面排名。"
-    ),
-    category="sector",
-    thesis=(
-        "行业板块换手率的骤然放大通常意味着有新增资金入场或市场关注度急剧提升，"
-        "是板块行情启动/加速的前兆。突破幅度越大，短期演绎概率越高。"
-    ),
-    dependencies=(
-        "ths_daily.parquet",
-        "ths_constituent_stocks.parquet",
-        "ths_sector_categories.parquet",
-    ),
-)
-def factor_sector_turnover_breakout(context: FactorContext):
-    stock_map = _load_stock_sector_map(context)
-    turnover_panel = _load_sector_turnover_panel(context)
-    sector_stocks = _build_sector_stocks(stock_map, set(turnover_panel.columns))
-
-    # Sector 20d average turnover
-    turnover_20d_avg = turnover_panel.rolling(20, min_periods=5).mean()
-
-    # Breakout ratio: today / trailing average - 1
-    breakout = turnover_panel / turnover_20d_avg.replace(0, np.nan) - 1.0
-    breakout = breakout.replace([np.inf, -np.inf], np.nan)
-
-    stock_metric = _map_sector_metric_to_stocks(breakout, sector_stocks)
-
-    if stock_metric.empty:
-        return pd.Series(
-            index=pd.MultiIndex.from_arrays([[], []], names=["Date", "Code"]),
-            dtype=float,
-        )
-
-    return cross_sectional_rank(stock_metric)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 4: sector_vol_ratio
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@register_factor(
-    name="sector_vol_ratio",
-    description=(
-        "板块波动率比率因子：个股所属行业板块20日波动率/全A指数20日波动率，"
-        "映射到个股后截面排名。"
-    ),
-    category="sector",
-    thesis=(
-        "高波板块相对于全A的波动率比率反映了板块的beta属性。"
-        "当比率放大时，板块的系统性风险上升；"
-        "持续高比的板块具有更高弹性和交易型机会。"
-    ),
-    dependencies=(
-        "ths_daily.parquet",
-        "ths_constituent_stocks.parquet",
-        "ths_sector_categories.parquet",
-    ),
-)
-def factor_sector_vol_ratio(context: FactorContext):
-    stock_map = _load_stock_sector_map(context)
-    sector_panel = _load_ths_sector_panel(context)
-    sector_stocks = _build_sector_stocks(stock_map, set(sector_panel.columns))
-
-    # Sector daily returns and 20d rolling volatility
-    sector_ret = sector_panel.pct_change(1)
-    sector_vol_20 = sector_ret.rolling(20, min_periods=10).std()
-
-    # Ratio against all-A index vol
-    if _ALL_A_CODE in sector_vol_20.columns:
-        all_a_vol_20 = sector_vol_20[_ALL_A_CODE]
-        vol_ratio = sector_vol_20.div(all_a_vol_20.replace(0, np.nan).fillna(1), axis=0)
-        vol_ratio = vol_ratio.replace([np.inf, -np.inf], np.nan)
-    else:
-        # All-A index not available — use absolute sector vol as fallback
-        vol_ratio = sector_vol_20
-
-    stock_metric = _map_sector_metric_to_stocks(vol_ratio, sector_stocks)
-
-    if stock_metric.empty:
-        return pd.Series(
-            index=pd.MultiIndex.from_arrays([[], []], names=["Date", "Code"]),
-            dtype=float,
-        )
-
-    return cross_sectional_rank(stock_metric)
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 5: sector_momentum_rotation
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="sector_momentum_rotation",
-    description=(
-        "板块动量轮动因子：个股所属行业板块5日收益率在所有板块中的百分位排名，"
-        "映射到个股后截面排名。衡量个股所在板块是否为当前热点。"
-    ),
-    category="sector",
-    thesis=(
-        "当某个行业板块的收益率排名处于所有板块前列时，该板块处于资金追逐的"
-        "热点状态。将板块热度映射到个股，可以捕捉到板块轮动中个股的跟涨机会。"
-        "动量轮动信号比单纯收益率信号更稳定，因为它相对于全市场板块排序。"
-    ),
-    dependencies=(
-        "ths_daily.parquet",
-        "ths_constituent_stocks.parquet",
-        "ths_sector_categories.parquet",
-    ),
-)
-def factor_sector_momentum_rotation(context: FactorContext):
-    stock_map = _load_stock_sector_map(context)
-    sector_panel = _load_ths_sector_panel(context)
-    sector_stocks = _build_sector_stocks(stock_map, set(sector_panel.columns))
-
-    # Sector 5d returns  (Date x ths_code)
-    sector_ret_5 = sector_panel.pct_change(5)
-
-    # Cross-sectional percentile rank of sectors (within each date)
-    sector_rank = sector_ret_5.rank(axis=1, pct=True)
-
-    stock_metric = _map_sector_metric_to_stocks(sector_rank, sector_stocks)
-
-    if stock_metric.empty:
-        return pd.Series(
-            index=pd.MultiIndex.from_arrays([[], []], names=["Date", "Code"]),
-            dtype=float,
-        )
-
-    return cross_sectional_rank(stock_metric)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 6: sector_leader_laggard_spread
@@ -454,10 +356,9 @@ def factor_sector_leader_laggard_spread(context: FactorContext):
     combined = pd.concat(spread_parts, axis=1)
     combined = combined.T.groupby(level=0).mean().T
     combined.columns.name = "Code"
-    combined = combined.stack().reorder_levels(["Date", "Code"]).sort_index()
+    combined = stack_date_code(combined)
     combined.name = "sector_leader_laggard_spread"
     return cross_sectional_rank(combined)
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 因子 7: sector_amount_momentum_5d
@@ -525,49 +426,6 @@ def factor_sector_amount_momentum_5d(context: FactorContext):
 
     return cross_sectional_rank(stock_metric)
 
-
 # ── Supplementary sector momentum factors ──────────────────────────────────
 
-
-@register_factor(
-    name="sector_size_factor",
-    description="板块内小市值效应因子 (小市值相对大市值的超额)。",
-    category="sector",
-    thesis="在板块内部，小市值股票相对大市值股票存在系统性超额收益",
-    dependencies=("finance.parquet", "stock_list.parquet", "ths_constituent_stocks.parquet"),
-)
-def factor_sector_size_factor(context: FactorContext):
-    finance = context.load("finance.parquet")
-    mv = finance["total_mv"]
-    industry_map = context.repo.load_industry_map()
-    codes = mv.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-    df = pd.DataFrame({"mv": mv.values, "industry": industries.values}, index=mv.index)
-    df = df.dropna(subset=["industry"])
-    df["mv_rank"] = df.groupby(["Date", "industry"])["mv"].transform(
-        lambda x: x.rank(pct=True)
-    )
-    # Small cap (low rank) is good
-    return cross_sectional_rank(-df["mv_rank"])
-
-
-@register_factor(
-    name="sector_earnings_consistency",
-    description="板块盈利一致性因子 (行业内盈利正增长占比)。",
-    category="sector",
-    thesis="板块内多数公司盈利正增长意味着行业景气上行，个股受益于行业Beta",
-    dependencies=("financial_indicator.parquet", "stock_list.parquet", "calendar.parquet"),
-)
-def factor_sector_earnings_consistency(context: FactorContext):
-    fin = context.load_financial("financial_indicator.parquet", value_cols=["netprofit_yoy"])
-    industry_map = context.repo.load_industry_map()
-    np_growth = fin["netprofit_yoy"]
-    codes = np_growth.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-    df = pd.DataFrame({"np_g": np_growth.values, "industry": industries.values}, index=np_growth.index)
-    df = df.dropna(subset=["industry"])
-    df["positive"] = (df["np_g"] > 0).astype(float)
-    df["consistency"] = df.groupby(["Date", "industry"])["positive"].transform("mean")
-    return cross_sectional_rank(df["consistency"])
-
-    return cross_sectional_rank(stock_metric)
+# ═══════════════════════════════════════════════════════════════════════════════

@@ -670,6 +670,17 @@ INTRADAY_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     # ── New: vol-of-vol & term structure ────────────────────────────────
     "rv_rolling_5d_std":      ("rv_rolling_5d_std", "neg"),
     "rv_term_structure_slope":("rv_term_structure_slope","neg"),
+    # ── New: additional transforms & composites (10) ──
+    "rv_5min_momentum":         ("rv_5min",             "momentum_rev"),
+    "rv_15min_momentum":        ("rv_15min",            "momentum_rev"),
+    "amihud_pos":               ("amihud_5min",         "pos"),
+    "close_position_momentum":  ("close_position",      "momentum"),
+    "open_auction_reversal":    ("open_auction_ret",    "neg"),
+    "vwap_momentum_rev":        ("vwap_mom_5d",         "momentum_rev"),
+    "hl_range_pos":             ("hl_range",            "pos"),
+    "vol_concentration_pos":    ("vol_concentration",   "pos"),
+    "ret_std_momentum":         ("ret_5min_std",        "momentum"),
+    "vol_of_vol_momentum":      ("vol_of_vol",          "momentum"),
 }
 
 #: All metric columns produced by ``_intraday_all_metrics`` that map to factors.
@@ -728,6 +739,7 @@ def build_intraday_new(
     paths,                      # ProjectPaths
     force: bool = False,
     max_workers: int | None = None,
+    quality_check_days: int = 0,
 ) -> list:
     """Build all Class 3 intraday factors in a single pass with enhanced progress.
 
@@ -741,16 +753,23 @@ def build_intraday_new(
       Phase 3 — Factor frame assembly
       Phase 4 — Writing .fea output files
 
+    Parameters
+    ----------
+    quality_check_days:
+        If > 0, inspect the last N trading days of existing .fea files.
+        Factors whose recent rows are all-NaN will be force-rebuilt.
+
     Returns a list of ``BuildResult`` objects compatible with CLI expectations.
     """
     from ..builder import (
         BuildResult,
         _resolve_effective_end_date,
         _read_factor_max_date,
+        _check_factor_recent_quality,
         get_factor,
     )
     from ..dataset import _load_allowed_codes
-    from ..storage import write_factor, write_factor_incremental, ensure_single_factor_frame
+    from ..storage import ensure_single_factor_frame, write_factor, write_factor_incremental
 
     allowed = _load_allowed_codes(paths.stock_pool_file)
     min_dir = paths.source_root / "history_1min"
@@ -760,7 +779,7 @@ def build_intraday_new(
 
     # ── Phase 1 header ───────────────────────────────────────────────────
     total_factors = len(factor_names)
-    n_workers = max_workers if max_workers else min(32, (os.cpu_count() or 4))
+    n_workers = min(max_workers or 32, (os.cpu_count() or 4))
 
     print(f"\n{'='*64}")
     print(f"  CLASS 3 — UNIFIED SINGLE-PASS BUILDER")
@@ -789,26 +808,18 @@ def build_intraday_new(
             manifest_path=paths.manifest_output_dir / f"{n}.json",
         ) for n in factor_names]
 
-    # ── Determine incremental filter ─────────────────────────────────────
+    # ── Incremental path permanently disabled — always full rebuild ──
     effective_end = _resolve_effective_end_date(paths.source_root)
+
+    # All factors are always active — skip logic removed
+    active_names = list(factor_names)
+    total_factors = len(factor_names)
+
+    # Always full rebuild — no incremental date filtering
     min_trade_time: str | None = None
-    earliest_existing: str | None = None
-    if not force:
-        for name in factor_names:
-            fp = paths.factor_output_dir / f"{name}.fea"
-            if fp.exists():
-                fm = _read_factor_max_date(fp)
-                if fm:
-                    if earliest_existing is None or fm < earliest_existing:
-                        earliest_existing = fm
-        if earliest_existing and earliest_existing < effective_end:
-            from datetime import datetime as _dt, timedelta as _td
-            lookback_dt = _dt.strptime(earliest_existing, "%Y%m%d") - _td(days=30)
-            min_trade_time = lookback_dt.strftime("%Y-%m-%d") + " 00:00:00"
-
-    mode_str = "incremental" if min_trade_time else "full rebuild"
-    print(f"  Mode: {mode_str}" + (f"  (since {min_trade_time})" if min_trade_time else ""))
-
+    earliest_existing: str | None = None  # kept for dead-code compatibility
+    mode_str = "full rebuild (incremental disabled)"
+    print(f"  Mode: {mode_str}")
     t_phase1_elapsed = time.perf_counter() - t_phase1
     print(f"  Phase 1 done  ({t_phase1_elapsed:.1f}s)")
 
@@ -817,7 +828,7 @@ def build_intraday_new(
     print(f"\n  Phase 2/4 — Computing intraday metrics  "
           f"[ProcessPoolExecutor x{n_workers}]")
 
-    BATCH_SIZE = 25
+    BATCH_SIZE = 40
     file_items = list(file_map.items())
     batches = [file_items[i:i + BATCH_SIZE] for i in range(0, len(file_items), BATCH_SIZE)]
     total_batches = len(batches)
@@ -884,7 +895,9 @@ def build_intraday_new(
         parts = accumulators.get(col, [])
         if parts:
             s = pd.concat(parts)
-            s = s.groupby(list(s.index.names)).last()
+            # Drop duplicates via O(N) Index.duplicated instead of O(N log N) groupby
+            if s.index.has_duplicates:
+                s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
             raw_metrics[col] = s
@@ -981,17 +994,24 @@ def build_intraday_new(
 
         spec = get_factor(name)
         try:
-            # Full rebuild (min_trade_time is None) → always overwrite.
-            if force or not factor_path.exists() or min_trade_time is None:
+            # Decide full-rebuild vs incremental write.
+            # Quality check issues (all_nan, missing_dates, unreadable)
+            # are handled by write_factor_incremental which merges new
+            # data over the problematic old rows (keep="last"); a full
+            # overwrite would discard all historical data.
+            if not factor_path.exists() or min_trade_time is None:
                 write_factor(spec, frame, paths=paths)
+                action = "rebuild"
             else:
                 write_factor_incremental(spec, frame, paths=paths)
+                action = "incremental"
             results.append(BuildResult(
-                factor_name=name, action="rebuild", elapsed=0.0,
+                factor_name=name, action=action, elapsed=0.0,
                 rows=len(frame), factor_path=factor_path,
                 manifest_path=paths.manifest_output_dir / f"{name}.json",
             ))
             pbar_write.set_postfix_str(f"OK {name}")
+            pbar_write.update(1)
         except Exception:
             results.append(BuildResult(
                 factor_name=name, action="error", elapsed=0.0, rows=0,
@@ -1000,9 +1020,7 @@ def build_intraday_new(
             ))
             write_errors += 1
             pbar_write.set_postfix_str(f"ERR {name}")
-
-        pbar_write.update(1)
-
+            pbar_write.update(1)
     pbar_write.close()
 
     t_phase4_elapsed = time.perf_counter() - t_phase4
@@ -2354,18 +2372,6 @@ def factor_price_impact_asymmetry(context: FactorContext):
                                    on_progress=context.repo.on_progress)
     return cross_sectional_rank(-np.abs(pa - 1.0))
 
-
-@register_factor(
-    name="liquidity_resilience",
-    description="流动性弹性因子，极端收益后成交量的恢复速度截面排名（恢复快=流动性好排前）。",
-    category="intraday",
-    thesis="流动性弹性(Liquidity Resilience)衡量市场在经历大单冲击后恢复正常交易的速度——高弹性意味着即使出现大单冲击，流动性也能迅速恢复，交易成本不会持续升高。这是市场质量的高级度量。",
-    dependencies=("history_1min", "calendar.parquet"),
-)
-def factor_liquidity_resilience(context: FactorContext):
-    lr = _compute_intraday_factor(context.repo.paths.source_root, context.repo.allowed_codes, "liquidity_resilience",
-                                   on_progress=context.repo.on_progress)
-    return cross_sectional_rank(lr)
 
 
 @register_factor(

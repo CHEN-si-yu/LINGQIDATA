@@ -71,39 +71,6 @@ def di_plus_minus_ratio_14(ctx: FactorContext) -> pd.Series:
     ratio = safe_divide(di_plus, di_minus + 1e-8)
     return cross_sectional_rank(ratio)
 
-
-# ── Aroon ───────────────────────────────────────────────────────────────────
-
-def _aroon(high, low, window=25):
-    high_idx = high.groupby(level="Code").transform(
-        lambda s: s.rolling(window, min_periods=window // 2).apply(
-            lambda x: np.argmax(x) if len(x) >= window // 2 else np.nan
-        )
-    )
-    low_idx = low.groupby(level="Code").transform(
-        lambda s: s.rolling(window, min_periods=window // 2).apply(
-            lambda x: np.argmin(x) if len(x) >= window // 2 else np.nan
-        )
-    )
-    aroon_up = 100 * (window - high_idx) / window
-    aroon_down = 100 * (window - low_idx) / window
-    return aroon_up, aroon_down
-
-
-@register_factor(
-    name="aroon_oscillator_25",
-    description="25日Aroon振荡器因子 (AroonUp-AroonDown)",
-    category="price",
-    thesis="Aroon衡量价格创新高/新低的时间距离，正值意味着上升趋势动力",
-    dependencies=("daily_adj.parquet", "calendar.parquet"),
-)
-def aroon_oscillator_25(ctx: FactorContext) -> pd.Series:
-    daily = ctx.load("daily_adj.parquet")
-    aroon_up, aroon_down = _aroon(daily["high"], daily["low"], 25)
-    oscillator = aroon_up - aroon_down
-    return cross_sectional_rank(oscillator)
-
-
 # ── Bollinger Bands ─────────────────────────────────────────────────────────
 
 @register_factor(
@@ -244,44 +211,6 @@ def ma_distance_20_60(ctx: FactorContext) -> pd.Series:
     ma_60 = rolling_group_mean(close, 60)
     distance = safe_divide(ma_20 - ma_60, ma_60)
     return cross_sectional_rank(distance)
-
-
-# ── Hurst exponent ──────────────────────────────────────────────────────────
-
-@register_factor(
-    name="hurst_exponent_60",
-    description="60日Hurst指数因子 (均值回归排前, <0.5排前)",
-    category="price",
-    thesis="Hurst<0.5意味着均值回归特征，Hurst>0.5意味着趋势延续，市场偏好均值回归",
-    dependencies=("daily_adj.parquet", "calendar.parquet"),
-)
-def hurst_exponent_60(ctx: FactorContext) -> pd.Series:
-    daily = ctx.load("daily_adj.parquet")
-    close = daily["close"]
-
-    def _hurst_rs(s, window):
-        """Rescaled range Hurst estimator."""
-        s = s.dropna()
-        if len(s) < window:
-            return pd.Series(np.nan, index=s.index)
-
-        def _compute_rs(x):
-            x = x - x.mean()
-            cum_dev = x.cumsum()
-            r = cum_dev.max() - cum_dev.min()
-            s = x.std()
-            return r / s if s > 1e-12 else np.nan
-
-        rs = s.rolling(window, min_periods=window // 2).apply(
-            lambda x: _compute_rs(x), raw=False
-        )
-        hurst = np.log(rs + 1e-8) / np.log(window)
-        return hurst
-
-    log_close = np.log(close.where(close > 0, np.nan))
-    hurst = log_close.groupby(level="Code").transform(lambda s: _hurst_rs(s, 60))
-    # Low Hurst (<0.5) = mean-reverting = ranks higher for reversal strategies
-    return cross_sectional_rank(-hurst)
 
 
 # ── Streak / consecutive moves ──────────────────────────────────────────────

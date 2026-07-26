@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .builder import (
+    set_skip_existing,
     build_many,
     build_many_parallel,
     check_factor_dates,
@@ -42,6 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Resume from interrupted build via state file (default: on).")
     p.add_argument("--no-resume", action="store_false", dest="resume",
                    help="Start a fresh build, ignoring any prior state file.")
+    p.add_argument("--skip-existing", action="store_true", default=False,
+                   help="Skip factors whose .fea file already exists (simple file check).")
+
     p.add_argument("--new", action="store_true", dest="use_new",
                    help="(Now the default for Class 2 & 3 — kept for compatibility.)")
 
@@ -115,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
     log_environment_info()
     ensure_builtin_factors_loaded()
 
+    # ── Skip-existing: if set, skip factors with existing .fea files ──
+    if args.skip_existing:
+        set_skip_existing(True)
+
     # ── Status / check-dates (no build) ──────────────────────────────────
     if args.status or args.check_dates:
         print_status_table(check_factor_dates(paths=paths))
@@ -146,12 +154,12 @@ def main(argv: list[str] | None = None) -> int:
 
     factor_names = sorted(set(factor_names))
 
-    # ── Filter by class (--only-class 1,2,3) ────────────────────────────
+    # ── Filter by class (--only-class 1,2,3,4,5) ────────────────────────
     if args.only_class is not None:
         selected = {int(c.strip()) for c in args.only_class.split(",") if c.strip()}
-        invalid = selected - {1, 2, 3, 4}
+        invalid = selected - {1, 2, 3, 4, 5}
         if invalid:
-            p.error(f"Invalid class number(s): {sorted(invalid)}.  Must be 1, 2, 3, or 4.")
+            p.error(f"Invalid class number(s): {sorted(invalid)}.  Must be 1, 2, 3, 4, or 5.")
 
         before = len(factor_names)
         factor_names = [n for n in factor_names if classify_factor(n) in selected]
@@ -165,11 +173,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ── Build ────────────────────────────────────────────────────────────
-    # Class 2 & 3 always use unified single-pass builders.
+    # Class 2, 3, 4 always use unified single-pass builders.
     # Separate factors by class so each data source is opened once.
     c2_names = [n for n in factor_names if classify_factor(n) == 2]
     c3_names = [n for n in factor_names if classify_factor(n) == 3]
-    other_names = [n for n in factor_names if classify_factor(n) not in (2, 3)]
+    c4_names = [n for n in factor_names if classify_factor(n) == 4]
+    other_names = [n for n in factor_names if classify_factor(n) not in (2, 3, 4)]
 
     all_results = []
 
@@ -180,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             paths=paths,
             force=args.force,
             max_workers=args.jobs,
+            quality_check_days=args.quality_check_days,
         ))
 
     if c3_names:
@@ -189,16 +199,25 @@ def main(argv: list[str] | None = None) -> int:
             paths=paths,
             force=args.force,
             max_workers=args.jobs,
+            quality_check_days=args.quality_check_days,
         ))
 
-    if other_names:
-        if len(other_names) == 1:
-            all_results.extend(build_many(other_names, paths=paths, force=args.force))
-        else:
-            all_results.extend(build_many_parallel(
-                other_names, max_workers=args.jobs, paths=paths, force=args.force,
-                quality_check_days=args.quality_check_days,
-                use_dashboard=args.dashboard,
+    if c4_names:
+        from .factors.indicator_minute import build_indicator_1min_new
+        all_results.extend(build_indicator_1min_new(
+            factor_names=c4_names,
+            paths=paths,
+            force=args.force,
+            max_workers=args.jobs,
+            quality_check_days=args.quality_check_days,
+    ))
+    if len(other_names) == 1:
+        all_results.extend(build_many(other_names, paths=paths, force=args.force))
+    else:
+        all_results.extend(build_many_parallel(
+            other_names, max_workers=args.jobs, paths=paths, force=args.force,
+            quality_check_days=args.quality_check_days,
+            use_dashboard=args.dashboard,
             ))
 
     for result in all_results:

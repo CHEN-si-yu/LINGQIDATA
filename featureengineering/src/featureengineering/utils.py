@@ -13,6 +13,9 @@ def safe_divide(left, right):
     if isinstance(right, (int, float, np.integer, np.floating)):
         if right == 0:
             right = np.nan
+    elif isinstance(right, np.ndarray):
+        right = right.astype(float, copy=True)
+        right[right == 0] = np.nan
     else:
         right = right.replace(0, np.nan)
 
@@ -120,6 +123,21 @@ def rolling_group_max(series: pd.Series, window: int) -> pd.Series:
 
 def rolling_group_min(series: pd.Series, window: int) -> pd.Series:
     return series.groupby(level="Code").transform(lambda s: s.rolling(window, min_periods=1).min())
+
+
+def stack_date_code(df: pd.DataFrame) -> pd.Series:
+    """Stack a DataFrame to a Series with ``[Date, Code]`` MultiIndex.
+
+    Ensures the column name is ``"Code"`` and the index name is ``"Date"``
+    (when unambiguous) before calling :meth:`~pd.DataFrame.stack`, so the
+    resulting MultiIndex levels are correctly named in pandas 3.0+.
+    ``reorder_levels(["Date", "Code"])`` is no longer needed after this call.
+    """
+    if df.index.name != "Date" and df.index.nlevels == 1:
+        df = df.rename_axis("Date")
+    if df.columns.name != "Code":
+        df.columns.name = "Code"
+    return df.stack().sort_index()
 
 
 def event_decay(series: pd.Series, half_life: int = 5) -> pd.Series:

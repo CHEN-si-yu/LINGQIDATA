@@ -5,25 +5,6 @@ import numpy as np
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
 
-_PLEDGE_LAG = 45
-
-def _load_pledge(context, value_cols):
-    """Load pledge_stat.parquet with reporting lag to prevent future data leakage."""
-    df = context.load_financial("pledge_stat.parquet", value_cols=value_cols, date_col="end_date")
-    return df.groupby(level="Code").shift(_PLEDGE_LAG).groupby(level="Code").ffill()
-
-
-@register_factor(
-    name="pledge_risk",
-    description="股权质押风险因子，-pledge_ratio截面排名（高质押比例=风险信号排后）。",
-    category="quality",
-    thesis="高股权质押比例=大股东资金链紧张/爆仓风险/潜在控制权转移，是尾部风险预警信号。",
-    dependencies=("pledge_stat.parquet", "calendar.parquet"),
-)
-def factor_pledge_risk(context: FactorContext):
-    pledge = _load_pledge(context, ["pledge_ratio"])
-    return cross_sectional_rank(-pledge["pledge_ratio"])
-
 
 @register_factor(
     name="overnight_gap",

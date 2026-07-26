@@ -1,9 +1,0 @@
-[2026-05-22 09:56:15] [incremental] 1 datasets | overlap=3 days | workers=6 | parallel=False
-[2026-05-22 09:56:15] [incremental] Datasets: ['history_1min']
-[2026-05-22 09:56:15] 
-============================================================
-[2026-05-22 09:56:15] [history_1min] Starting incremental update
-[2026-05-22 09:56:17] [history_1min] Found unprocessed daily dump file: 2026-05-21
-[2026-05-22 09:56:17] [history_1min] Last date: 2026-05-20 | Fetching: 2026-05-17 ~ 2026-05-22
-[2026-05-22 09:56:17] [history_1min] Will process 5 trading days via daily_dump/1min
-[2026-05-22 09:56:17] [history_1min] [1/5] 2026-05-18: filtered 712,878 non-target stocks (612,381 rows remain)

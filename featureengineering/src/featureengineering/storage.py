@@ -254,17 +254,26 @@ def write_factor_incremental(
 
     existing = pd.read_feather(base_path)
 
-    # If existing is in old (non-aligned) format, align it first
+    # Normalise index format only — the existing file was already
+    # aligned via write_factor (or a prior incremental merge).
+    # Calling align_to_reference here would forward-fill every
+    # NaN gap in the *existing* data when there are any missing dates,
+    # producing a different result from a full rebuild.  We normalise
+    # the index to YYYYMMDD strings for safe concatenation with
+    # *new_frame* (which was aligned by ensure_single_factor_frame).
     if "Date" in existing.columns:
         existing = existing.set_index("Date")
     existing.index = existing.index.astype(str).str.replace("-", "").str.slice(0, 8)
-    existing = align_to_reference(existing)
 
     merged = pd.concat([existing, new_frame], ignore_index=False)
     merged = merged[~merged.index.duplicated(keep="last")]
     merged = merged.sort_index()
 
-    # Re-align after merge
+    # Re-align the merged result — a safety measure that normalises
+    # the column set to the reference stock pool.  Because the merge
+    # fills all missing dates (existing had them except the tail;
+    # new_frame supplies the tail), *missing_dates* will be empty and
+    # forward-fill will not be triggered.
     merged = align_to_reference(merged)
 
     # Atomic write back to base
@@ -322,11 +331,14 @@ def write_target_incremental(
 
     existing = pd.read_feather(target_path)
 
-    # If existing is in old (non-aligned) format, align it first
+    # Normalise index format only — the existing file was already
+    # aligned via write_target (or a prior incremental merge).
+    # Calling align_to_reference here would risk altering the
+    # existing date/code set even with skip_ffill=True (reindex to
+    # ref_dates drops dates and ref_codes adds columns).
     if "Date" in existing.columns:
         existing = existing.set_index("Date")
     existing.index = existing.index.astype(str).str.replace("-", "").str.slice(0, 8)
-    existing = align_to_reference(existing, skip_ffill=True)
 
     # Merge: new dates override old, existing dates preserved
     merged = pd.concat([existing, new_frame], ignore_index=False)

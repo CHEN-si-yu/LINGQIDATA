@@ -174,3 +174,51 @@ def factor_ext_mf_large_order_avg_price(context: FactorContext):
 
     ratio = safe_divide(lg_avg_price, vwap)
     return cross_sectional_rank(ratio)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# New: Additional fund flow factors (added 2026-07-26)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@register_factor(
+    name="mf_large_order_net_5d",
+    description="大单净流入5日均值/总成交额。持续大单净流入=机构持续吸筹，排名高。",
+    category="fund_flow",
+    thesis=(
+        "大单净买入5日均值占总成交额的比例。持续的大单净流入比单日大单方向更可靠——"
+        "机构建仓是逐步完成的,5日均值过滤了单日波动,捕捉了持续性的机构行为。"
+    ),
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_mf_large_order_net_5d(context: FactorContext) -> np.ndarray:
+    ff = context.load("main_fund_flow.parquet")
+    large_net = ff["buy_lg_amount"] - ff["sell_lg_amount"]
+    total = (ff["buy_sm_amount"] + ff["sell_sm_amount"] +
+             ff["buy_md_amount"] + ff["sell_md_amount"] +
+             ff["buy_lg_amount"] + ff["sell_lg_amount"] +
+             ff["buy_elg_amount"] + ff["sell_elg_amount"])
+    ratio = safe_divide(large_net, total)
+    ratio_ma5 = ratio.groupby(level="Code").transform(
+        lambda s: s.rolling(5, min_periods=3).mean()
+    )
+    ratio_ma5 = ratio_ma5.clip(-0.5, 0.5)
+    return cross_sectional_rank(ratio_ma5)
+
+
+@register_factor(
+    name="mf_extra_large_sell_pressure",
+    description="超大单卖出占比取反。超大单卖出集中=机构出货，排名低。",
+    category="fund_flow",
+    thesis=(
+        "超大单卖出占总成交额的比例取反排名。超大单(>100万元/笔)几乎全是机构交易——"
+        "超大单卖出集中意味着机构在主动减持或清仓,是强烈的看空信号。"
+    ),
+    dependencies=("main_fund_flow.parquet",),
+)
+def factor_mf_extra_large_sell_pressure(context: FactorContext) -> np.ndarray:
+    ff = context.load("main_fund_flow.parquet")
+    total = (ff["buy_sm_amount"] + ff["sell_sm_amount"] +
+             ff["buy_md_amount"] + ff["sell_md_amount"] +
+             ff["buy_lg_amount"] + ff["sell_lg_amount"] +
+             ff["buy_elg_amount"] + ff["sell_elg_amount"])
+    elg_sell_ratio = safe_divide(ff["sell_elg_amount"], total)
+    return cross_sectional_rank(-elg_sell_ratio)

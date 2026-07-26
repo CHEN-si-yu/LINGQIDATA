@@ -1,45 +1,33 @@
 import argparse
+import os
 import sys
 import threading
 from datetime import date
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Ensure fetchers/ is on the import path so config and fetch_* modules
+# can be imported directly after the directory restructure.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetchers"))
+
 from config import load_api_key, rate_limiter, log_print, DATA_DIR
 from fetch_calendar import fetch_calendar
-from fetch_financial import fetch_financial_indicator
-from fetch_income import fetch_income
-from fetch_balancesheet import fetch_balancesheet
-from fetch_cashflow import fetch_cashflow
 from fetch_finance import fetch_finance
 from fetch_stock_list import fetch_stock_list
 from fetch_daily import fetch_daily, fetch_daily_adj
-from fetch_limit_up import fetch_limit_up
-from fetch_limit_list import fetch_limit_list
-from fetch_dragon_tiger import fetch_dragon_tiger
 from fetch_main_fund_flow import fetch_main_fund_flow
 
-from fetch_top_list import fetch_top_list
 from fetch_cyq_chips import fetch_cyq_chips
 from fetch_cyq_perf import fetch_cyq_perf
 from fetch_minute import fetch_history
 
-from fetch_holder_number import fetch_holder_number
-from fetch_pledge_stat import fetch_pledge_stat
 from fetch_margin_detail import fetch_margin_detail
 from fetch_ths_daily import fetch_ths_daily
 from fetch_ths_sector_categories import fetch_ths_sector_categories
 from fetch_ths_constituent_stocks import fetch_ths_constituent_stocks
-from fetch_index_weight import fetch_index_weight
 
 # Technical indicators (1min)
-from fetch_indicator import (
-    fetch_macd_1min,
-    fetch_kdj_1min,
-    fetch_rsi_1min,
-    fetch_boll_1min,
-    fetch_ma_1min,
-)
+from fetch_indicator import fetch_indicators_combined
 
 # ── Task registry ──────────────────────────────────────────────────
 # Comment out any line to skip that endpoint.
@@ -47,7 +35,12 @@ from fetch_indicator import (
 # task is skipped (pass --force to override).
 
 TASKS = [
-    # ════════════════════ 秒级 ════════════════════
+    # {
+    #     "name": "indicators_1min",
+    #     "fn": fetch_indicators_combined,
+    #     "start": "2019-01-01",
+    #     "output": f"{DATA_DIR}/indicator_1min/.done",
+    # },
     # {
     #     "name": "stock_list",
     #     "fn": fetch_stock_list,
@@ -59,101 +52,21 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/calendar.parquet",
     # },
+    {
+        "name": "ths_sector_categories",
+        "fn": fetch_ths_sector_categories,
+        "output": f"{DATA_DIR}/ths_sector_categories.parquet",
+    },
+    {
+        "name": "ths_constituent_stocks",
+        "fn": fetch_ths_constituent_stocks,
+        "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
+    },
     # {
-    #     "name": "ths_sector_categories",
-    #     "fn": fetch_ths_sector_categories,
-    #     "output": f"{DATA_DIR}/ths_sector_categories.parquet",
-    # },
-    # {
-    #     "name": "ths_constituent_stocks",
-    #     "fn": fetch_ths_constituent_stocks,
-    #     "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
-    # },
-    # # ════════════════════ 分钟级 ════════════════════
-    # {
-    #     "name": "holder_number",
-    #     "fn": fetch_holder_number,
+    #     "name": "ths_daily",
+    #     "fn": fetch_ths_daily,
     #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/holder_number.parquet",
-    # },
-    # {
-    #     "name": "pledge_stat",
-    #     "fn": fetch_pledge_stat,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/pledge_stat.parquet",
-    # },
-    # {
-    #     "name": "financial",
-    #     "fn": fetch_financial_indicator,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/financial_indicator.parquet",
-    # },
-    # {
-    #     "name": "income",
-    #     "fn": fetch_income,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/income.parquet",
-    # },
-    # {
-    #     "name": "balancesheet",
-    #     "fn": fetch_balancesheet,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/balancesheet.parquet",
-    # },
-    # {
-    #     "name": "cashflow",
-    #     "fn": fetch_cashflow,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/cashflow.parquet",
-    # },
-    # {
-    #     "name": "limit_list",
-    #     "fn": fetch_limit_list,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/limit_list.parquet",
-    # },
-    # {
-    #     "name": "limit_up",
-    #     "fn": fetch_limit_up,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/limit_up.parquet",
-    # },
-    # {
-    #     "name": "kline_monthly",
-    #     "fn": fetch_kline_monthly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_monthly.parquet",
-    # },
-    # {
-    #     "name": "kline_adj_monthly",
-    #     "fn": fetch_kline_adj_monthly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_adj_monthly.parquet",
-    # },
-    # # # ════════════════════ 十分钟级 ════════════════════
-    # {
-    #     "name": "top_list",
-    #     "fn": fetch_top_list,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/top_list.parquet",
-    # },
-    # {
-    #     "name": "dragon_tiger",
-    #     "fn": fetch_dragon_tiger,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/dragon_tiger.parquet",
-    # },
-    # {
-    #     "name": "kline_weekly",
-    #     "fn": fetch_kline_weekly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_weekly.parquet",
-    # },
-    # {
-    #     "name": "kline_adj_weekly",
-    #     "fn": fetch_kline_adj_weekly,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/kline_adj_weekly.parquet",
+    #     "output": f"{DATA_DIR}/ths_daily.parquet",
     # },
     # {
     #     "name": "cyq_perf",
@@ -161,7 +74,6 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/cyq_perf.parquet",
     # },
-    # # ════════════════════ 小时级 ════════════════════
     # {
     #     "name": "finance",
     #     "fn": fetch_finance,
@@ -192,18 +104,6 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/margin_detail.parquet",
     # },
-    # {
-    #     "name": "ths_daily",
-    #     "fn": fetch_ths_daily,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/ths_daily.parquet",
-    # },
-    # {
-    #     "name": "index_weight",
-    #     "fn": fetch_index_weight,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/index_weight.parquet",
-    # },
     # # ════════════════════ 天级 (per-stock, 散文件落盘) ════════════════════
     # {
     #     "name": "cyq_chips",
@@ -211,7 +111,6 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/cyq_chips/.done",
     # },
-
     # {
     #     "name": "history",
     #     "fn": fetch_history,
@@ -219,38 +118,34 @@ TASKS = [
     #     "output": f"{DATA_DIR}/history_1min/.done",
     # },
 
-    # ════════════════════ 技术指标 — 1分钟线 ════════════════════
-    {
-        "name": "macd_1min",
-        "fn": fetch_macd_1min,
-        "start": "2019-01-01",
-        "output": f"{DATA_DIR}/macd_1min/.done",
-    },
-    {
-        "name": "kdj_1min",
-        "fn": fetch_kdj_1min,
-        "start": "2019-01-01",
-        "output": f"{DATA_DIR}/kdj_1min/.done",
-    },
-    {
-        "name": "rsi_1min",
-        "fn": fetch_rsi_1min,
-        "start": "2019-01-01",
-        "output": f"{DATA_DIR}/rsi_1min/.done",
-    },
-    {
-        "name": "boll_1min",
-        "fn": fetch_boll_1min,
-        "start": "2019-01-01",
-        "output": f"{DATA_DIR}/boll_1min/.done",
-    },
-    {
-        "name": "ma_1min",
-        "fn": fetch_ma_1min,
-        "start": "2019-01-01",
-        "output": f"{DATA_DIR}/ma_1min/.done",
-    },
+
 ]
+
+
+
+def _check_completeness(name, output_path):
+    """Return True if the existing output file is complete enough to skip re-fetch.
+
+    For ``ths_constituent_stocks.parquet``, a file with < 50 unique indices is
+    treated as incomplete — it means the previous fetch was interrupted or the
+    per-index loop failed for most sectors.
+    """
+    if name == "ths_constituent_stocks":
+        try:
+            import pandas as pd
+            df = pd.read_parquet(output_path)
+            n_indices = df["index_code"].nunique() if "index_code" in df.columns else 0
+            if n_indices < 50:
+                log_print(
+                    f"[main] {name} -> INCOMPLETE ({n_indices} unique indices, "
+                    f"expected 1600+), forcing re-fetch"
+                )
+                return False
+        except Exception as e:
+            log_print(f"[main] {name} -> cannot verify completeness ({e}), "
+                      f"forcing re-fetch")
+            return False
+    return True
 
 
 def _monitor_loop(stop_event, interval=10.0):
@@ -280,8 +175,11 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
     for t in TASKS:
         output_path = Path(t["output"])
         if not force and output_path.exists():
-            log_print(f"[main] {t['name']} -> skip (output exists: {output_path})")
-            continue
+            if _check_completeness(t["name"], output_path):
+                log_print(f"[main] {t['name']} -> skip (output exists: {output_path})")
+                continue
+            # File exists but is incomplete — force re-fetch
+            log_print(f"[main] {t['name']} -> INCOMPLETE, will re-fetch")
         active.append(t)
 
     if not active:

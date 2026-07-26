@@ -14,6 +14,15 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+# ── Skip-existing flag (module-level, set before build starts) ──
+_skip_existing: bool = False
+
+
+def set_skip_existing(value: bool) -> None:
+    """Set whether to skip factors whose .fea file already exists."""
+    global _skip_existing
+    _skip_existing = value
+
 
 from .dataset import DataRepository
 from .factor_loader import ensure_builtin_factors_loaded
@@ -297,84 +306,80 @@ def decide_build_action(
     quality_check_days: int = 0,
     effective_end: str | None = None,
 ) -> tuple[str, str | None]:
-    """Decide whether to skip, incrementally update, or rebuild a factor.
+    """Decide the build action for a factor — auto skip / incremental / rebuild.
 
-    Returns ``(action, reason)``:
+    Decision order:
 
-    - ``("skip", reason)`` — factor is already up to date; no work needed.
-    - ``("incremental", max_date)`` — factor exists but is behind; *max_date*
-      (YYYYMMDD) is passed as *factor_start_date* so only new rows are
-      computed and appended via :func:`write_factor_incremental`.
-    - ``("rebuild", reason)`` — no usable existing file, or *force* is set.
+    1. **force=True**          → ("rebuild", "force")
+    2. **--skip-existing flag** → ("skip", "file_exists")  if .fea exists
+    3. **No .fea file**        → ("rebuild", "no_existing_file")
+    4. **Quality check fails**  → ("rebuild", "quality_check_…")
+       (only when *quality_check_days* > 0)
+    5. **file_max < effective** → ("incremental", file_max_date)
+    6. **file_max >= effective**→ ("skip", "up_to_date")
 
-    Parameters
-    ----------
-    effective_end:
-        Pre-computed effective end date (YYYYMMDD).  When None it is
-        resolved from *source_root* — pass a cached value when calling
-        in a tight loop to avoid repeated parquet reads.
+    The default behaviour (no flags) is the automatic smart path:
+    factors that are already current are skipped; factors that are
+    behind by a few days get an incremental append; missing or
+    quality-failed factors get a full rebuild.
     """
+    # ── 1. Force rebuild always wins ──────────────────────────────
     if force:
-        return "rebuild", "forced"
+        return "rebuild", "force"
 
-    # No existing file → full rebuild
+    # ── 2. Simple skip-existing (module-level flag) ───────────────
+    if _skip_existing and factor_path.exists():
+        return "skip", "file_exists"
+
+    # ── 3. No existing file → full rebuild ────────────────────────
     if not factor_path.exists():
-        return "rebuild", "missing"
+        return "rebuild", "no_existing_file"
 
-    # Read the factor's current maximum date
-    factor_max_date = _read_factor_max_date(factor_path)
-    if factor_max_date is None:
-        return "rebuild", "unreadable"
-
-    # Latest date for which source data is available.
-    # Use the pre-computed value when calling in a tight loop, otherwise
-    # resolve from source data (reads daily_adj.parquet — expensive).
+    # ── Resolve effective end date (cache-friendly) ───────────────
     if effective_end is None:
         effective_end = _resolve_effective_end_date(source_root)
 
-    # ── Quality gate: check recent trading days for NaN gaps ──────────
-    # A factor whose recent rows are all-NaN (e.g. upstream data not yet
-    # populated for q_* fields) must be rebuilt so the gap is visible
-    # rather than silently carried forward as stale data.
+    # ── 4. Quality check on recent data (only when requested) ─────
     if quality_check_days > 0:
         quality = _check_factor_recent_quality(
-            factor_path, source_root, n_days=quality_check_days,
+            factor_path, source_root,
+            n_days=quality_check_days,
             effective_end=effective_end,
         )
-        if quality == "all_nan":
-            return "rebuild", f"last_{quality_check_days}_trading_days_all_nan"
-        if quality == "unreadable":
-            return "rebuild", "unreadable"
-        if quality == "missing_dates":
-            # Recent calendar dates are absent from the factor — force rebuild
-            # so the factor is brought up to date (covers stale factors and
-            # factors whose quality check was previously fooled by future
-            # calendar dates).
-            return "rebuild", f"last_{quality_check_days}_trading_days_missing"
+        if quality in ("all_nan", "missing_dates"):
+            return "rebuild", f"quality_check_{quality}"
 
-    # Factor is already current
-    if factor_max_date >= effective_end:
-        return "skip", f"up to date ({factor_max_date} >= {effective_end})"
+    # ── 5-6. Date comparison: skip vs incremental ─────────────────
+    file_max_date = _read_factor_max_date(factor_path)
+    if file_max_date is None:
+        # Unreadable file → rebuild to be safe
+        return "rebuild", "unreadable_existing_file"
 
-    # Factor exists but is behind — only compute the new tail
-    return "incremental", factor_max_date
+    if file_max_date < effective_end:
+        # File is behind source data → incremental append
+        return "incremental", file_max_date
+
+    # File is current → skip
+    return "skip", "up_to_date"
 
 
 # ── Factor classification ────────────────────────────────────────────────────
 
 #: Dependency keys that determine which build strategy a factor uses.
-_CLASS_3_DEP = "history_1min"   # per-stock directory → unified intraday pass
-_CLASS_2_DEP = "cyq_chips"      # per-stock directory → unified cyq_chips pass
-_CLASS_4_DEP = "__factors__"    # factor-coupling: loads existing .fea files
+_CLASS_3_DEP = "history_1min"    # per-stock directory → unified intraday pass
+_CLASS_2_DEP = "cyq_chips"       # per-stock directory → unified cyq_chips pass
+_CLASS_4_DEP = "indicator_1min"  # per-stock directory → unified indicator pass
+_CLASS_5_DEP = "__factors__"     # factor-coupling: loads existing .fea files
 
 
 def classify_factor(name: str) -> int:
-    """Return 1, 2, 3, or 4 based on the factor's declared data dependencies.
+    """Return 1, 2, 3, 4, or 5 based on the factor's declared data dependencies.
 
     - Class 1 — Panel:            loads from a single .parquet file, vectorised
     - Class 2 — cyq_chips:        loads from cyq_chips/ per-stock directory
     - Class 3 — history_1min:     loads from history_1min/ per-stock directory
-    - Class 4 — Coupling:         loads existing .fea factor files, combines them
+    - Class 4 — indicator_1min:   loads from indicator_1min/ per-stock directory
+    - Class 5 — Coupling:         loads existing .fea factor files, combines them
     """
     spec = get_factor(name)
     deps = spec.dependencies
@@ -384,6 +389,8 @@ def classify_factor(name: str) -> int:
         return 2
     if _CLASS_4_DEP in deps:
         return 4
+    if _CLASS_5_DEP in deps:
+        return 5
     return 1
 
 
@@ -586,13 +593,35 @@ def build_factor(
 
 # ── Batch build (sequential) ────────────────────────────────────────────────
 
+# ── Slow factors — always build FIRST so they overlap with faster factors ──
+# When submitted early to the ProcessPoolExecutor they occupy a worker slot
+# while dozens of faster factors cycle through the remaining slots.
+_PRIORITY_FACTORS: set[str] = {
+    # calendar / holiday factors (iterate over date ranges → O(dates²))
+    "holiday_gap_effect",
+    "post_holiday_3d",
+    "pre_holiday_3d",
+    # sector cross-sectional factors (wide panels with many stocks × sectors)
+    "stock_sector_beta_60",
+    "stock_sector_corr_60",
+    "stock_sector_timing",
+}
+
+
 def _flatten_build_plan(names: list[str]) -> list[tuple[str, str]]:
-    """Return a flat list of (category, factor_name) ordered by category rank."""
+    """Return a flat list of (category, factor_name) ordered by category rank.
+
+    Slow factors (listed in :data:`_PRIORITY_FACTORS`) are moved to the front
+    so they start early and overlap with faster factors in the worker pool.
+    """
     grouped = factor_names_by_category(names)
     plan: list[tuple[str, str]] = []
     for category, factor_names in grouped.items():
         for name in factor_names:
             plan.append((category, name))
+
+    # Stable-sort: priority factors first, others keep their original order
+    plan.sort(key=lambda item: (0 if item[1] in _PRIORITY_FACTORS else 1))
     return plan
 
 

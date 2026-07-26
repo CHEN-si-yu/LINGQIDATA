@@ -90,54 +90,6 @@ def factor_overnight_intraday_divergence_20(context: FactorContext):
 # ── 残差动量 ──────────────────────────────────────────────────────────────
 
 @register_factor(
-    name="residual_momentum_60",
-    description="残差动量因子，60日收益剔除市场+行业收益后的残差截面排名（纯alpha动量排前）。",
-    category="price",
-    thesis="总动量=市场beta+行业动量+特质alpha。残差动量剥离了市场和行业的影响，反映了纯粹的选股alpha——一只股票跑赢其行业和市场的部分才是管理能力的体现。学术文献(Gutierrez & Prinsky, 2007)证实残差动量比总动量更稳定。",
-    dependencies=("daily_adj.parquet", "stock_list.parquet"),
-)
-def factor_residual_momentum_60(context: FactorContext):
-    daily = context.load("daily_adj.parquet")
-    industry_map = context.repo.load_industry_map()
-
-    close = daily["close"]
-    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-
-    mom_60 = ret.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=30).sum()
-    )
-
-    # Market return: equal-weighted average
-    mkt_ret = ret.groupby(level="Date").mean()
-
-    # Industry return
-    codes = ret.index.get_level_values("Code")
-    industries = codes.map(industry_map)
-    df = pd.DataFrame({"ret": ret.values, "industry": industries.values}, index=ret.index)
-    df = df.dropna(subset=["industry"])
-    ind_ret = df.groupby(["Date", "industry"])["ret"].mean()
-
-    # Align market and industry returns
-    aligned_mkt = pd.Series(mkt_ret.loc[df.index.get_level_values("Date")].values, index=df.index)
-    aligned_ind = pd.Series(
-        ind_ret.loc[[(d, i) for d, i in zip(df.index.get_level_values("Date"), df["industry"])]].values,
-        index=df.index,
-    )
-
-    # Residual = total - market - (industry - market) = total - industry
-    residual = df["ret"] - aligned_ind.values
-
-    # 60-day residual momentum
-    res_mom = residual.groupby(level="Code").transform(
-        lambda s: s.rolling(60, min_periods=30).sum()
-    )
-
-    return cross_sectional_rank(res_mom)
-
-
-# ── 52周高点 ──────────────────────────────────────────────────────────────
-
-@register_factor(
     name="high_52w_proximity_acceleration",
     description="52周高点接近加速度因子，(当前距离-1月前距离)/1月前距离截面排名（加速接近=突破在即排前）。",
     category="price",

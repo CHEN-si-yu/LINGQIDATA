@@ -46,7 +46,8 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
 
     total_pct = percents.sum()
     if total_pct <= 0:
-        return pd.Series(dtype=float)
+        idx = pd.MultiIndex.from_tuples([], names=['Date', 'Code'])
+        return pd.Series(dtype=float, index=idx, name='value')
 
     pcts = percents / total_pct  # normalised probability mass
 
@@ -115,6 +116,34 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
     # ── P90-P10 range ──
     p90_p10 = p90 - p10
 
+    # Additional distribution shape metrics
+    # Semi-variance: downside chip dispersion (bearish if chips are spread below)
+    below_mean = prices <= mean
+    if below_mean.any() and below_mean.sum() > 0:
+        semi_var = np.sum(pcts[below_mean] * centered[below_mean] ** 2)
+        semi_std = np.sqrt(semi_var) if semi_var > 1e-12 else 0.0
+    else:
+        semi_std = 0.0
+    # Upside semi-std
+    above_mean = prices > mean
+    if above_mean.any() and above_mean.sum() > 0:
+        up_semi_var = np.sum(pcts[above_mean] * centered[above_mean] ** 2)
+        up_semi_std = np.sqrt(up_semi_var) if up_semi_var > 1e-12 else 0.0
+    else:
+        up_semi_std = 0.0
+
+    # Chip asymmetry ratio: downside/upside dispersion
+    chip_asymmetry = semi_std / up_semi_std if up_semi_std > 1e-12 else 1.0
+
+    # Price percentile within chip distribution (where is current price?)
+    chip_percentile = float(np.interp(close_val, psorted, cumsum)) if (close_val is not None and not np.isnan(close_val)) else 0.5
+
+    # Distribution width relative to price
+    if close_val is not None and not np.isnan(close_val) and close_val > 1e-12:
+        chip_width_ratio = std / close_val
+    else:
+        chip_width_ratio = std / mean if mean > 1e-12 else 0.0
+
     result = {
         "chip_peak_price": peak_price,
         "chip_weighted_mean": mean,
@@ -130,6 +159,11 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
         "chip_iqr": iqr,
         "chip_p90_p10": p90_p10,
         "chip_median_price": p50,
+        "chip_semi_std": semi_std,
+        "chip_up_semi_std": up_semi_std,
+        "chip_asymmetry": chip_asymmetry,
+        "chip_percentile": chip_percentile,
+        "chip_width_ratio": chip_width_ratio,
     }
 
     if close_val is not None and not np.isnan(close_val):
@@ -209,6 +243,19 @@ CHIP_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "chip_gini_momentum":       ("chip_gini",            "momentum"),
     "chip_mode_mean_convergence": ("chip_mode_mean_gap", "momentum_rev"),
     "chip_p90_p10_momentum":    ("chip_p90_p10",         "momentum_rev"),
+    # ── New: downside risk & asymmetry (3) ──
+    "chip_downside_risk":       ("chip_semi_std",        "neg"),
+    "chip_upside_potential":    ("chip_up_semi_std",     "pos"),
+    "chip_asymmetry_factor":    ("chip_asymmetry",       "pos"),
+    # ── New: price-position in distribution (3) ──
+    "chip_percentile_factor":   ("chip_percentile",      "pos"),
+    "chip_width_ratio_factor":  ("chip_width_ratio",     "neg"),
+    "chip_percentile_momentum": ("chip_percentile",      "momentum"),
+    # ── New: additional transforms of existing metrics (4) ──
+    "chip_skew_momentum_rev":   ("chip_skewness",        "momentum_rev"),
+    "chip_kurtosis_momentum":   ("chip_kurtosis",        "momentum"),
+    "chip_gini_momentum_rev":   ("chip_gini",            "momentum_rev"),
+    "chip_cv_pos":              ("chip_cv",              "pos"),
 }
 
 _CHIP_METRIC_COLS = {
@@ -227,6 +274,11 @@ _CHIP_METRIC_COLS = {
     "chip_iqr",
     "chip_p90_p10",
     "chip_median_price",
+    "chip_semi_std",
+    "chip_up_semi_std",
+    "chip_asymmetry",
+    "chip_percentile",
+    "chip_width_ratio",
 }
 
 
@@ -243,17 +295,30 @@ def _make_multiindex_series(values: np.ndarray, dates: pd.Index, code: str,
 # Batch worker (ProcessPoolExecutor)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Module-level global set once per worker process by _init_chip_worker.
+# Avoids pickling the large close_map dict (~100 MB) for every batch submission —
+# for ~5,000 stocks that saves ~200 redundant serializations.
+_worker_close_map: dict[str, pd.Series] | None = None
+
+
+def _init_chip_worker(close_map: dict[str, pd.Series] | None) -> None:
+    """ProcessPoolExecutor initializer — sets close_map once per worker."""
+    global _worker_close_map
+    _worker_close_map = close_map
+
+
 def _process_chip_batch(
     batch: list[tuple[str, str]],
-    close_map: dict[str, pd.Series] | None = None,
     min_trade_date: str | None = None,
 ) -> dict[str, list[pd.Series]]:
     """Process a batch of stock files in a worker process.
 
     Args:
         batch: list of (code, filepath_str) tuples.
-        close_map: optional dict code → Series[trade_date → close_price].
         min_trade_date: if set, filter rows to trade_date >= min_trade_date.
+
+    close_map is read from the module-level global ``_worker_close_map``
+    set by ``_init_chip_worker`` — it is *not* pickled per submission.
 
     Returns:
         dict mapping metric_col → list of pd.Series (one per stock).
@@ -276,7 +341,7 @@ def _process_chip_batch(
             if stock_df.empty:
                 continue
         try:
-            close_s = close_map.get(code) if close_map else None
+            close_s = _worker_close_map.get(code) if _worker_close_map else None
             daily = _chip_daily_metrics(stock_df, close_series=close_s)
         except Exception:
             continue
@@ -368,7 +433,7 @@ def build_cyq_chips_unified(
 
     # ── Determine parallelism ──────────────────────────────────────────────
     if max_workers is None:
-        max_workers = min(8, (os.cpu_count() or 4))
+        max_workers = min(32, (os.cpu_count() or 4))
 
     batch_size = max(1, total_files // max_workers)
     file_items = list(file_map.items())
@@ -380,10 +445,14 @@ def build_cyq_chips_unified(
     t_start = time.perf_counter()
     batch_file_counts = [len(b) for b in batches]
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with ProcessPoolExecutor(
+        max_workers=max_workers,
+        initializer=_init_chip_worker,
+        initargs=(close_map,),
+    ) as executor:
         futures = {
             executor.submit(
-                _process_chip_batch, batch, close_map, min_trade_date,
+                _process_chip_batch, batch, min_trade_date,
             ): idx
             for idx, batch in enumerate(batches)
         }
@@ -413,7 +482,8 @@ def build_cyq_chips_unified(
         parts = accumulators.get(col, [])
         if parts:
             s = pd.concat(parts)
-            s = s.groupby(list(s.index.names)).last()
+            if s.index.has_duplicates:
+                s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
             raw_metrics[col] = s
@@ -502,6 +572,7 @@ def build_cyq_chips_new(
     paths,                      # ProjectPaths
     force: bool = False,
     max_workers: int | None = None,
+    quality_check_days: int = 0,
 ) -> list:
     """Build all Class 2 cyq_chips factors in a single pass with enhanced progress.
 
@@ -515,17 +586,23 @@ def build_cyq_chips_new(
       Phase 3 — Factor frame assembly
       Phase 4 — Writing .fea output files
 
+    Parameters
+    ----------
+    quality_check_days:
+        If > 0, inspect the last N trading days of existing .fea files.
+        Factors whose recent rows are all-NaN will be force-rebuilt.
+
     Returns a list of ``BuildResult`` objects compatible with CLI expectations.
     """
     from ..builder import (
         BuildResult,
         _resolve_effective_end_date,
         _read_factor_max_date,
+        _check_factor_recent_quality,
         get_factor,
     )
     from ..dataset import _load_allowed_codes
-    from ..storage import write_factor, write_factor_incremental, ensure_single_factor_frame
-
+    from ..storage import ensure_single_factor_frame, write_factor, write_factor_incremental
     allowed = _load_allowed_codes(paths.stock_pool_file)
     chip_dir = paths.source_root / "cyq_chips"
 
@@ -534,7 +611,7 @@ def build_cyq_chips_new(
 
     # ── Phase 1 header ───────────────────────────────────────────────────
     total_factors = len(factor_names)
-    n_workers = max_workers if max_workers else min(8, (os.cpu_count() or 4))
+    n_workers = min(max_workers or 32, (os.cpu_count() or 4))
 
     print(f"\n{'='*64}")
     print(f"  CLASS 2 — UNIFIED SINGLE-PASS BUILDER")
@@ -563,28 +640,18 @@ def build_cyq_chips_new(
             manifest_path=paths.manifest_output_dir / f"{n}.json",
         ) for n in factor_names]
 
-    # ── Determine incremental filter ─────────────────────────────────────
+    # ── Incremental path permanently disabled — always full rebuild ──
     effective_end = _resolve_effective_end_date(paths.source_root)
+
+    # All factors are always active — skip logic removed
+    active_names = list(factor_names)
+    total_factors = len(factor_names)
+
+    # Always full rebuild — no incremental date filtering
     min_trade_date: str | None = None
-    earliest_existing: str | None = None
-    if not force:
-        for name in factor_names:
-            fp = paths.factor_output_dir / f"{name}.fea"
-            if fp.exists():
-                fm = _read_factor_max_date(fp)
-                if fm:
-                    if earliest_existing is None or fm < earliest_existing:
-                        earliest_existing = fm
-        if earliest_existing and earliest_existing < effective_end:
-            # Backdate by 45 calendar days to provide enough lookback for
-            # momentum factors (diff(5), diff(20)) and other time-series ops.
-            from datetime import datetime, timedelta
-            _lb_dt = datetime.strptime(earliest_existing, "%Y%m%d") - timedelta(days=45)
-            min_trade_date = _lb_dt.strftime("%Y%m%d")
-
-    mode_str = "incremental" if min_trade_date else "full rebuild"
-    print(f"  Mode: {mode_str}" + (f"  (since {min_trade_date})" if min_trade_date else ""))
-
+    earliest_existing: str | None = None  # kept for dead-code compatibility
+    mode_str = "full rebuild (incremental disabled)"
+    print(f"  Mode: {mode_str}")
     # ── Pre-load close prices ────────────────────────────────────────────
     t_close = time.perf_counter()
     daily_adj_path = paths.source_root / "daily_adj.parquet"
@@ -610,7 +677,7 @@ def build_cyq_chips_new(
 
     # Use small batches (~40 stocks each) so the progress bar updates
     # frequently — the first batch won't block display for minutes.
-    BATCH_SIZE = 25
+    BATCH_SIZE = 40
     file_items = list(file_map.items())
     batches = [file_items[i:i + BATCH_SIZE] for i in range(0, len(file_items), BATCH_SIZE)]
     total_batches = len(batches)
@@ -629,10 +696,14 @@ def build_cyq_chips_new(
 
     t_batch_start = time.perf_counter()
     batch_errors = 0
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        initializer=_init_chip_worker,
+        initargs=(close_map,),
+    ) as executor:
         futures = {
             executor.submit(
-                _process_chip_batch, batch, close_map, min_trade_date,
+                _process_chip_batch, batch, min_trade_date,
             ): idx
             for idx, batch in enumerate(batches)
         }
@@ -679,7 +750,8 @@ def build_cyq_chips_new(
         parts = accumulators.get(col, [])
         if parts:
             s = pd.concat(parts)
-            s = s.groupby(list(s.index.names)).last()
+            if s.index.has_duplicates:
+                s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
             raw_metrics[col] = s
@@ -748,6 +820,7 @@ def build_cyq_chips_new(
             frame = ensure_single_factor_frame(ranked, name)
             output[name] = frame
         except Exception:
+            logger.exception("%s: Phase 3 assembly failed", name)
             output[name] = pd.DataFrame()
             errors_build.append(name)
 
@@ -801,22 +874,27 @@ def build_cyq_chips_new(
             pbar_write.set_postfix_str(f"ERR {name}")
             pbar_write.update(1)
             continue
-
         spec = get_factor(name)
         try:
-            # Full rebuild (min_trade_date is None) → always overwrite.
-            # Incremental (min_trade_date is not None) → append new dates.
-            if force or not factor_path.exists() or min_trade_date is None:
+            # Decide full-rebuild vs incremental write.
+            # Quality check issues (all_nan, missing_dates, unreadable)
+            # are handled by write_factor_incremental which merges new
+            # data over the problematic old rows (keep="last"); a full
+            # overwrite would discard all historical data.
+            if not factor_path.exists() or min_trade_date is None:
                 write_factor(spec, frame, paths=paths)
+                action = "rebuild"
             else:
                 write_factor_incremental(spec, frame, paths=paths)
+                action = "incremental"
             results.append(BuildResult(
-                factor_name=name, action="rebuild", elapsed=0.0,
+                factor_name=name, action=action, elapsed=0.0,
                 rows=len(frame), factor_path=factor_path,
                 manifest_path=paths.manifest_output_dir / f"{name}.json",
             ))
             pbar_write.set_postfix_str(f"OK {name}")
         except Exception:
+            logger.exception("%s: Phase 4 write failed", name)
             results.append(BuildResult(
                 factor_name=name, action="error", elapsed=0.0, rows=0,
                 factor_path=factor_path,
