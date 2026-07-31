@@ -1,6 +1,0 @@
-2026-07-26 23:08:50 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260726_230850.log
-2026-07-26 23:08:50 [INFO   ] root: Python    : 3.12.3
-2026-07-26 23:08:50 [INFO   ] root: pandas    : 3.0.3
-2026-07-26 23:08:50 [INFO   ] root: numpy     : 2.3.2
-2026-07-26 23:08:50 [INFO   ] featureengineering.builder: Effective end date: 20260724  |  146 factors to check
-2026-07-26 23:09:19 [INFO   ] featureengineering.builder: Build complete — 2 ok, 144 skip, 0 error | 15 s wall | 0 total rows

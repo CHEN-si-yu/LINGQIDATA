@@ -468,31 +468,14 @@ def run_updates(datasets=None, exclude=None, overlap_days=core.OVERLAP_DAYS,
                 if skip_reference:
                     log_print(f"[{name}] Skipped (reference disabled)")
                     return {"name": name, "status": "skip", "reason": "reference_disabled"}
-                # ── Completeness check ──
-                # If the existing file is incomplete (e.g. ths_constituent_stocks
-                # has < 50 unique indices), bypass the weekly gate and force re-fetch.
+                # ── Weekly-update gate ──
                 weekly_day = d.get("weekly_update_day")
                 if weekly_day is not None and date.today().weekday() != weekly_day:
-                    is_complete = True
-                    try:
-                        fpath = Path(DATA_DIR) / d["file"]
-                        if name == "ths_constituent_stocks" and fpath.exists():
-                            df = pd.read_parquet(fpath)
-                            n_indices = df["index_code"].nunique() if "index_code" in df.columns else 0
-                            if n_indices < 50:
-                                is_complete = False
-                                log_print(
-                                    f"[{name}] INCOMPLETE ({n_indices} unique indices), "
-                                    f"bypassing weekly gate to force re-fetch"
-                                )
-                    except Exception:
-                        pass
-                    if is_complete:
-                        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                        log_print(f"[{name}] Skipped (weekly update, next fetch on "
-                                  f"{day_names[weekly_day]})")
-                        return {"name": name, "status": "skip",
-                                "reason": f"not_{day_names[weekly_day]}"}
+                    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                    log_print(f"[{name}] Skipped (weekly update, next fetch on "
+                              f"{day_names[weekly_day]}")
+                    return {"name": name, "status": "skip",
+                            "reason": f"not_{day_names[weekly_day]}"}
                 if dry_run:
                     log_print(f"[{name}] DRY-RUN: would re-fetch entirely")
                     return {"name": name, "status": "dry_run"}

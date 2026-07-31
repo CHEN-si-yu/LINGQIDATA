@@ -1,0 +1,50 @@
+{
+  "snapshot_date": "20260728",
+  "snapshot_time": "2026-07-28T22:45:10.907277",
+  "script_md5": "51d08d33dc20682ffa23c295c26e2c6f",
+  "project_root": "/autodl-fs/data/lingqiData",
+  "source_files_count": 11,
+  "source_files": {
+    "calendar.parquet": "fa6324646aca4ab8db3906a07d204111",
+    "cyq_perf.parquet": "44d5eb3f9f83b37063119ce8bbabb60f",
+    "daily.parquet": "739604af38a736104c8f1cb02769aa71",
+    "daily_adj.parquet": "90396e5cb4533ae97b54369fca68cc9e",
+    "finance.parquet": "d58c050733b631c3321dd712ae03f171",
+    "main_fund_flow.parquet": "bb7d84f468bf3e923061ca57382954d0",
+    "margin_detail.parquet": "b7c2d630a42aa60f311a9ca730837e1b",
+    "stock_list.parquet": "b357d276bea29a2f15c2782c62805fe8",
+    "ths_constituent_stocks.parquet": "a4a4fe84d7dd27ef3655b30eca2db37a",
+    "ths_daily.parquet": "06b9b8e32172e44be58a22285cd30839",
+    "ths_sector_categories.parquet": "a6279ab0b07026c574eac59772f2dbd1"
+  },
+  "total_factors": 725,
+  "sampled_factors": [
+    "mom_5",
+    "mom_20",
+    "reversal_1",
+    "reversal_5",
+    "amplitude_20",
+    "bias_20",
+    "change_raw",
+    "bp",
+    "order_size_ratio_change",
+    "chip_concentration",
+    "winner_rate",
+    "avg_cost_premium",
+    "amihud_illiq_20",
+    "rv_5min",
+    "bp_factor_momentum_20",
+    "value_momentum_divergence"
+  ],
+  "fac_all_shape": [
+    2835162,
+    727
+  ],
+  "fac_all_date_range": "20200102 ~ 20260728",
+  "fac_all_factor_cols": 725,
+  "stock_pool_count": 1782,
+  "stock_pool_md5": "ab8e2abcc8faab27be559c79ca1c655a",
+  "calendar_trading_days": 1857,
+  "calendar_last_date": "2026-08-27",
+  "margin_detail_lag": "2019-01-02 ~ 2026-07-27"
+}

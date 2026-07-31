@@ -1896,6 +1896,100 @@ def update_consolidated(name, fetch_fn, filepath, date_col, dedup_keys,
 # Local indicator incremental update
 # ═══════════════════════════════════════════════════════════════════════════
 
+
+def _process_indicator_stock_combined(code, history_dir_str, out_dir_str):
+    """Standalone worker for ProcessPoolExecutor — combined indicator mode.
+
+    Reads history_1min/{code}.parquet, computes all six indicators at once,
+    merges with existing indicator file, and writes back.
+
+    This is a MODULE-LEVEL function so it can be pickled by ProcessPoolExecutor.
+    Returns a dict instead of mutating nonlocal variables.
+    """
+    import pandas as pd
+    from pathlib import Path
+    from fetch_indicator import _compute_indicators_for_df
+
+    history_dir = Path(history_dir_str)
+    out_dir = Path(out_dir_str)
+    hist_file = history_dir / f"{code}.parquet"
+    out_file = out_dir / f"{code}.parquet"
+
+    if not hist_file.exists():
+        return {"code": code, "status": "no_history"}
+
+    # ── Fast early-skip: compare max trade_time via column projection ──
+    try:
+        _, hist_max = get_max_date(hist_file)
+        if hist_max is None:
+            return {"code": code, "status": "no_history"}
+        if out_file.exists():
+            _, ind_max = get_max_date(out_file)
+            if ind_max is not None and ind_max >= hist_max:
+                return {"code": code, "status": "uptodate"}
+    except Exception:
+        pass  # Fall through to safe full-processing path
+
+    try:
+        df_hist = pd.read_parquet(hist_file)
+    except Exception:
+        return {"code": code, "status": "error"}
+
+    if df_hist.empty or "trade_time" not in df_hist.columns:
+        return {"code": code, "status": "no_history"}
+
+    df_hist["trade_time"] = pd.to_datetime(df_hist["trade_time"])
+    df_hist = df_hist.sort_values("trade_time").reset_index(drop=True)
+
+    needed = {"close", "high", "low", "vol"}
+    if not needed.issubset(df_hist.columns):
+        return {"code": code, "status": "error"}
+
+    last_time = None
+    df_existing = None
+    if out_file.exists():
+        try:
+            df_existing = pd.read_parquet(out_file)
+            if "trade_time" in df_existing.columns and not df_existing.empty:
+                df_existing["trade_time"] = pd.to_datetime(df_existing["trade_time"])
+                last_time = df_existing["trade_time"].max()
+        except Exception:
+            pass
+
+    # Compute ALL six indicators at once
+    all_indicators = _compute_indicators_for_df(df_hist, None)
+
+    # Build combined output: trade_time, stock_code + all indicator columns
+    out = df_hist[["trade_time"]].copy()
+    out["stock_code"] = code
+    for _name, ind_df in all_indicators.items():
+        for col in ind_df.columns:
+            out[col] = ind_df[col].values
+
+    if last_time is not None:
+        out = out[out["trade_time"] > last_time]
+
+    if out.empty:
+        return {"code": code, "status": "uptodate"}
+
+    if df_existing is not None and last_time is not None:
+        try:
+            merged = pd.concat([df_existing, out], ignore_index=True)
+            merged = merged.drop_duplicates(
+                subset=["trade_time", "stock_code"], keep="last"
+            )
+            merged = merged.sort_values("trade_time").reset_index(drop=True)
+        except Exception:
+            merged = out
+    else:
+        merged = out
+
+    tmp = out_file.with_suffix(".parquet.tmp")
+    merged.to_parquet(tmp, index=False)
+    tmp.replace(out_file)
+
+    return {"code": code, "status": "updated", "new_rows": len(out)}
+
 def update_indicators_from_daily_dump(indicator_datasets, start_date, end_date,
                                        workers=6, dry_run=False, overlap_days=3):
     """Incrementally update technical indicators from local history_1min data.
@@ -2002,111 +2096,57 @@ def update_indicators_from_daily_dump(indicator_datasets, start_date, end_date,
         completed = 0
         t_start = time.perf_counter()
 
-        def _process_one_stock(code):
-            nonlocal total_new_rows, total_stocks_updated, completed
-            nonlocal skipped_uptodate, skipped_no_history
 
-            hist_file = HISTORY_DIR / f"{code}.parquet"
-            out_file = out_dir / f"{code}.parquet"
+        # ── ProcessPoolExecutor for CPU-bound indicator computation ──
+        # Uses all available CPU cores, auto-adapting to the current machine.
+        import os as _os
+        from concurrent.futures import ProcessPoolExecutor as _PPE
+        _cpu_count = _os.cpu_count() or 4
+        _max_w = min(_cpu_count, len(stocks))  # Always use all CPU cores for local computation
 
-            if not hist_file.exists():
-                with lock:
-                    completed += 1
-                    skipped_no_history += 1
-                return
-
-            # ── Fast early-skip: compare max trade_time via column projection ──
-            # Reads only the trade_time column, avoiding full file I/O +
-            # expensive indicator computation for stocks already up to date.
-            try:
-                _, hist_max = get_max_date(hist_file)
-                if hist_max is None:
+        with _PPE(max_workers=_max_w) as pool:
+            futures = {pool.submit(_process_indicator_stock_combined, c, str(HISTORY_DIR), str(out_dir)): c
+                       for c in stocks}
+            for fut in as_completed(futures):
+                code = futures[fut]
+                try:
+                    result = fut.result()
+                except Exception as e:
                     with lock:
                         completed += 1
+                    log_print(f"[indicators] {code} FAILED: {e}")
+                    continue
+
+                with lock:
+                    completed += 1
+                    status = result.get("status", "error")
+                    if status == "updated":
+                        total_new_rows += result.get("new_rows", 0)
+                        total_stocks_updated += 1
+                    elif status == "uptodate":
+                        skipped_uptodate += 1
+                    elif status == "no_history":
                         skipped_no_history += 1
-                    return
-                if out_file.exists():
-                    _, ind_max = get_max_date(out_file)
-                    if ind_max is not None and ind_max >= hist_max:
-                        with lock:
-                            completed += 1
-                            skipped_uptodate += 1
-                        return
-            except Exception:
-                pass  # Fall through to safe full-processing path
+                    # "error" status: already counted in completed, nothing else to do
 
-            try:
-                df_hist = pd.read_parquet(hist_file)
-            except Exception:
-                with lock:
-                    completed += 1
-                return
+                    if completed % 200 == 0 or completed == len(stocks):
+                        elapsed = time.perf_counter() - t_start
+                        rate = completed / elapsed if elapsed > 0 else 0
+                        log_print(f"[indicators] {completed}/{len(stocks)} stocks "
+                                  f"({rate:.0f} st/s) | new_rows={total_new_rows} "
+                                  f"| skip={skipped_uptodate}")
 
-            if df_hist.empty or "trade_time" not in df_hist.columns:
-                with lock:
-                    completed += 1
-                return
+        elapsed = time.perf_counter() - t_start
+        log_print(f"[indicators] Done: {total_stocks_updated} stocks updated, "
+                  f"{skipped_uptodate} skipped (uptodate), "
+                  f"{skipped_no_history} skipped (no history), "
+                  f"{total_new_rows} new rows | {elapsed:.1f}s "
+                  f"(workers={_max_w}/{_cpu_count} CPUs)")
 
-            df_hist["trade_time"] = pd.to_datetime(df_hist["trade_time"])
-            df_hist = df_hist.sort_values("trade_time").reset_index(drop=True)
-
-            needed = {"close", "high", "low", "vol"}
-            if not needed.issubset(df_hist.columns):
-                with lock:
-                    completed += 1
-                return
-
-            last_time = None
-            df_existing = None
-            if out_file.exists():
-                try:
-                    df_existing = pd.read_parquet(out_file)
-                    if "trade_time" in df_existing.columns and not df_existing.empty:
-                        df_existing["trade_time"] = pd.to_datetime(df_existing["trade_time"])
-                        last_time = df_existing["trade_time"].max()
-                except Exception:
-                    pass
-
-            # Compute ALL six indicators at once
-            all_indicators = _compute_indicators_for_df(df_hist, None)
-
-            # Build combined output: trade_time, stock_code + all indicator columns
-            out = df_hist[["trade_time"]].copy()
-            out["stock_code"] = code
-            for _name, ind_df in all_indicators.items():
-                for col in ind_df.columns:
-                    out[col] = ind_df[col].values
-
-            if last_time is not None:
-                out = out[out["trade_time"] > last_time]
-
-            if out.empty:
-                with lock:
-                    completed += 1
-                    skipped_uptodate += 1
-                return
-
-            if df_existing is not None and last_time is not None:
-                try:
-                    merged = pd.concat([df_existing, out], ignore_index=True)
-                    merged = merged.drop_duplicates(
-                        subset=["trade_time", "stock_code"], keep="last"
-                    )
-                    merged = merged.sort_values("trade_time").reset_index(drop=True)
-                except Exception:
-                    merged = out
-            else:
-                merged = out
-
-            tmp = out_file.with_suffix(".parquet.tmp")
-            merged.to_parquet(tmp, index=False)
-            tmp.replace(out_file)
-
-            with lock:
-                total_new_rows += len(out)
-                total_stocks_updated += 1
-                completed += 1
-
+        done_file = out_dir / ".done"
+        done_file.write_text(str(date.today()))
+        log_print("[indicators] .done marker written")
+        return  # Combined mode done — skip shared ThreadPoolExecutor block
     else:
         # ═══════════════ Individual mode (original) ═══════════════
         indicator_map = {}

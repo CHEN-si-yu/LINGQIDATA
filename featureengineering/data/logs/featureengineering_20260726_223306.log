@@ -1,5 +1,0 @@
-2026-07-26 22:33:06 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260726_223306.log
-2026-07-26 22:33:06 [INFO   ] root: Python    : 3.12.3
-2026-07-26 22:33:06 [INFO   ] root: pandas    : 3.0.3
-2026-07-26 22:33:06 [INFO   ] root: numpy     : 2.3.2
-2026-07-26 22:33:06 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter

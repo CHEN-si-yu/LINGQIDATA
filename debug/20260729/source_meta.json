@@ -1,0 +1,161 @@
+{
+  "calendar.parquet": {
+    "file_md5": "f007c756443fe9ec160687d352d1cf67",
+    "size_mb": 0.02,
+    "rows": 2797,
+    "date_col": "date",
+    "date_range": "2019-01-01 ~ 2026-08-28",
+    "unique_dates": 2797,
+    "last5_date_rows": {
+      "2026-08-24": 1,
+      "2026-08-25": 1,
+      "2026-08-26": 1,
+      "2026-08-27": 1,
+      "2026-08-28": 1
+    }
+  },
+  "cyq_perf.parquet": {
+    "file_md5": "1ca12aec6ee85fc1c1a813b447ef2933",
+    "size_mb": 66.18,
+    "rows": 8519406,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1836,
+    "last5_date_rows": {
+      "2026-07-23": 5526,
+      "2026-07-24": 5526,
+      "2026-07-27": 5523,
+      "2026-07-28": 5524,
+      "2026-07-29": 5524
+    }
+  },
+  "daily.parquet": {
+    "file_md5": "a0fa3200e98ac1437a1a7362ed08c497",
+    "size_mb": 214.14,
+    "rows": 8695178,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1836,
+    "last5_date_rows": {
+      "2026-07-23": 5526,
+      "2026-07-24": 5526,
+      "2026-07-27": 5523,
+      "2026-07-28": 5524,
+      "2026-07-29": 5524
+    }
+  },
+  "daily_adj.parquet": {
+    "file_md5": "48e4a94e76b08924f4c27b2c8b96057d",
+    "size_mb": 197.78,
+    "rows": 8695178,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1836,
+    "last5_date_rows": {
+      "2026-07-23": 5526,
+      "2026-07-24": 5526,
+      "2026-07-27": 5523,
+      "2026-07-28": 5524,
+      "2026-07-29": 5524
+    }
+  },
+  "finance.parquet": {
+    "file_md5": "da6fdf634e1f2f371c68bb83a638b8fc",
+    "size_mb": 249.67,
+    "rows": 8683147,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1836,
+    "last5_date_rows": {
+      "2026-07-23": 5526,
+      "2026-07-24": 5526,
+      "2026-07-27": 5523,
+      "2026-07-28": 5524,
+      "2026-07-29": 5524
+    }
+  },
+  "main_fund_flow.parquet": {
+    "file_md5": "c5229e1714db6ff1d3215306124915cd",
+    "size_mb": 624.35,
+    "rows": 8206971,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1836,
+    "last5_date_rows": {
+      "2026-07-23": 5198,
+      "2026-07-24": 5197,
+      "2026-07-27": 5193,
+      "2026-07-28": 5194,
+      "2026-07-29": 5193
+    }
+  },
+  "margin_detail.parquet": {
+    "file_md5": "95da0b7cb29afac30df3a9e1fa2c2d52",
+    "size_mb": 182.74,
+    "rows": 5339559,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-28",
+    "unique_dates": 1835,
+    "last5_date_rows": {
+      "2026-07-22": 4415,
+      "2026-07-23": 4415,
+      "2026-07-24": 4416,
+      "2026-07-27": 4417,
+      "2026-07-28": 4417
+    }
+  },
+  "stock_list.parquet": {
+    "file_md5": "3b5145e3292d228a829f727d2a3b275b",
+    "size_mb": 0.23,
+    "rows": 5870,
+    "date_col": "list_date",
+    "date_range": "1990-12-01 ~ 2026-07-27",
+    "unique_dates": 2997,
+    "last5_date_rows": {
+      "2026-07-16": 1,
+      "2026-07-21": 1,
+      "2026-07-22": 1,
+      "2026-07-24": 1,
+      "2026-07-27": 2
+    }
+  },
+  "ths_constituent_stocks.parquet": {
+    "file_md5": "a4a4fe84d7dd27ef3655b30eca2db37a",
+    "size_mb": 0.11,
+    "rows": 5000,
+    "date_col": null,
+    "date_range": "N/A ~ N/A",
+    "unique_dates": "N/A",
+    "last5_date_rows": {}
+  },
+  "ths_daily.parquet": {
+    "file_md5": "4613609d30a5c1ca4ee7b9892fb17e83",
+    "size_mb": 55.92,
+    "rows": 1507387,
+    "date_col": "trade_date",
+    "date_range": "2019-01-02 ~ 2026-07-29",
+    "unique_dates": 1889,
+    "last5_date_rows": {
+      "2026-07-23": 2499,
+      "2026-07-24": 1936,
+      "2026-07-27": 1844,
+      "2026-07-28": 1879,
+      "2026-07-29": 1880
+    }
+  },
+  "ths_sector_categories.parquet": {
+    "file_md5": "a6279ab0b07026c574eac59772f2dbd1",
+    "size_mb": 0.05,
+    "rows": 1665,
+    "date_col": "list_date",
+    "date_range": "19910715 ~ 20260701",
+    "unique_dates": 417,
+    "last5_date_rows": {
+      "20260402": 1,
+      "20260604": 1,
+      "20260609": 5,
+      "20260629": 1,
+      "20260701": 1
+    }
+  }
+}

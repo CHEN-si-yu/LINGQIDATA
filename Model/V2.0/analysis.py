@@ -937,12 +937,12 @@ model_score = concat_model_4fold(test_path=model_test_path, res_path=model_res_p
 print("---单一模型评估---")
 # 回测使用实际 1 日收益（单日换手），非训练 label
 print(f"  持仓数: {PERSONAL_TOP_N} 只")
-ret1, ic1 = get_ret_ic(model_score, params.ret_1d_data, start=start, end=end,
+ret1, ic1 = get_ret_ic(model_score, params.ret_data, start=start, end=end,
                        top_n=PERSONAL_TOP_N)
 print_quarterly_metrics(ret1, ic1)
 score1_metrics = get_metrics(ret1, ic1)
 print_metrics(score1_metrics)
-plot_model(model_score, bench_all, params.ret_1d_data, start=start, end=end,
+plot_model(model_score, bench_all, params.ret_data, start=start, end=end,
            top_n=PERSONAL_TOP_N)
 
 # ======================================================================
@@ -964,14 +964,14 @@ print("-" * 65)
 # 原始 Top 1/3/5/10/20 —— 使用实际 1 日收益
 individual_rets = {}
 for n in [1, 3, 5, 10, 20]:
-    r, s = run_individual_strategy(model_score, params.ret_1d_data, top_n=n,
+    r, s = run_individual_strategy(model_score, params.ret_data, top_n=n,
                                           exclude_limit_up=EXCLUDE_LIMIT_UP,
                                           start=start, end=end)
     individual_rets[n] = r
     print_strategy(f"Top {n} (个人, 不过滤涨停)", r)
 
 # new_Top 1: 只买一只 + 要求开盘红 —— 使用实际 1 日收益
-r_new = run_new_top1_open_red(model_score, params.ret_1d_data, open_red_dict, start, end)
+r_new = run_new_top1_open_red(model_score, params.ret_data, open_red_dict, start, end)
 print_strategy("new_Top 1 (开盘红)", r_new)
 
 
