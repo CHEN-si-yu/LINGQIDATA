@@ -29,10 +29,31 @@ from fetch_ths_constituent_stocks import fetch_ths_constituent_stocks
 # Technical indicators (1min)
 from fetch_indicator import fetch_indicators_combined
 
+CODE_NUM_FILE = Path(DATA_DIR).parent / "Code_num.txt"
+
+
+def load_stock_codes():
+    """Load the 6-digit stock-code list from Code_num.txt (no suffix).
+
+    Used as stock_filter for the date-based fetchers so that the final
+    parquet files contain exactly this universe (Code_num stocks only).
+    """
+    if not CODE_NUM_FILE.exists():
+        log_print(f"[main] WARNING: {CODE_NUM_FILE} not found, no stock filter")
+        return None
+    with open(CODE_NUM_FILE) as f:
+        codes = [line.strip() for line in f if line.strip()]
+    log_print(f"[main] {len(codes)} stocks loaded from Code_num.txt")
+    return codes
+
+
 # ── Task registry ──────────────────────────────────────────────────
 # Comment out any line to skip that endpoint.
 # Each task's final output file is checked: if it already exists the
 # task is skipped (pass --force to override).
+# Tasks with "stock_filter": True only keep Code_num.txt stocks in the
+# final parquet (daily/finance/margin_detail/cyq_perf). cyq_chips is
+# per-stock and already iterates Code_num.txt itself.
 
 TASKS = [
     # {
@@ -52,40 +73,72 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/calendar.parquet",
     # },
-    {
-        "name": "ths_sector_categories",
-        "fn": fetch_ths_sector_categories,
-        "output": f"{DATA_DIR}/ths_sector_categories.parquet",
-    },
-    {
-        "name": "ths_constituent_stocks",
-        "fn": fetch_ths_constituent_stocks,
-        "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
-    },
+    # {
+    #     "name": "ths_sector_categories",
+    #     "fn": fetch_ths_sector_categories,
+    #     "output": f"{DATA_DIR}/ths_sector_categories.parquet",
+    # },
+    # {
+    #     "name": "ths_constituent_stocks",
+    #     "fn": fetch_ths_constituent_stocks,
+    #     "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
+    # },
     # {
     #     "name": "ths_daily",
     #     "fn": fetch_ths_daily,
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/ths_daily.parquet",
     # },
+    # ════════════════════ 有差异数据源: 全量重拉 (2026-08-01 一致性检查后启用) ════════════════════
+    # 运行: python scripts/main.py --force [-w 8]   (全量覆盖本地, 2019-01-01 ~ 今天; 并发≤8)
+    # refetch_recovery=True: --force 时仍复用已抓取的月度 checkpoint (断点续跑);
+    # 如需彻底重抓, 先删除 data/daily data/finance data/margin_detail
+    # data/cyq_perf_checkpoints 目录及 data/cyq_chips/*.parquet。
+    #
+    # 状态 (2026-08-01 17:xx):
+    # - daily / finance / margin_detail / cyq_perf: 已重拉完成并验证无误
+    #   (1782 只全在 Code_num 内, 91 个月完整), 暂时注释。需要重拉时取消注释。
+    # - cyq_chips: 待重拉 (数据量大, 逐股拉取 ~2.5h)。
     # {
-    #     "name": "cyq_perf",
-    #     "fn": fetch_cyq_perf,
+    #     "name": "daily",
+    #     "fn": fetch_daily,
     #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/cyq_perf.parquet",
+    #     "output": f"{DATA_DIR}/daily.parquet",
+    #     "stock_filter": True,
+    #     "refetch_recovery": True,
     # },
     # {
     #     "name": "finance",
     #     "fn": fetch_finance,
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/finance.parquet",
+    #     "stock_filter": True,
+    #     "refetch_recovery": True,
     # },
     # {
-    #     "name": "daily",
-    #     "fn": fetch_daily,
+    #     "name": "margin_detail",
+    #     "fn": fetch_margin_detail,
     #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/daily.parquet",
+    #     "output": f"{DATA_DIR}/margin_detail.parquet",
+    #     "stock_filter": True,
+    #     "refetch_recovery": True,
     # },
+    # {
+    #     "name": "cyq_perf",
+    #     "fn": fetch_cyq_perf,
+    #     "start": "2019-01-01",
+    #     "output": f"{DATA_DIR}/cyq_perf.parquet",
+    #     "stock_filter": True,
+    #     "refetch_recovery": True,
+    # },
+    # ════════════════════ 天级 (per-stock, 散文件落盘) ════════════════════
+    {
+        "name": "cyq_chips",
+        "fn": fetch_cyq_chips,
+        "start": "2019-01-01",
+        "output": f"{DATA_DIR}/cyq_chips/.done",
+        "refetch_recovery": True,
+    },
     # {
     #     "name": "daily_adj",
     #     "fn": fetch_daily_adj,
@@ -99,26 +152,11 @@ TASKS = [
     #     "output": f"{DATA_DIR}/main_fund_flow.parquet",
     # },
     # {
-    #     "name": "margin_detail",
-    #     "fn": fetch_margin_detail,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/margin_detail.parquet",
-    # },
-    # # ════════════════════ 天级 (per-stock, 散文件落盘) ════════════════════
-    # {
-    #     "name": "cyq_chips",
-    #     "fn": fetch_cyq_chips,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/cyq_chips/.done",
-    # },
-    # {
     #     "name": "history",
     #     "fn": fetch_history,
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/history_1min/.done",
     # },
-
-
 ]
 
 
@@ -198,6 +236,24 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
         )
         monitor_thread.start()
 
+    # Stock universe for the date-based fetchers (Code_num.txt)
+    stock_codes = None
+    if any(t.get("stock_filter") for t in active):
+        stock_codes = load_stock_codes()
+
+    def _task_kwargs(t):
+        # refetch_recovery: --force 全量重拉时仍启用 checkpoint 断点续跑
+        kwargs = {
+            "start_date": t["start"],
+            "end_date": end_date,
+            "workers": workers,
+            "cleanup": cleanup,
+            "resume": (not force) or t.get("refetch_recovery", False),
+        }
+        if t.get("stock_filter") and stock_codes is not None:
+            kwargs["stock_filter"] = stock_codes
+        return kwargs
+
     try:
         if parallel:
             with ThreadPoolExecutor(max_workers=len(active)) as pool:
@@ -209,9 +265,7 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
                                        "ths_constituent_stocks"):
                         fut = pool.submit(t["fn"])
                     else:
-                        fut = pool.submit(
-                            t["fn"], t["start"], end_date, None, not force, workers, cleanup
-                        )
+                        fut = pool.submit(t["fn"], **_task_kwargs(t))
                     futures[fut] = t["name"]
 
                 for fut in as_completed(futures):
@@ -231,11 +285,7 @@ def run_all(stock_codes=None, start_date="2019-01-01", end_date=None,
                                    "ths_constituent_stocks"):
                     t["fn"]()
                 else:
-                    t["fn"](
-                        start_date=t["start"], end_date=end_date,
-                        workers=workers, cleanup=cleanup,
-                        resume=not force,
-                    )
+                    t["fn"](**_task_kwargs(t))
 
         stats = limiter.stats
         log_print(f"[main] Done.  Total API calls: {sum(stats['endpoint_counts'].values())}")
@@ -263,14 +313,19 @@ if __name__ == "__main__":
     parser.add_argument("--monitor", action="store_true",
                         help="Log rate-limit stats every 10s")
     parser.add_argument("-w", "--workers", type=int, default=6,
-                        help="Parallel workers per task (1-8, default: 6)")
+                        help="Parallel workers per task (1-64, default: 6; "
+                             "请求速率由限流器 280/min 统一控制)")
     parser.add_argument("--no-cleanup", action="store_true",
                         help="Keep per-quarter checkpoint files")
     parser.add_argument("--force", action="store_true",
                         help="Re-fetch even if output file already exists")
     args = parser.parse_args()
 
-    workers = max(1, min(16, args.workers))
+    # 并发上限 64: 限流器(config.py)已修复为严格匀速 280/min 放行
+    # (acquire 循环重查 token + 保留部分 token), 高并发 worker 只是排队
+    # 等 token, 不会产生请求突刺触发服务器 429。实际请求速率仍由
+    # 280/min 上限决定, 提高 worker 数不会超过该吞吐上限。
+    workers = max(1, min(64, args.workers))
 
     run_all(
         stock_codes=args.stock_codes,

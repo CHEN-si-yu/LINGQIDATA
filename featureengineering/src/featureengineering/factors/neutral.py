@@ -4,8 +4,12 @@ import numpy as np
 import pandas as pd
 
 from ..registry import FactorContext, register_factor
-from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std
-from .enhanced import _rolling_corr_series
+
+# ⚠️ 时点风险(2026-08-05 审计声明):_industry_neutral_rank 使用
+# stock_list.parquet 的当前快照行业归属回填全部历史日期(今天才知道的行业
+# 被用于历史截面)。行业归属变化缓慢,属可接受的轻微时点回溯;若上游提供
+# 公告时点行业数据应替换。sector.py 已有同款声明。
+from ..utils import cross_sectional_rank, rolling_group_mean
 
 
 def _industry_neutral_rank(signal: pd.Series, context: FactorContext) -> pd.Series:
@@ -47,12 +51,16 @@ def _size_neutral_rank(signal: pd.Series, context: FactorContext, n_buckets: int
     }, index=signal.index)
 
     def _bucket_rank(grp):
+        # 显式构造新列,避免在 .apply 回调内对分组子集做链式赋值
+        # (pandas 3.0 下 SettingWithCopy/结果粘连风险,2026-08-05 修复)
         if len(grp) < n_buckets * 2:
-            grp["bucket"] = 0
+            bucket = pd.Series(0, index=grp.index)
         else:
-            grp["bucket"] = pd.qcut(grp["total_mv"], n_buckets, labels=False, duplicates="drop")
-        grp["rank"] = grp.groupby("bucket")["signal"].rank(pct=True)
-        return grp["rank"]
+            bucket = pd.Series(
+                pd.qcut(grp["total_mv"], n_buckets, labels=False, duplicates="drop"),
+                index=grp.index,
+            )
+        return grp["signal"].groupby(bucket).rank(pct=True)
 
     df = df.groupby(level="Date", group_keys=False).apply(_bucket_rank)
     return df
@@ -69,39 +77,6 @@ def factor_bp_size_neutral(context: FactorContext):
     finance = context.load("finance.parquet")
     bp = 1.0 / finance["pb"].replace(0, np.nan)
     neutral = _size_neutral_rank(bp, context)
-    return cross_sectional_rank(neutral)
-
-
-@register_factor(
-    name="mom_20_size_neutral",
-    description="规模中性化20日动量因子，市值分桶内截面排名。",
-    category="neutral",
-    thesis="小盘股动量往往强于大盘股，规模中性化后可提取同等市值级别中的相对动量强度。",
-    dependencies=("daily_adj.parquet", "finance.parquet"),
-)
-def factor_mom_20_size_neutral(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    mom = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
-    neutral = _size_neutral_rank(mom, context)
-    return cross_sectional_rank(neutral)
-
-
-@register_factor(
-    name="volatility_20_size_neutral",
-    description="规模中性化波动率因子，市值分桶内低波排名。",
-    category="neutral",
-    thesis="小盘股波动率天然高于大盘股，规模中性化后可对比同市值级别内的低波溢价。",
-    dependencies=("daily_adj.parquet", "finance.parquet"),
-)
-def factor_volatility_20_size_neutral(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret_1d = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    vol_20 = ret_1d.groupby(level="Code").transform(
-        lambda s: s.rolling(20, min_periods=10).std()
-    )
-    neutral = _size_neutral_rank(-vol_20, context)
     return cross_sectional_rank(neutral)
 
 

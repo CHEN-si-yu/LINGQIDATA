@@ -218,7 +218,11 @@ def _process_dir_file(args: tuple) -> dict:
             return {"filepath": filepath, "original": original, "deleted": 0,
                     "error": f"未找到日期列，可用: {df.columns.tolist()}"}
 
-        mask = df[date_col].dt.date == target_date.date()
+        # 日期列可能是 string 或 datetime，统一转为字符串比较
+        if pd.api.types.is_string_dtype(df[date_col]):
+            mask = df[date_col] == target_date_str
+        else:
+            mask = df[date_col].dt.date == target_date.date()
         deleted = int(mask.sum())
 
         if deleted > 0 and not dry_run:

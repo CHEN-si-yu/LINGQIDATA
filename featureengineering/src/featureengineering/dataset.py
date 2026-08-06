@@ -60,7 +60,7 @@ def _fill_source_gaps(df, extend_to_date: str | None = None):
     # Resolve daily_adj path from settings rather than hardcoding
     from .settings import PATHS
     ref_daily = _pd.read_parquet(
-        PATHS.source_root / "daily_adj.parquet",
+        PATHS.source_root / "daily.parquet",
         columns=["trade_date"],
     )
     ref_dates_raw = (
@@ -110,15 +110,20 @@ def _fill_source_gaps(df, extend_to_date: str | None = None):
                 d for d in ref_dates if current_max_str < d <= extend_to_date
             ]
             if ext_dates:
+                # 只向"最后数据日期实际存在的代码"扩展,不能使用全历史 codes:
+                # 对已退出面板的代码(如历史上曾融资、现已退出的股票),全历史
+                # reindex 会在尾日造出仅尾日存在的行,后续 groupby shift(1)
+                # 按行位置平移时会把它们数年前的最后值拉进尾日 → 尾日因子
+                # 混入陈年伪值(曾导致 margin 因子尾日 n=1782 而非 1742)。
                 last_data = result.loc[current_max_str]
+                tail_codes = last_data.index.unique()
                 for ext_d in ext_dates:
                     new_idx = _pd.MultiIndex.from_product(
-                        [[ext_d], codes], names=["Date", "Code"]
+                        [[ext_d], tail_codes], names=["Date", "Code"]
                     )
-                    new_data = last_data.reindex(codes)
+                    new_data = last_data.reindex(tail_codes)
                     new_data.index = new_idx
                     result = _pd.concat([result, new_data])
-                    last_data = new_data
                 result = result.sort_index()
 
     return result
@@ -294,6 +299,19 @@ class DataRepository:
         mask = codes.isin(allowed)
         return df.loc[mask]
 
+    def _drop_backfill_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Drop is_backfill==True rows (re-downloaded backfill data).
+
+        Point-in-time discipline: backfilled rows may carry information that
+        was not available at the recorded date.  The column is object-dtype
+        with False/None/True values; ``ne(True)`` keeps both False and missing
+        (None) rows and drops only True.  Sources without the column are
+        passed through unchanged.  Index is preserved.
+        """
+        if "is_backfill" not in df.columns:
+            return df
+        return df.loc[df["is_backfill"].ne(True)]
+
     def _cache_put(self, key: str, value: pd.DataFrame) -> None:
         """Store in cache with LRU eviction when the cache exceeds _MAX_CACHE_SIZE."""
         if len(self._cache) >= _MAX_CACHE_SIZE:
@@ -382,6 +400,7 @@ class DataRepository:
             raw = self._read_parquet(filepath, filters=pq_filters)
             normalized = _normalize_index_frame(raw)
             result = self._filter_by_allowed(normalized)
+            result = self._drop_backfill_rows(result)
             # Still apply memory-side filter for belt-and-suspenders safety
             result = _filter_by_date_range(result, min_date, max_date, lookback_days=margin_extra)
             result = _fill_source_gaps(result, extend_to_date=max_date if is_margin else None)
@@ -396,7 +415,8 @@ class DataRepository:
                 self.on_progress("load", 0, 1)
             raw = self._read_parquet(filepath)
             normalized = _normalize_index_frame(raw)
-            self._cache_put(cache_key, self._filter_by_allowed(normalized))
+            allowed = self._filter_by_allowed(normalized)
+            self._cache_put(cache_key, self._drop_backfill_rows(allowed))
             if self.on_progress:
                 self.on_progress("load", 1, 1)
             full = self._cache[cache_key]

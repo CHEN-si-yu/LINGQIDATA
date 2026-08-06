@@ -75,6 +75,9 @@ class RateLimiter:
         self.max_rpm = max_rpm
         self._refill_rate = max_rpm / 60.0          # tokens per second
         self._max_tokens = float(max_rpm)
+        # 从 0 起步而不是一次性注满 max_rpm: 初始 280 token 会让多 worker
+        # 在启动瞬间爆发请求, 触发服务器 429 (请求过于频繁)。
+        # 匀速 280/min 放行后, 任意窗口内的请求数都被平滑约束。
         self._tokens = 0.0
         self._last_refill = time.monotonic()
         self._lock = threading.Lock()
@@ -89,26 +92,29 @@ class RateLimiter:
     def acquire(self, endpoint="unknown"):
         """Block until a token is available, then consume it.
 
-        Returns the wait time in seconds (0 if no wait).
+        Returns the total wait time in seconds (0 if no wait).
+
+        注意: 睡眠醒来后必须重新检查 token —— 多个线程会同时醒来,
+        若醒来后直接扣减, 所有线程会一次通过(整批爆发), 导致请求按
+        批次突刺触发服务器 429 (2026-08-01 全量重拉踩坑的根因)。
         """
-        with self._lock:
-            self._refill()
-            if self._tokens >= 1.0:
-                self._tokens -= 1.0
-                self._endpoint_counts[endpoint] += 1
-                return 0.0
+        wait_total = 0.0
+        while True:
+            with self._lock:
+                self._refill()
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    self._endpoint_counts[endpoint] += 1
+                    return wait_total
 
-            # How long until one token is available
-            wait = (1.0 - self._tokens) / self._refill_rate
-            self._tokens = 0.0
+                # How long until one token is available.
+                # 注意: 不能把 _tokens 清零 —— 部分 token 要保留累积,
+                # 否则多线程争抢时会互相重置 _last_refill, 累积的 token
+                # 永远凑不满 1.0, 线程陷入小睡空转 (实测 73 次迭代才拿到)。
+                wait = (1.0 - self._tokens) / self._refill_rate
+                wait_total += wait
 
-        time.sleep(wait)
-
-        with self._lock:
-            self._refill()
-            self._tokens -= 1.0
-            self._endpoint_counts[endpoint] += 1
-        return wait
+            time.sleep(wait)
 
     @property
     def stats(self):

@@ -19,6 +19,7 @@ import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank
+from .chip import _close_adj_basis
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,20 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
     else:
         chip_width_ratio = std / mean if mean > 1e-12 else 0.0
 
+    # ── Deep-trap / high-float ratios (close-relative, 2026-08-05) ──
+    if close_val is not None and not np.isnan(close_val):
+        chip_below_90 = percents[prices < 0.9 * close_val].sum() / total_pct
+        chip_upper_110 = percents[prices > 1.1 * close_val].sum() / total_pct
+    else:
+        chip_below_90 = np.nan
+        chip_upper_110 = np.nan
+
+    # ── Mode-median gap: bimodality proxy (双峰=模式价与中位价分离) ──
+    chip_mode_median_gap = abs(peak_price - p50) / std if std > 1e-12 else 0.0
+
+    # ── Quantile-based skewness (对离群值比三阶矩更稳健) ──
+    chip_range_skew = (p90 - p50) / (p50 - p10) if (p50 - p10) > 1e-12 else 1.0
+
     result = {
         "chip_peak_price": peak_price,
         "chip_weighted_mean": mean,
@@ -164,6 +179,10 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
         "chip_asymmetry": chip_asymmetry,
         "chip_percentile": chip_percentile,
         "chip_width_ratio": chip_width_ratio,
+        "chip_below_90": chip_below_90,
+        "chip_upper_110": chip_upper_110,
+        "chip_mode_median_gap": chip_mode_median_gap,
+        "chip_range_skew": chip_range_skew,
     }
 
     if close_val is not None and not np.isnan(close_val):
@@ -256,6 +275,19 @@ CHIP_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "chip_kurtosis_momentum":   ("chip_kurtosis",        "momentum"),
     "chip_gini_momentum_rev":   ("chip_gini",            "momentum_rev"),
     "chip_cv_pos":              ("chip_cv",              "pos"),
+    # ── 2026-08-05: close-relative trap ratios & shape extras (4) ──
+    "chip_deep_trap_ratio":     ("chip_below_90",        "neg"),
+    "chip_high_float_ratio":    ("chip_upper_110",       "neg"),
+    "chip_bimodality":          ("chip_mode_median_gap", "neg"),
+    "chip_range_skew_factor":   ("chip_range_skew",      "neg"),
+    # ── 2026-08-05: cost-centre momentum (2) ──
+    "chip_median_momentum":     ("chip_median_price",    "momentum"),
+    "chip_weighted_mean_momentum": ("chip_weighted_mean","momentum"),
+    # ── 2026-08-05: dispersion/risk momentum (4) ──
+    "chip_iqr_momentum_20d":    ("chip_iqr",             "momentum_20d"),
+    "chip_semi_std_momentum":   ("chip_semi_std",        "momentum_rev"),
+    "chip_width_ratio_momentum":("chip_width_ratio",     "momentum_rev"),
+    "chip_percentile_20d":      ("chip_percentile",      "momentum_20d"),
 }
 
 _CHIP_METRIC_COLS = {
@@ -279,6 +311,10 @@ _CHIP_METRIC_COLS = {
     "chip_asymmetry",
     "chip_percentile",
     "chip_width_ratio",
+    "chip_below_90",
+    "chip_upper_110",
+    "chip_mode_median_gap",
+    "chip_range_skew",
 }
 
 
@@ -299,12 +335,17 @@ def _make_multiindex_series(values: np.ndarray, dates: pd.Index, code: str,
 # Avoids pickling the large close_map dict (~100 MB) for every batch submission —
 # for ~5,000 stocks that saves ~200 redundant serializations.
 _worker_close_map: dict[str, pd.Series] | None = None
+_worker_close_adj_map: dict[str, pd.Series] | None = None
 
 
-def _init_chip_worker(close_map: dict[str, pd.Series] | None) -> None:
+def _init_chip_worker(
+    close_map: dict[str, pd.Series] | None,
+    close_adj_map: dict[str, pd.Series] | None = None,
+) -> None:
     """ProcessPoolExecutor initializer — sets close_map once per worker."""
-    global _worker_close_map
+    global _worker_close_map, _worker_close_adj_map
     _worker_close_map = close_map
+    _worker_close_adj_map = close_adj_map
 
 
 def _process_chip_batch(
@@ -341,7 +382,9 @@ def _process_chip_batch(
             if stock_df.empty:
                 continue
         try:
-            close_s = _worker_close_map.get(code) if _worker_close_map else None
+            close_s = _worker_close_adj_map.get(code) if _worker_close_adj_map else (
+                _worker_close_map.get(code) if _worker_close_map else None
+            )
             daily = _chip_daily_metrics(stock_df, close_series=close_s)
         except Exception:
             continue
@@ -420,15 +463,13 @@ def build_cyq_chips_unified(
         on_progress("chip_scan", 0, total_files)
 
     # ── Pre-load close prices (needed for chip_below_ratio) ────────────────
-    daily_adj_path = paths.source_root / "daily_adj.parquet"
-    close_df = pd.read_parquet(daily_adj_path, columns=["trade_date", "stock_code", "close"])
+    daily_path = paths.source_root / "daily.parquet"
+    close_df = pd.read_parquet(daily_path, columns=["trade_date", "stock_code", "close", "pct_chg"])
     close_df["trade_date"] = close_df["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
     close_df["stock_code"] = close_df["stock_code"].apply(_pad_code)
     if allowed_codes:
         close_df = close_df[close_df["stock_code"].isin(allowed_codes)]
-    close_map: dict[str, pd.Series] = {}
-    for code, grp in close_df.groupby("stock_code"):
-        close_map[code] = grp.set_index("trade_date")["close"]
+    close_map, close_adj_map = _build_close_maps(close_df)
     del close_df
 
     # ── Determine parallelism ──────────────────────────────────────────────
@@ -448,7 +489,7 @@ def build_cyq_chips_unified(
     with ProcessPoolExecutor(
         max_workers=max_workers,
         initializer=_init_chip_worker,
-        initargs=(close_map,),
+        initargs=(close_map, close_adj_map),
     ) as executor:
         futures = {
             executor.submit(
@@ -515,11 +556,13 @@ def build_cyq_chips_unified(
             chg = raw.groupby(level="Code").transform(lambda s: s.diff(20))
             ranked = cross_sectional_rank(chg)
         elif direction == "peak":
-            close_all = close_map_to_series(close_map)
-            common = raw.index.intersection(close_all.index)
+            # cyq_chips 的 chip_peak_price/weighted_mean/median_price 为复权口径
+            # 成本价,close 需折算到同一空间(见 _build_close_maps 注释)
+            close_adj_all = close_map_to_series(close_adj_map)
+            common = raw.index.intersection(close_adj_all.index)
             distance = (
-                close_all.loc[common] - raw.loc[common]
-            ) / close_all.loc[common].replace(0, np.nan)
+                close_adj_all.loc[common] - raw.loc[common]
+            ) / close_adj_all.loc[common].replace(0, np.nan)
             ranked = cross_sectional_rank(distance)
         elif direction == "pos":
             ranked = cross_sectional_rank(raw)
@@ -563,6 +606,24 @@ def close_map_to_series(close_map: dict[str, pd.Series]) -> pd.Series:
     return result
 
 
+def _build_close_maps(close_df: pd.DataFrame) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
+    """从 daily 面板构建 (close_map, close_adj_map)，两者均为未复权 close。
+
+    close_adj_map 不再做 cumprod(1+pct_chg/100) × K(末值锚定) 折算:除权日
+    pct_chg 按"除权参考价"口径计算使 cumprod 基座与 close 失去一致性,锚点跨
+    过除权日会把全历史 close_adj 重标定,同一日期因子值随构建日变化(未来函数,
+    见 chip._close_adj_basis 的说明)。直接使用未复权 close:除权日与 cyq 复权
+    成本价短暂失真,但历史值稳定、只由 ≤当日 数据决定。
+    """
+    close_map: dict[str, pd.Series] = {}
+    close_adj_map: dict[str, pd.Series] = {}
+    for code, grp in close_df.groupby("stock_code"):
+        grp = grp.sort_values("trade_date")
+        close_map[code] = grp.set_index("trade_date")["close"]
+        close_adj_map[code] = close_map[code]
+    return close_map, close_adj_map
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # New unified builder entry point (--new flag)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -602,7 +663,12 @@ def build_cyq_chips_new(
         get_factor,
     )
     from ..dataset import _load_allowed_codes
-    from ..storage import ensure_single_factor_frame, write_factor, write_factor_incremental
+    from ..storage import (
+        ensure_single_factor_frame,
+        record_build_elapsed,
+        write_factor,
+        write_factor_incremental,
+    )
     allowed = _load_allowed_codes(paths.stock_pool_file)
     chip_dir = paths.source_root / "cyq_chips"
 
@@ -654,15 +720,13 @@ def build_cyq_chips_new(
     print(f"  Mode: {mode_str}")
     # ── Pre-load close prices ────────────────────────────────────────────
     t_close = time.perf_counter()
-    daily_adj_path = paths.source_root / "daily_adj.parquet"
-    close_df = pd.read_parquet(daily_adj_path, columns=["trade_date", "stock_code", "close"])
+    daily_path = paths.source_root / "daily.parquet"
+    close_df = pd.read_parquet(daily_path, columns=["trade_date", "stock_code", "close", "pct_chg"])
     close_df["trade_date"] = close_df["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
     close_df["stock_code"] = close_df["stock_code"].apply(_pad_code)
     if allowed:
         close_df = close_df[close_df["stock_code"].isin(allowed)]
-    close_map: dict[str, pd.Series] = {}
-    for code, grp in close_df.groupby("stock_code"):
-        close_map[code] = grp.set_index("trade_date")["close"]
+    close_map, close_adj_map = _build_close_maps(close_df)
     del close_df
     print(f"  Close prices loaded: {len(close_map)} stocks  "
           f"({time.perf_counter() - t_close:.1f}s)")
@@ -699,7 +763,7 @@ def build_cyq_chips_new(
     with ProcessPoolExecutor(
         max_workers=n_workers,
         initializer=_init_chip_worker,
-        initargs=(close_map,),
+        initargs=(close_map, close_adj_map),
     ) as executor:
         futures = {
             executor.submit(
@@ -760,6 +824,8 @@ def build_cyq_chips_new(
 
     # Build close_map_to_series for peak/distance factors
     close_mi_series = close_map_to_series(close_map) if close_map else pd.Series(dtype=float)
+    # cyq_chips 成本价为复权口径,close 折算到同一空间后供 peak 类因子使用(见 _build_close_maps)
+    close_adj_mi_series = close_map_to_series(close_adj_map) if close_adj_map else pd.Series(dtype=float)
 
     print(f"  Metrics concatenated  ({time.perf_counter() - t_concat:.1f}s)")
 
@@ -769,6 +835,7 @@ def build_cyq_chips_new(
 
     output: dict[str, pd.DataFrame] = {}
     errors_build: list[str] = []
+    fac_elapsed: dict[str, float] = {}  # per-factor assembly time (seconds)
 
     pbar_factor = tqdm(
         total=total_factors, desc="  Factors", unit="fac",
@@ -780,6 +847,7 @@ def build_cyq_chips_new(
     for idx, name in enumerate(factor_names):
         pbar_factor.set_postfix_str(f"{name}")
         pbar_factor.update(0)  # refresh
+        t_fac = time.perf_counter()
 
         if name not in CHIP_FACTOR_SPEC:
             output[name] = pd.DataFrame()
@@ -805,10 +873,10 @@ def build_cyq_chips_new(
                 chg = raw.groupby(level="Code").transform(lambda s: s.diff(20))
                 ranked = cross_sectional_rank(chg)
             elif direction == "peak":
-                common = raw.index.intersection(close_mi_series.index)
+                common = raw.index.intersection(close_adj_mi_series.index)
                 distance = (
-                    close_mi_series.loc[common] - raw.loc[common]
-                ) / close_mi_series.loc[common].replace(0, np.nan)
+                    close_adj_mi_series.loc[common] - raw.loc[common]
+                ) / close_adj_mi_series.loc[common].replace(0, np.nan)
                 ranked = cross_sectional_rank(distance)
             elif direction == "pos":
                 ranked = cross_sectional_rank(raw)
@@ -819,6 +887,7 @@ def build_cyq_chips_new(
 
             frame = ensure_single_factor_frame(ranked, name)
             output[name] = frame
+            fac_elapsed[name] = time.perf_counter() - t_fac
         except Exception:
             logger.exception("%s: Phase 3 assembly failed", name)
             output[name] = pd.DataFrame()
@@ -881,12 +950,18 @@ def build_cyq_chips_new(
             # are handled by write_factor_incremental which merges new
             # data over the problematic old rows (keep="last"); a full
             # overwrite would discard all historical data.
+            t_write = time.perf_counter()
             if not factor_path.exists() or min_trade_date is None:
                 write_factor(spec, frame, paths=paths)
                 action = "rebuild"
             else:
                 write_factor_incremental(spec, frame, paths=paths)
                 action = "incremental"
+            # Record the factor's generation time (seconds) in its manifest
+            record_build_elapsed(
+                paths.manifest_output_dir / f"{name}.json",
+                fac_elapsed.get(name, 0.0) + (time.perf_counter() - t_write),
+            )
             results.append(BuildResult(
                 factor_name=name, action=action, elapsed=0.0,
                 rows=len(frame), factor_path=factor_path,
@@ -943,9 +1018,14 @@ def _compute_chip_factor(
     allowed_codes: set[str],
     metric_col: str,
     close_map: dict[str, pd.Series] | None = None,
+    close_adj_map: dict[str, pd.Series] | None = None,
     on_progress=None,
 ) -> pd.Series:
-    """Compute one chip metric for all stocks from per-stock cyq_chips/ files."""
+    """Compute one chip metric for all stocks from per-stock cyq_chips/ files.
+
+    close_adj_map 提供折算到 cyq 成本价口径的 close(见 _build_close_maps),
+    供 chip_below_ratio 等需要与复权价格网格比较的指标使用。
+    """
     chip_dir = source_root / "cyq_chips"
     if not chip_dir.exists():
         raise FileNotFoundError(f"cyq_chips directory not found: {chip_dir}")
@@ -975,8 +1055,10 @@ def _compute_chip_factor(
             continue
 
         try:
-            close_s = close_map.get(code) if close_map else None
-            daily = _chip_daily_metrics(stock_df, close_series=close_s)
+            close_adj_s = close_adj_map.get(code) if close_adj_map else (
+                close_map.get(code) if close_map else None
+            )
+            daily = _chip_daily_metrics(stock_df, close_series=close_adj_s)
         except Exception:
             if on_progress:
                 on_progress("chip", i + 1, total)
@@ -1024,20 +1106,21 @@ def _compute_chip_factor(
     return result
 
 
-def _load_close_map(source_root: Path, allowed_codes: set[str]) -> dict[str, pd.Series]:
-    """Load close prices from daily_adj.parquet, keyed by 6-digit code."""
-    daily_adj_path = source_root / "daily_adj.parquet"
+def _load_close_maps(source_root: Path, allowed_codes: set[str]) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
+    """Load (close_map, close_adj_map) from daily.parquet, keyed by 6-digit code.
+
+    两者均为未复权 close(不再做复权折算,见 _build_close_maps / chip._close_adj_basis
+    的说明——K 末值锚定跨除权日会使历史值随构建日改写,已移除)。
+    """
+    daily_path = source_root / "daily.parquet"
     close_df = pd.read_parquet(
-        daily_adj_path, columns=["trade_date", "stock_code", "close"]
+        daily_path, columns=["trade_date", "stock_code", "close", "pct_chg"]
     )
     close_df["trade_date"] = close_df["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
     close_df["stock_code"] = close_df["stock_code"].apply(_pad_code)
     if allowed_codes:
         close_df = close_df[close_df["stock_code"].isin(allowed_codes)]
-    close_map: dict[str, pd.Series] = {}
-    for code, grp in close_df.groupby("stock_code"):
-        close_map[code] = grp.set_index("trade_date")["close"]
-    return close_map
+    return _build_close_maps(close_df)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1049,7 +1132,7 @@ def _load_close_map(source_root: Path, allowed_codes: set[str]) -> dict[str, pd.
     description="筹码峰距离因子，(close-chip_peak_price)/close截面排名。价格在最大筹码峰上方=支撑排前。",
     category="price",
     thesis="最大筹码峰是最密集的持仓成本区，价格在峰上方时有强支撑，在峰下方时变为强阻力。",
-    dependencies=("cyq_chips", "daily_adj.parquet"),
+    dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_peak_distance(context: FactorContext):
     source_root = context.repo.paths.source_root
@@ -1061,10 +1144,11 @@ def factor_chip_peak_distance(context: FactorContext):
         on_progress=on_progress,
     )
 
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    common = close.index.intersection(peak_series.index)
-    distance = (close.loc[common] - peak_series.loc[common]) / close.loc[common].replace(0, np.nan)
+    daily_panel = context.load("daily.parquet")
+    # cyq_chips 成本价为复权口径,把 close 折算到同一空间后再比较(见 chip._close_adj_basis)
+    close_adj = _close_adj_basis(daily_panel)
+    common = close_adj.index.intersection(peak_series.index)
+    distance = (close_adj.loc[common] - peak_series.loc[common]) / close_adj.loc[common].replace(0, np.nan)
     return cross_sectional_rank(distance)
 
 
@@ -1073,17 +1157,17 @@ def factor_chip_peak_distance(context: FactorContext):
     description="下方筹码占比因子，当前价格以下的筹码面积占总筹码面积比例截面排名。",
     category="price",
     thesis="价格下方的筹码面积占比越高，意味着越多的持仓者处于盈利状态、且下方支撑越密集。",
-    dependencies=("cyq_chips", "daily_adj.parquet"),
+    dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_peak_ratio(context: FactorContext):
     source_root = context.repo.paths.source_root
     allowed = context.repo.allowed_codes
     on_progress = context.repo.on_progress
 
-    close_map = _load_close_map(source_root, allowed)
+    close_map, close_adj_map = _load_close_maps(source_root, allowed)
     ratio_series = _compute_chip_factor(
         source_root, allowed, "chip_below_ratio",
-        close_map=close_map, on_progress=on_progress,
+        close_map=close_map, close_adj_map=close_adj_map, on_progress=on_progress,
     )
     return cross_sectional_rank(ratio_series)
 
@@ -1093,17 +1177,17 @@ def factor_chip_peak_ratio(context: FactorContext):
     description="下方筹码动量因子，chip_peak_ratio的5日变化截面排名。",
     category="price",
     thesis="下方筹码占比的快速增加意味着价格在向上突破——越来越多的筹码从上方套牢转为下方盈利。",
-    dependencies=("cyq_chips", "daily_adj.parquet"),
+    dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_below_momentum(context: FactorContext):
     source_root = context.repo.paths.source_root
     allowed = context.repo.allowed_codes
     on_progress = context.repo.on_progress
 
-    close_map = _load_close_map(source_root, allowed)
+    close_map, close_adj_map = _load_close_maps(source_root, allowed)
     ratio_series = _compute_chip_factor(
         source_root, allowed, "chip_below_ratio",
-        close_map=close_map, on_progress=on_progress,
+        close_map=close_map, close_adj_map=close_adj_map, on_progress=on_progress,
     )
     if isinstance(ratio_series, pd.DataFrame):
         ratio_series = ratio_series.squeeze(axis=1)
@@ -1292,7 +1376,7 @@ def factor_chip_tail_risk_change(context: FactorContext):
     description="筹码均价距离因子，(close-chip_weighted_mean)/close截面排名。价格在加权平均成本上方=多数盈利+强支撑。",
     category="price",
     thesis="与chip_peak_distance（模态成本）类似，但使用全部分布的加权平均成本——这是比模态峰价更稳健的平均持仓成本估计。价格高于均价=多数持仓者盈利=下方支撑可靠。",
-    dependencies=("cyq_chips", "daily_adj.parquet"),
+    dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_mean_distance(context: FactorContext):
     source_root = context.repo.paths.source_root
@@ -1301,8 +1385,8 @@ def factor_chip_mean_distance(context: FactorContext):
     mean_series = _compute_chip_factor(
         source_root, allowed, "chip_weighted_mean", on_progress=on_progress,
     )
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
+    daily_panel = context.load("daily.parquet")
+    close = daily_panel["close"]
     common = close.index.intersection(mean_series.index)
     distance = (close.loc[common] - mean_series.loc[common]) / close.loc[common].replace(0, np.nan)
     return cross_sectional_rank(distance)
@@ -1390,7 +1474,7 @@ def factor_chip_p90_p10_factor(context: FactorContext):
     description="筹码中位数距离因子，(close-chip_median_price)/close截面排名。价格在持仓成本中位数上方=多数盈利+支撑。",
     category="price",
     thesis="使用中位数成本（而非众数峰价或加权均值）来度量价格偏离。中位数对极端值不敏感，是更稳健的'典型成本'估计。价格高于中位数成本意味着超过一半的持仓者盈利。与chip_peak_distance和chip_mean_distance形成估计方法上的三角互补。",
-    dependencies=("cyq_chips", "daily_adj.parquet"),
+    dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_median_distance(context: FactorContext):
     source_root = context.repo.paths.source_root
@@ -1399,8 +1483,8 @@ def factor_chip_median_distance(context: FactorContext):
     median_series = _compute_chip_factor(
         source_root, allowed, "chip_median_price", on_progress=on_progress,
     )
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
+    daily_panel = context.load("daily.parquet")
+    close = daily_panel["close"]
     common = close.index.intersection(median_series.index)
     distance = (close.loc[common] - median_series.loc[common]) / close.loc[common].replace(0, np.nan)
     return cross_sectional_rank(distance)
@@ -1523,15 +1607,16 @@ def factor_winner_rate_acceleration(context: FactorContext):
     description="成本偏离极端度因子，(close-weight_avg)/weight_avg的绝对值截面排名（极度偏离=均值回归压力大排前）。",
     category="price",
     thesis="价格大幅偏离加权平均成本后存在均值回归倾向——无论是大幅盈利(上方偏离)还是大幅亏损(下方偏离)，都有筹码驱动的回归压力。逆向排名：偏离越大越倾向于反转。",
-    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
 )
 def factor_cost_displacement_extreme(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
+    # cyq 成本价为复权口径,把 close 折算到同一空间后再比较(见 chip._close_adj_basis)
+    close_adj = _close_adj_basis(daily_panel)
     cost_avg = cyq["weight_avg"]
-    close = daily_adj["close"]
-    common = close.index.intersection(cost_avg.index)
-    displacement = (close.loc[common] - cost_avg.loc[common]).abs() / cost_avg.loc[common].replace(0, np.nan)
+    common = close_adj.index.intersection(cost_avg.index)
+    displacement = (close_adj.loc[common] - cost_avg.loc[common]).abs() / cost_avg.loc[common].replace(0, np.nan)
     # Positive rank for high displacement = high reversion probability (reversal signal)
     return cross_sectional_rank(displacement)
 
@@ -1541,32 +1626,18 @@ def factor_cost_displacement_extreme(context: FactorContext):
     description="盈亏筹码比因子，(close-cost_95pct)/(cost_5pct-close)截面排名。",
     category="price",
     thesis="上方筹码(套牢盘)与下方筹码(获利盘)的相对比例——比率高=上方套牢盘重(负向)、上升阻力大；比率低=下方获利盘多(正向)、有支撑。",
-    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
 )
 def factor_chip_profit_loss_ratio(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    common = close.index.intersection(cyq["cost_95pct"].index)
-    upper = close.loc[common] - cyq["cost_95pct"].loc[common]
-    lower = cyq["cost_5pct"].loc[common] - close.loc[common]
+    daily_panel = context.load("daily.parquet")
+    # cyq 成本价为复权口径,把 close 折算到同一空间后再比较(见 chip._close_adj_basis)
+    close_adj = _close_adj_basis(daily_panel)
+    common = close_adj.index.intersection(cyq["cost_95pct"].index)
+    upper = close_adj.loc[common] - cyq["cost_95pct"].loc[common]
+    lower = cyq["cost_5pct"].loc[common] - close_adj.loc[common]
     ratio = lower / (upper.abs() + 0.01)
     return cross_sectional_rank(ratio)
-
-
-@register_factor(
-    name="chip_support_resistance_20d",
-    description="筹码支撑阻力20日变化因子，(his_high-cost_95pct)-(cost_5pct-his_low)的截面排名。",
-    category="price",
-    thesis="历史高点到上方筹码区vs历史低点到下方筹码区——反映筹码结构的不对称性：上方历史套牢压力vs下方历史获利支撑的相对强弱。",
-    dependencies=("cyq_perf.parquet",),
-)
-def factor_chip_support_resistance_20d(context: FactorContext):
-    cyq = context.load("cyq_perf.parquet")
-    # Upper resistance = his_high - cost_95pct (smaller means close to resistance)
-    # Lower support = cost_5pct - his_low (smaller means close to support)
-    asymmetry = (cyq["cost_5pct"] - cyq["his_low"]) - (cyq["his_high"] - cyq["cost_95pct"])
-    return cross_sectional_rank(asymmetry)
 
 
 @register_factor(

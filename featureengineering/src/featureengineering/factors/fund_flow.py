@@ -4,6 +4,7 @@ import numpy as np
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
+from .momentum_rebuilt import _adjusted_close
 
 def _total_amount(ff):
     """Return total turnover amount from main fund flow, zero replaced with NaN."""
@@ -121,34 +122,6 @@ def factor_mf_net_inflow_trend_5d(context: FactorContext):
     )
     return cross_sectional_rank(slope)
 
-# ── Big order divergence ─────────────────────────────────────────────────
-
-@register_factor(
-    name="big_order_divergence",
-    description="大单净流入与涨跌幅背离因子，rank(大单净买入率)-rank(pct_chg)截面排名。",
-    category="fund_flow",
-    thesis="大单净流入与价格涨跌的背离反映聪明钱与价格行为的分歧，背离度越大预示未来价格修正越强。",
-    dependencies=("main_fund_flow.parquet", "daily_adj.parquet"),
-)
-def factor_big_order_divergence(context: FactorContext):
-    ff = context.load("main_fund_flow.parquet")
-    daily_adj = context.load("daily_adj.parquet")
-
-    big_net = (
-        ff["buy_lg_amount"] - ff["sell_lg_amount"]
-        + ff["buy_elg_amount"] - ff["sell_elg_amount"]
-    )
-    big_net_rate = big_net / _total_amount(ff)
-
-    with np.errstate(invalid="ignore"):
-        rank_big = big_net_rate.groupby(level="Date").rank(pct=True)
-        rank_pct = daily_adj["pct_chg"].groupby(level="Date").rank(pct=True)
-
-    # Align on common index
-    common = rank_big.index.intersection(rank_pct.index)
-    divergence = rank_big.loc[common] - rank_pct.loc[common]
-    return cross_sectional_rank(divergence)
-
 # ── Margin net open interest ─────────────────────────────────────────────
 
 @register_factor(
@@ -259,14 +232,15 @@ def factor_mf_elg_small_divergence(context: FactorContext):
 )
 def factor_mf_big_order_turnover_ratio(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
+    # 2026-08-05:改用 *_vol(成交量)口径,与因子名/描述"成交量"一致(原误用 *_amount)
     big_vol = (
-        ff["buy_lg_amount"] + ff["buy_elg_amount"]
-        + ff["sell_lg_amount"] + ff["sell_elg_amount"]
+        ff["buy_lg_vol"] + ff["buy_elg_vol"]
+        + ff["sell_lg_vol"] + ff["sell_elg_vol"]
     )
     total_vol = (
         big_vol
-        + ff["buy_sm_amount"] + ff["sell_sm_amount"]
-        + ff["buy_md_amount"] + ff["sell_md_amount"]
+        + ff["buy_sm_vol"] + ff["sell_sm_vol"]
+        + ff["buy_md_vol"] + ff["sell_md_vol"]
     ).replace(0, np.nan)
     ratio = big_vol / total_vol
     return cross_sectional_rank(ratio)
@@ -306,7 +280,7 @@ def factor_mf_amount_weighted_direction(context: FactorContext):
     description="20日累计主力净流入率因子。",
     category="fund_flow",
     thesis="累计净流入/流出反映中期资金态度，持续的净流入比单日信号更可靠",
-    dependencies=("main_fund_flow.parquet", "calendar.parquet"),
+    dependencies=("main_fund_flow.parquet",),
 )
 def factor_mf_cumulative_flow_20d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
@@ -323,7 +297,7 @@ def factor_mf_cumulative_flow_20d(context: FactorContext):
     description="20日主力资金反转因子 (从流出的流出反转为流入)。",
     category="fund_flow",
     thesis="主力从净流出转为净流入是重要的拐点信号，捕捉资金态度的边际变化",
-    dependencies=("main_fund_flow.parquet", "calendar.parquet"),
+    dependencies=("main_fund_flow.parquet",),
 )
 def factor_mf_flow_reversal_20d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
@@ -340,7 +314,7 @@ def factor_mf_flow_reversal_20d(context: FactorContext):
     description="20日大单净买入率稳定性因子 (高稳定排前)。",
     category="fund_flow",
     thesis="大单行为一致性反映机构意图明确，频繁方向切换意味着不确定性和噪音交易",
-    dependencies=("main_fund_flow.parquet", "calendar.parquet"),
+    dependencies=("main_fund_flow.parquet",),
 )
 def factor_mf_big_order_stability_20d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
@@ -357,7 +331,7 @@ def factor_mf_big_order_stability_20d(context: FactorContext):
     description="20日大单/小单收敛因子 (大单趋势-小单趋势)。",
     category="fund_flow",
     thesis="大单趋势与小单趋势的背离收敛包含信息——大单领先小单转向是机构先行的信号",
-    dependencies=("main_fund_flow.parquet", "calendar.parquet"),
+    dependencies=("main_fund_flow.parquet",),
 )
 def factor_mf_big_small_convergence_20d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
@@ -373,10 +347,14 @@ def factor_mf_big_small_convergence_20d(context: FactorContext):
 
 @register_factor(
     name="mf_open_close_divergence_10d",
-    description="10日开盘/收盘资金流向背离因子。",
+    description="10日资金流偏离波动因子：净流入率相对其5日均线的偏离的10日波动率截面排名（偏离剧烈=资金态度摇摆排前）。",
     category="fund_flow",
-    thesis="开盘和收盘阶段的资金行为反映不同类型投资者：开盘=跟随/散户，尾盘=机构调仓。两者背离有信号意义",
-    dependencies=("main_fund_flow.parquet", "calendar.parquet"),
+    thesis=(
+        "2026-08-05 描述与实现统一(原描述声称开盘/收盘背离,实现为日频代理):"
+        "净流入率相对5日均线的偏离反映当日资金态度与近期趋势的落差,其10日波动率"
+        "衡量资金行为的摇摆程度——偏离频繁放大=主力态度反复、方向不确定。"
+    ),
+    dependencies=("main_fund_flow.parquet",),
 )
 def factor_mf_open_close_divergence_10d(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
@@ -405,7 +383,7 @@ def factor_big_vs_small_divergence_5d(context: FactorContext):
 
 @register_factor(
     name="medium_order_flow",
-    description="中单资金流因子，中单净买入/总成交量截面排名。",
+    description="中单资金流因子，中单净买入/总成交额截面排名。",
     category="fund_flow",
     thesis="中单资金流往往被忽视——中单代表中等资金量级的投资者行为，在大单和小单之间提供了额外信息维度。中单净流入可能是机构隐藏建仓意图的手段。",
     dependencies=("main_fund_flow.parquet",),
@@ -417,7 +395,7 @@ def factor_medium_order_flow(context: FactorContext):
 
 @register_factor(
     name="super_large_order_intensity",
-    description="超大单强度因子，超大单净买入/总成交量截面排名。",
+    description="超大单强度因子，超大单净买入/总成交额截面排名。",
     category="fund_flow",
     thesis="超大单(每单>500万)是机构定制化交易和主力大额博弈的直接体现——超大单净流入持续为正意味着主力在持续收集筹码。",
     dependencies=("main_fund_flow.parquet",),
@@ -436,7 +414,15 @@ def factor_super_large_order_intensity(context: FactorContext):
 )
 def factor_small_order_crowding(context: FactorContext):
     mf = context.load("main_fund_flow.parquet")
-    small_pct = (mf["buy_sm_amount"] + mf["sell_sm_amount"]) / _total_amount(mf)
+    # 2026-08-05:改用 *_vol(成交量)口径,与描述"小单买入量/总成交量"一致
+    small_vol = mf["buy_sm_vol"] + mf["sell_sm_vol"]
+    total_vol = (
+        mf["buy_sm_vol"] + mf["sell_sm_vol"]
+        + mf["buy_md_vol"] + mf["sell_md_vol"]
+        + mf["buy_lg_vol"] + mf["sell_lg_vol"]
+        + mf["buy_elg_vol"] + mf["sell_elg_vol"]
+    ).replace(0, np.nan)
+    small_pct = small_vol / total_vol
     return cross_sectional_rank(-small_pct)
 
 @register_factor(
@@ -518,16 +504,17 @@ def factor_fund_flow_volatility_20(context: FactorContext):
     description="大单时机信号因子，大单净买入/成交量×20日价格位置截面排名（低位大单流入=最佳买点排前）。",
     category="fund_flow",
     thesis="大单流入配合价格在低位是最优的信号组合——机构在低位大额建仓意味着他们对当前价格水平认可，且预期未来上涨空间大。",
-    dependencies=("main_fund_flow.parquet", "daily_adj.parquet"),
+    dependencies=("main_fund_flow.parquet", "daily.parquet"),
 )
 def factor_large_order_timing_signal(context: FactorContext):
     mf = context.load("main_fund_flow.parquet")
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
     big_net = (mf["buy_lg_amount"] + mf["buy_elg_amount"] - mf["sell_lg_amount"] - mf["sell_elg_amount"]) / _total_amount(mf)
-    close = daily_adj["close"]
-    high_20 = close.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
-    low_20 = close.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
-    position = (close - low_20) / (high_20 - low_20).replace(0, np.nan)
+    # 20 日价格位置用后复权基座计算,除权日未复权 close 的区间高低点不产生假低位 (2026-08-05)
+    adj = _adjusted_close(daily_panel)
+    high_20 = adj.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
+    low_20 = adj.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
+    position = (adj - low_20) / (high_20 - low_20).replace(0, np.nan)
     # Low position (close to low) + positive big net = strong buy signal
     signal = big_net * (1 - position)
     return cross_sectional_rank(signal)

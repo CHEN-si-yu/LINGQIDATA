@@ -50,3 +50,6 @@ trainingdata/
 *.tmp
 *.swp
 *~
+
+# Debug generated data (parquet/fea snapshots)
+debug/*/data10d/

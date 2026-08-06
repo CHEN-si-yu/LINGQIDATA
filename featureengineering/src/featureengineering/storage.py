@@ -24,7 +24,7 @@ def _get_reference_frame() -> tuple[list[str], list[str]]:
 
     paths = configure_paths()
     daily = pd.read_parquet(
-        paths.source_root / "daily_adj.parquet",
+        paths.source_root / "daily.parquet",
         columns=["stock_code", "trade_date"],
     )
     daily["d"] = daily["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
@@ -203,6 +203,27 @@ def _write_manifest(path: Path, spec: FactorSpec, frame: pd.DataFrame) -> None:
     path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def record_build_elapsed(manifest_path: Path, elapsed_s: float) -> None:
+    """Record a factor's build duration (seconds) into its JSON manifest.
+
+    Called by the builders *after* the .fea write has finished, so the
+    recorded value covers the full generation time (compute + write) and
+    matches the elapsed number shown in the build log.  Existing manifest
+    keys (built_at, coverage, …) are preserved.  Failures are ignored —
+    this is a non-critical metadata patch and must never break the build.
+    """
+    try:
+        if not manifest_path.exists():
+            return
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["elapsed_s"] = round(float(elapsed_s), 2)
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
 
 
 def write_factor(

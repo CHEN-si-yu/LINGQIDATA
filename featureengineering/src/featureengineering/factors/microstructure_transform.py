@@ -59,9 +59,6 @@ _LOG_VOL_FACTORS = [
     ("ret_std_intraday",  "日内收益标准差"),
     ("amplitude_20", "20日振幅"),
     ("high_low_volatility_20", "20日高低波动率"),
-    ("idiosyncratic_vol_60",   "60日特质波动率"),
-    ("volatility_20",  "20日波动率"),
-    ("volatility_5",   "5日波动率"),
     ("intraday_high_low_volatility", "日内高低波动率"),
     ("rv_rolling_5d_std", "5日RV波动率"),
 ]
@@ -99,15 +96,11 @@ for _bn, _desc in _LOG_VOL_FACTORS:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _SQRT_FACTORS = [
-    ("max_ret_20",             "20日最大收益"),
     ("max_ret_intraday",       "日内最大收益"),
-    ("herding_intensity",      "羊群效应强度"),
-    ("lottery_stock_indicator","彩票股指标"),
     ("relative_spread",        "相对价差"),
     ("am_hl_range_intraday",   "上午高低价差"),
     ("turnover_std_20",        "20日换手标准差"),
     ("turnover_vol_20",        "20日换手波动率"),
-    ("ret_range_20",           "20日收益范围"),
 ]
 
 
@@ -147,8 +140,6 @@ _ZSCORE_FACTORS = [
     ("amihud_intraday", "日内Amihud非流动性"),
     ("realized_spread_5min", "5分钟已实现价差"),
     ("volume_rv_ratio", "成交量-RV比率"),
-    ("up_volatility_20",  "20日上行波动率"),
-    ("down_volatility_20","20日下行波动率"),
 ]
 
 
@@ -184,24 +175,6 @@ for _bn, _desc in _ZSCORE_FACTORS:
 # ═══════════════════════════════════════════════════════════════════════════════
 # D — Cross-Factor Engineered Signals  (second-order microstructure)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="vol_rv_divergence",
-    description="波动率-RV背离因子，(volatility_20排名/rv_5min排名)截面排名（日间波动相对日内波动异常高排前）。",
-    category="risk",
-    thesis="日间波动率远高于日内RV意味着隔夜风险(跳空)大——"
-           "这种背离通常发生在重大消息公布前后或流动性恶化时。"
-           "背离程度大的股票隔夜跳跃风险高，排后；两者一致的股票信息消化充分，排前。",
-    dependencies=("__factors__", "volatility_20", "rv_5min"),
-)
-def factor_vol_rv_divergence(ctx: FactorContext) -> pd.Series:
-    df = ctx.load_factors(["volatility_20", "rv_5min"])
-    vol_r = _rank(df["volatility_20"])
-    rv_r = _rank(df["rv_5min"])
-    # High vol relative to RV = overnight risk (rank low)
-    divergence = safe_divide(vol_r, rv_r + 1e-8)
-    return cross_sectional_rank(-divergence)
-
 
 @register_factor(
     name="rv_term_structure",
@@ -272,22 +245,6 @@ def factor_amihud_parkinson_ratio(ctx: FactorContext) -> pd.Series:
 
 
 @register_factor(
-    name="vol_asymmetry_ratio",
-    description="波动非对称比因子，down_volatility_20排名/up_volatility_20排名截面排名（下跌波动大于上涨波动=风险不对称排后）。",
-    category="risk",
-    thesis="下行波动率与上行波动率的比率反映波动率的非对称性——"
-           "下行波动>上行波动=负面消息冲击大于正面(风险溢价要求更高、排后)；"
-           "上行波动>下行波动=正面消息推动力强(上涨有量、下跌有支撑、排前)。"
-           "波动不对称是市场情绪在波动率维度的体现。",
-    dependencies=("__factors__", "down_volatility_20", "up_volatility_20"),
-)
-def factor_vol_asymmetry_ratio(ctx: FactorContext) -> pd.Series:
-    df = ctx.load_factors(["down_volatility_20", "up_volatility_20"])
-    asymmetry = safe_divide(df["down_volatility_20"], df["up_volatility_20"] + 1e-10)
-    return cross_sectional_rank(-asymmetry)  # less downside vol asymmetry = better
-
-
-@register_factor(
     name="microstructure_efficiency",
     description="微观结构效率因子，(rv_5min/parkinson_vol排名)截面排名（日内效率高=信息消化快排前）。",
     category="risk",
@@ -303,19 +260,5 @@ def factor_microstructure_efficiency(ctx: FactorContext) -> pd.Series:
     return cross_sectional_rank(-efficiency)  # closer to 1 = more efficient
 
 
-@register_factor(
-    name="intraday_overreaction_pressure",
-    description="日内过度反应压力因子，(max_ret_intraday排名×herding_intensity排名)截面排名（日内过度反应+羊群=反转压力排后）。",
-    category="risk",
-    thesis="日内最大收益与羊群效应的共振——"
-           "日内出现极端正收益且羊群效应强=追涨行为集中、短期回调压力大(排后)；"
-           "日内温和收益且羊群效应弱=理性定价、趋势可持续(排前)。"
-           "日内反转压力是短线交易的重要风险预警。",
-    dependencies=("__factors__", "max_ret_intraday", "herding_intensity"),
-)
-def factor_intraday_overreaction_pressure(ctx: FactorContext) -> pd.Series:
-    df = ctx.load_factors(["max_ret_intraday", "herding_intensity"])
-    reversal = _rank(df["max_ret_intraday"]) * _rank(df["herding_intensity"])
-    return cross_sectional_rank(-reversal)  # high reversal pressure = rank low
 
 

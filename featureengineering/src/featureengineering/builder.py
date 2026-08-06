@@ -31,6 +31,7 @@ from .report import print_post_build_report
 from .registry import FACTOR_REGISTRY, FactorContext, FactorSpec, get_factor
 from .settings import ProjectPaths, configure_paths
 from .storage import (
+    record_build_elapsed,
     write_target_incremental,
     ensure_single_factor_frame,
     write_factor,
@@ -102,16 +103,16 @@ def _read_source_max_date(filepath: Path) -> str | None:
 def _resolve_effective_end_date(source_root: Path) -> str:
     """Return the latest date (YYYYMMDD) for which factors should produce data.
 
-    Uses *daily_adj.parquet* as the canonical reference for available trading
+    Uses *daily.parquet* as the canonical reference for available trading
     data, then applies the :data:`_EOD_CUTOFF_HOUR` (18:00) rule:
 
     - Before 18:00 — todayʼs market data is not yet available; cap at
-      ``daily_adj.parquet`` max (typically the previous trading day).
-    - At or after 18:00 — the daily ETL has completed; ``daily_adj.parquet``
+      ``daily.parquet`` max (typically the previous trading day).
+    - At or after 18:00 — the daily ETL has completed; ``daily.parquet``
       already reflects today and its max is used directly.
 
     The 18:00 cutoff is a belt-and-suspenders safeguard: the ETL pipeline
-    that refreshes ``daily_adj.parquet`` only runs after market close, so
+    that refreshes ``daily.parquet`` only runs after market close, so
     the fileʼs max date is already correct.  This function adds an explicit
     time check so that even if the file were updated earlier the pipeline
     would not accidentally forward-fill into a trading day that has not
@@ -119,7 +120,7 @@ def _resolve_effective_end_date(source_root: Path) -> str:
     """
     from datetime import datetime
 
-    daily_max = _read_source_max_date(source_root / "daily_adj.parquet")
+    daily_max = _read_source_max_date(source_root / "daily.parquet")
     if daily_max is None:
         # Fallback: if daily_adj is missing, trust the clock alone
         today = datetime.now().strftime("%Y%m%d")
@@ -576,6 +577,8 @@ def build_factor(
     finally:
         elapsed = time.perf_counter() - t0
         if error_msg is None:
+            # Record the factor's generation time (seconds) in its manifest
+            record_build_elapsed(manifest_path, elapsed)
             logger.debug("%s [%s]: done — %d rows, %d non-null, %.1f s, %.1f MB",
                          name, spec.category, rows, nn_rows, elapsed, mem_mb)
 
@@ -596,16 +599,10 @@ def build_factor(
 # ── Slow factors — always build FIRST so they overlap with faster factors ──
 # When submitted early to the ProcessPoolExecutor they occupy a worker slot
 # while dozens of faster factors cycle through the remaining slots.
-_PRIORITY_FACTORS: set[str] = {
-    # calendar / holiday factors (iterate over date ranges → O(dates²))
-    "holiday_gap_effect",
-    "post_holiday_3d",
-    "pre_holiday_3d",
-    # sector cross-sectional factors (wide panels with many stocks × sectors)
-    "stock_sector_beta_60",
-    "stock_sector_corr_60",
-    "stock_sector_timing",
-}
+# 2026-08-01: 原 6 个条目(holiday_gap_effect/post_holiday_3d/pre_holiday_3d/
+# stock_sector_beta_60/stock_sector_corr_60/stock_sector_timing)全部指向已删除
+# 因子,已清空。当前因子均为向量化实现,无已知慢因子需要前置。
+_PRIORITY_FACTORS: set[str] = set()
 
 
 def _flatten_build_plan(names: list[str]) -> list[tuple[str, str]]:
@@ -647,7 +644,7 @@ def build_many(
     results: list[BuildResult] = []
 
     # First pass: classify actions (effective_end cached to avoid
-    # re-reading daily_adj.parquet for every factor).
+    # re-reading daily.parquet for every factor).
     repo_temp = DataRepository(paths=paths)
     _effective_end = _resolve_effective_end_date(repo_temp.paths.source_root)
     action_map: dict[str, tuple[str, str | None]] = {}
@@ -800,7 +797,7 @@ def _build_factor_worker(
     not silently carried forward.
 
     When *effective_end* is provided it is used directly instead of
-    re-reading ``daily_adj.parquet`` (saves one parquet read per worker).
+    re-reading ``daily.parquet`` (saves one parquet read per worker).
     """
     configure_paths(project_root=project_root, source_root=source_root)
     ensure_builtin_factors_loaded()
@@ -915,6 +912,9 @@ def _build_factor_worker(
         mp = paths.manifest_output_dir / f"{spec.name}.json"
 
     elapsed = time.perf_counter() - t0
+    if error_msg is None:
+        # Record the factor's generation time (seconds) in its manifest
+        record_build_elapsed(mp, elapsed)
     rows = len(factor_frame) if factor_frame is not None else 0
     nn_rows = int(factor_frame.notna().sum().sum()) if factor_frame is not None else 0
 
@@ -972,7 +972,7 @@ def build_many_parallel(
     plan = _flatten_build_plan(names)
 
     # ── Resolve effective end date ONCE for the whole batch ──────────
-    # _resolve_effective_end_date reads daily_adj.parquet — calling it
+    # _resolve_effective_end_date reads daily.parquet — calling it
     # per-factor (580×) would waste minutes with no output.  Cache it
     # and pass to every worker so they don't recompute it either.
     _effective_end = _resolve_effective_end_date(configured_paths.source_root)

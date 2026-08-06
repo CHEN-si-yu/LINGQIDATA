@@ -1,0 +1,46 @@
+anchor=20260805 window=20260723~20260805 (10 交易日)
+stock sample: 1000 (seed=42), e.g. ['000001.SZ.parquet', '000002.SZ.parquet', '000006.SZ.parquet']
+out: /root/autodl-fs/lingqiData/debug/20260805/data10d
+daily_dump_1min: copied 10/10
+total tasks: 3717 (factors=694, targets=5)
+  [all] 100/3717  ok=100 err=0
+  [all] 200/3717  ok=200 err=0
+  [all] 300/3717  ok=300 err=0
+  [all] 400/3717  ok=400 err=0
+  [all] 500/3717  ok=500 err=0
+  [all] 600/3717  ok=600 err=0
+  [all] 700/3717  ok=700 err=0
+  [all] 800/3717  ok=800 err=0
+  [all] 900/3717  ok=900 err=0
+  [all] 1000/3717  ok=1000 err=0
+  [all] 1100/3717  ok=1100 err=0
+  [all] 1200/3717  ok=1200 err=0
+  [all] 1300/3717  ok=1300 err=0
+  [all] 1400/3717  ok=1400 err=0
+  [all] 1500/3717  ok=1500 err=0
+  [all] 1600/3717  ok=1600 err=0
+  [all] 1700/3717  ok=1700 err=0
+  [all] 1800/3717  ok=1800 err=0
+  [all] 1900/3717  ok=1900 err=0
+  [all] 2000/3717  ok=2000 err=0
+  [all] 2100/3717  ok=2100 err=0
+  [all] 2200/3717  ok=2200 err=0
+  [all] 2300/3717  ok=2300 err=0
+  [all] 2400/3717  ok=2400 err=0
+  [all] 2500/3717  ok=2500 err=0
+  [all] 2600/3717  ok=2600 err=0
+  [all] 2700/3717  ok=2700 err=0
+  [all] 2800/3717  ok=2800 err=0
+  [all] 2900/3717  ok=2900 err=0
+  [all] 3000/3717  ok=3000 err=0
+  [all] 3100/3717  ok=3100 err=0
+  [all] 3200/3717  ok=3200 err=0
+  [all] 3300/3717  ok=3300 err=0
+  [all] 3400/3717  ok=3400 err=0
+  [all] 3500/3717  ok=3500 err=0
+  [all] 3600/3717  ok=3600 err=0
+  [all] 3700/3717  ok=3700 err=0
+  [all] 3717/3717  ok=3717 err=0
+[all] done: 3717 ok, 0 err, 6218486 rows total
+summary: {"tool": "build_debug_data_10d", "snapshot_date": "20260805", "snapshot_time": "2026-08-05T21:30:54.379179", "window_days": 10, "date_range": "20260723 ~ 20260805", "window": ["20260723", "20260724", "20260727", "20260728", "20260729", "20260730", "20260731", "20260803", "20260804", "20260805"], "stock_sample": {"seed": 42, "n": 1000}, "n_factor_files": 694, "n_target_files": 5, "tasks_total": 3717, "tasks_ok": 3717, "tasks_err": 0, "script_md5": "18a39524fa9455f474a00a0deff5cea2"}
+DONE

@@ -130,7 +130,7 @@ def factor_mf_flow_acceleration_5d(context: FactorContext) -> np.ndarray:
 
 @register_factor(
     name="mf_flow_stability_20d",
-    description="主力资金流向20日稳定性=连续同向天数占比取反。频繁转向=信号不可靠，排名低。",
+    description="主力资金流向20日稳定性=连续同向天数占比。频繁转向=信号不可靠，排名低。",
     category="fund_flow",
     thesis=(
         "主力资金净流入方向在20日内的稳定性。持续同向(一直流入或一直流出)意味着"
@@ -142,9 +142,17 @@ def factor_mf_flow_acceleration_5d(context: FactorContext) -> np.ndarray:
 def factor_mf_flow_stability_20d(context: FactorContext) -> np.ndarray:
     ff = context.load("main_fund_flow.parquet")
     net = ff["net_mf_amount"]
-    sign_changes = (np.sign(net) != np.sign(net.groupby(level="Code").shift(1))).astype(float)
+    # 修正(2026-08-05):
+    # 1) NaN 处理:np.sign(NaN)=NaN,NaN!=x 恒 True——每股首行(prev 为 NaN)及
+    #    任何 NaN 日都会被误计为一次"方向变化"。须同时要求 net 与 prev 均有效。
+    # 2) 方向:原 rank(-stability) 使不稳定者排名反而靠前;描述要求"稳定者排前、
+    #    不稳定者排后",应 rank(stability)。
+    prev = net.groupby(level="Code").shift(1)
+    sign_changes = (
+        (np.sign(net) != np.sign(prev)) & net.notna() & prev.notna()
+    ).astype(float)
     change_count = sign_changes.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).sum()
     )
     stability = 1.0 - change_count / 20.0
-    return cross_sectional_rank(-stability)
+    return cross_sectional_rank(stability)

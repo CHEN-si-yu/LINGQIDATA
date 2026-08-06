@@ -133,7 +133,7 @@ def _fetch_and_save(start_time, end_time, label, api_key, checkpoints_dir):
 
 
 def fetch_cyq_perf(start_date="2019-01-01", end_date=None, output=None,
-                   resume=True, workers=6, cleanup=True):
+                   resume=True, workers=6, cleanup=True, stock_filter=None):
     """Fetch CYQ performance — consolidated, month-based checkpointing."""
     api_key = load_api_key()
 
@@ -218,6 +218,12 @@ def fetch_cyq_perf(start_date="2019-01-01", end_date=None, output=None,
         df = df.sort_values(['_sort_code', 'trade_date']).drop(columns=['_sort_code']).reset_index(drop=True)
 
     log_print(f"[cyq_perf] Total: {len(df)} rows, {len(df.columns)} columns")
+
+    if stock_filter:
+        _keep = set(stock_filter)
+        before = len(df)
+        df = df[df['stock_code'].astype(str).str[:6].isin(_keep)]
+        log_print(f"[cyq_perf] stock-filter (Code_num): {before} -> {len(df)} rows")
 
     if output is None:
         output = f"{DATA_DIR}/cyq_perf.parquet"

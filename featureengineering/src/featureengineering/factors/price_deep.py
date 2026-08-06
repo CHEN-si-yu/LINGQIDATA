@@ -4,6 +4,7 @@ import numpy as np
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, safe_divide
+from .momentum_rebuilt import _adjusted_close
 
 
 @register_factor(
@@ -85,13 +86,16 @@ def factor_shadow_asymmetry(context: FactorContext):
     dependencies=("daily.parquet",),
 )
 def factor_gap_fill_5d(context: FactorContext):
-    """Compute gap fill status relative to 5 days ago: (close - pre_close.shift(5)) / pre_close.shift(5).
-    Gap fill = mean reversion toward pre-gap level.
+    """Compute gap fill status relative to 5 days ago via the adjusted base:
+    adj_t / adj_{t-5} - 1.  The raw version mixed unadjusted close with the
+    vendor-adjusted pre_close from 5 days ago, which is dividend-distorted
+    whenever an ex-dividend occurs inside the 5-day window.
     """
     daily = context.load("daily.parquet")
-    close = daily["close"]
-    pre_close_5 = daily["pre_close"].groupby(level="Code").transform(lambda s: s.shift(5))
-    gap_fill = (close - pre_close_5) / pre_close_5.replace(0, np.nan)
+    adj = _adjusted_close(daily)
+    gap_fill = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(5, fill_method=None)
+    )
     return cross_sectional_rank(gap_fill)
 
 
@@ -156,20 +160,6 @@ def factor_overnight_intraday_divergence_daily(context: FactorContext):
     return cross_sectional_rank(-divergence)
 
 
-@register_factor(
-    name="close_to_open_5d",
-    description="5日开盘收益率，(今日open-5日前open)/5日前open截面排名。",
-    category="price",
-    thesis="开盘价之间的变化过滤了日内噪音，更纯粹反映隔夜信息的累积效应和机构集合竞价行为。",
-    dependencies=("daily.parquet",),
-)
-def factor_close_to_open_5d(context: FactorContext):
-    daily = context.load("daily.parquet")
-    open_price = daily["open"]
-    ret_5d = open_price.groupby(level="Code").transform(lambda s: s.pct_change(5))
-    return cross_sectional_rank(ret_5d)
-
-
 # ── Price range extremes ─────────────────────────────────────────────────
 
 @register_factor(
@@ -177,14 +167,15 @@ def factor_close_to_open_5d(context: FactorContext):
     description="20日价格位置因子，(close-20日最低)/(20日最高-20日最低)截面排名。",
     category="price",
     thesis="价格在近期高低点区间中的位置反映短期趋势强度——接近区间上沿=强势趋势中(正动量)，接近区间下沿=弱势中(负动量)。与单纯看涨跌幅不同，位置因子在震荡市中也能提供有效区分度。",
-    dependencies=("daily_adj.parquet",),
+    dependencies=("daily.parquet",),
 )
 def factor_price_position_20d(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    high_20 = close.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
-    low_20 = close.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
-    position = (close - low_20) / (high_20 - low_20).replace(0, np.nan)
+    daily_panel = context.load("daily.parquet")
+    # 用自建后复权基座(pct_chg 累乘)替代未复权 close,避免除权日 20 日区间高低点被污染
+    adj = _adjusted_close(daily_panel)
+    high_20 = adj.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
+    low_20 = adj.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
+    position = (adj - low_20) / (high_20 - low_20).replace(0, np.nan)
     return cross_sectional_rank(position)
 
 
@@ -193,16 +184,20 @@ def factor_price_position_20d(context: FactorContext):
     description="振幅因子，(20日最高-20日最低)/20日均价截面排名。",
     category="price",
     thesis="振幅是波动性的另一个维度——与收益率标准差互补，振幅衡量的是日内极端价格范围而非收益率离散度。高振幅=投机性强、多空分歧大。",
-    dependencies=("daily_adj.parquet",),
+    dependencies=("daily.parquet",),
 )
 def factor_high_low_amplitude_20(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    high = daily_adj["high"]
-    low = daily_adj["low"]
-    close = daily_adj["close"]
-    high_20 = high.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
-    low_20 = low.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
-    mean_20 = close.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).mean())
+    daily_panel = context.load("daily.parquet")
+    close = daily_panel["close"]
+    # 用每日复权系数 (adj/close) 把未复权 high/low 折算到后复权空间,
+    # 避免除权日跨日 rolling 极值被污染(与 price_position_20d 同口径)
+    adj = _adjusted_close(daily_panel)
+    scale = adj / close.replace(0, np.nan)
+    adj_high = daily_panel["high"] * scale
+    adj_low = daily_panel["low"] * scale
+    high_20 = adj_high.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).max())
+    low_20 = adj_low.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).min())
+    mean_20 = adj.groupby(level="Code").transform(lambda s: s.rolling(20, min_periods=10).mean())
     hl_vol = (high_20 - low_20) / mean_20.replace(0, np.nan)
     return cross_sectional_rank(hl_vol)
 
@@ -240,85 +235,6 @@ def factor_gap_fill_tendency_10d(context: FactorContext):
 # ── Consecutive direction ────────────────────────────────────────────────
 
 @register_factor(
-    name="consecutive_up_days",
-    description="连续上涨天数因子截面排名。",
-    category="price",
-    thesis="连续上涨天数反映短期趋势的持续性——连阳天数多意味着买方力量持续主导，但极端连阳后存在获利了结压力。",
-    dependencies=("daily_adj.parquet",),
-)
-def factor_consecutive_up_days(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    is_up = (ret > 0).astype(int)
-
-    def _count_streak(x):
-        x = x.values
-        streak = np.zeros_like(x, dtype=float)
-        cnt = 0
-        for i in range(len(x)):
-            if x[i] == 1:
-                cnt += 1
-            else:
-                cnt = 0
-            streak[i] = cnt
-        return streak
-
-    streak = is_up.groupby(level="Code").transform(_count_streak)
-    return cross_sectional_rank(streak)
-
-
-@register_factor(
-    name="consecutive_down_days",
-    description="连续下跌天数因子（反向：连跌天数多=超卖反弹概率大，排前）。",
-    category="price",
-    thesis="连续下跌天数多意味着恐慌性抛售——极端连跌后存在技术性反弹机会，是逆向买入的信号。",
-    dependencies=("daily_adj.parquet",),
-)
-def factor_consecutive_down_days(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    close = daily_adj["close"]
-    ret = close.groupby(level="Code").transform(lambda s: s.pct_change(1))
-    is_down = (ret < 0).astype(int)
-
-    def _count_streak(x):
-        x = x.values
-        streak = np.zeros_like(x, dtype=float)
-        cnt = 0
-        for i in range(len(x)):
-            if x[i] == 1:
-                cnt += 1
-            else:
-                cnt = 0
-            streak[i] = cnt
-        return streak
-
-    streak = is_down.groupby(level="Code").transform(_count_streak)
-    return cross_sectional_rank(streak)
-
-
-# ── Volume-price divergence ──────────────────────────────────────────────
-
-@register_factor(
-    name="volume_turnover_elasticity_20",
-    description="换手率弹性因子，20日收益率/20日均换手率变化截面排名。",
-    category="price",
-    thesis="量价弹性衡量单位换手率变化能撬动多少价格变动——高弹性意味着少量资金就能推动股价大幅上涨(效率高分)，但也可能在下跌时同样放大跌幅。综合而言高弹性在牛市中更优。",
-    dependencies=("daily_adj.parquet", "finance.parquet"),
-)
-def factor_volume_turnover_elasticity_20(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    finance = context.load("finance.parquet")
-    close = daily_adj["close"]
-    turnover = finance["turnover_rate"]
-    ret_20 = close.groupby(level="Code").transform(lambda s: s.pct_change(20))
-    to_chg_20 = turnover.groupby(level="Code").transform(lambda s: s.diff(20))
-    with np.errstate(invalid="ignore"):
-        elasticity = ret_20 / (to_chg_20.abs() + 0.001)
-    return cross_sectional_rank(elasticity)
-
-
-@register_factor(
     name="gap_up_ratio_20d",
     description="20日高开概率因子，高开(open>pre_close)天数/20截面排名。",
     category="price",
@@ -334,7 +250,7 @@ def factor_gap_up_ratio_20d(context: FactorContext):
     return cross_sectional_rank(ratio)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# New: Price Microstructure & Intraday Patterns (daily.parquet / daily_adj.parquet)
+# New: Price Microstructure & Intraday Patterns (daily.parquet / daily.parquet)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
@@ -380,44 +296,6 @@ def factor_gap_reversal_5d(context: FactorContext) -> np.ndarray:
 
 
 @register_factor(
-    name="price_change_acceleration",
-    description="价格变化加速度=收益率一阶差分。正加速=动量加强，负加速=动能衰竭，排名高。",
-    category="price",
-    thesis=(
-        "收益率的一阶差分(价格的二阶导)捕捉趋势的加速或减速。"
-        "正加速度意味着上涨加速或下跌减速(趋势加强)；"
-        "负加速度意味着上涨减速或下跌加速(趋势减弱)。"
-        "该指标比动量更快地捕捉趋势拐点——动量还在高位但加速度已转负=趋势即将反转。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_price_change_acceleration(context: FactorContext) -> np.ndarray:
-    d = context.load("daily_adj.parquet")
-    ret = d["close"].groupby(level="Code").transform(lambda s: s.pct_change(1))
-    accel = ret.groupby(level="Code").transform(lambda s: s.diff(1))
-    accel = accel.clip(-0.1, 0.1)
-    return cross_sectional_rank(accel)
-
-
-@register_factor(
-    name="volume_weighted_price_change",
-    description="量价交互=收益率×成交量。放量涨=趋势可靠(排名高)，放量跌=压力确认(排名低)。",
-    category="price",
-    thesis=(
-        "收益率乘以成交量的量价交互信号。同向涨跌时成交量是确认信号——"
-        "上涨放量=趋势可靠(买盘踊跃)，下跌放量=压力确认(卖盘坚决)。"
-        "价量背离时(缩量上涨/放量下跌)反映趋势脆弱性。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_volume_weighted_price_change(context: FactorContext) -> np.ndarray:
-    d = context.load("daily_adj.parquet")
-    vwpc = d["pct_chg"] * d["vol"]
-    vwpc = vwpc.clip(-1e9, 1e9)
-    return cross_sectional_rank(vwpc)
-
-
-@register_factor(
     name="high_low_expansion",
     description="日内振幅相对20日均值的扩张程度。振幅扩大=分歧加剧，振幅收缩=方向选择在即。",
     category="price",
@@ -426,10 +304,10 @@ def factor_volume_weighted_price_change(context: FactorContext) -> np.ndarray:
         "波动率突变——通常是重大信息冲击(利好或利空)或主力洗盘/出货的信号。"
         "振幅持续收缩意味着市场关注度下降或方向即将选择(暴风雨前的平静)。"
     ),
-    dependencies=("daily_adj.parquet",),
+    dependencies=("daily.parquet",),
 )
 def factor_high_low_expansion(context: FactorContext) -> np.ndarray:
-    d = context.load("daily_adj.parquet")
+    d = context.load("daily.parquet")
     hl_range = d["high"] - d["low"]
     mean_range = hl_range.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).mean()
@@ -478,6 +356,3 @@ def factor_overnight_skewness_20d(context: FactorContext) -> np.ndarray:
     )
     skew = skew.clip(-5, 5)
     return cross_sectional_rank(-skew.abs())
-
-
-    return cross_sectional_rank(corr)

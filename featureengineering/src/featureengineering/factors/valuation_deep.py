@@ -70,7 +70,8 @@ def factor_pb_turnover_regime(context: FactorContext):
         "科技股系统性排后——这并非alpha信号，而是行业偏差。"
         "行业调整后的PB消除了这种偏差，提取了真正的行业内相对价值信号。"
     ),
-    dependencies=("finance.parquet",),
+    # 2026-08-05:补声明 stock_list.parquet(load_industry_map 使用),原漏声明
+    dependencies=("finance.parquet", "stock_list.parquet"),
 )
 def factor_pb_industry_adjusted(context: FactorContext):
     finance = context.load("finance.parquet")

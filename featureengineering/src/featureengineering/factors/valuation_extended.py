@@ -61,13 +61,13 @@ def factor_dv_ttm_rank(context: FactorContext):
 
 @register_factor(
     name="dv_stability_4q",
-    description="股息稳定性因子，过去4季dv_ratio变异系数截面排名（股息稳定排前）。",
+    description="股息稳定性因子，约1季度(60交易日)dv_ratio变异系数截面排名（股息稳定排前）。",
     category="valuation",
     thesis=(
         "Dividend stability is as important as dividend level. "
         "Companies that maintain stable dividends signal confidence "
         "in future cash flows. Erratic dividends signal uncertainty. "
-        "CV of dividend yield over 4 quarters captures consistency."
+        "2026-08-05 描述修正:实现为 60 交易日(约1季)滚动 CV,原描述误写'4季'。"
     ),
     dependencies=("finance.parquet",),
 )
@@ -117,9 +117,9 @@ def factor_ps_ttm_rank(context: FactorContext):
         "P/S ratios vary dramatically by industry (tech vs utilities). "
         "Industry-neutral P/S captures within-industry relative cheapness, "
         "which is more predictive than absolute P/S level. "
-        "Uses THS sector classification."
+        "Uses stock_list.parquet industry classification (load_industry_map)."
     ),
-    dependencies=("finance.parquet", "ths_constituent_stocks.parquet"),
+    dependencies=("finance.parquet", "stock_list.parquet"),
 )
 def factor_ps_ttm_sector_neutral(context: FactorContext):
     fin = context.load("finance.parquet")

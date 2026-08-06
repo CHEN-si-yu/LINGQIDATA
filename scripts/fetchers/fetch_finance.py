@@ -108,9 +108,14 @@ def _fetch_page(start_time, end_time, page, page_size, api_key, retries=3):
             return data["list"], data["total"]
 
         except (requests.RequestException, ValueError, KeyError, RuntimeError) as e:
+            is_429 = (
+                (hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429)
+                or "429" in str(e) or "频繁" in str(e)
+            )
             if attempt < retries - 1:
                 import time
-                time.sleep(2 ** attempt)
+                # 429 限流: 用更长的退避让服务器冷却, 避免多 worker 同时重试放大压力
+                time.sleep((15 * (2 ** attempt)) if is_429 else (2 ** attempt))
                 log_print(f"  [retry {attempt+1}/{retries}] {e}")
             else:
                 raise
@@ -129,7 +134,7 @@ def _fetch_and_save(start_time, end_time, label, api_key, checkpoints_dir):
 
 
 def fetch_finance(start_date="2020-01-01", end_date=None, output=None,
-                  resume=True, workers=6, cleanup=True):
+                  resume=True, workers=6, cleanup=True, stock_filter=None):
     """Fetch daily financial data (PE, PB, turnover, market cap etc.) for all stocks.
 
     Parameters
@@ -222,6 +227,12 @@ def fetch_finance(start_date="2020-01-01", end_date=None, output=None,
         df = df.sort_values(['_sort_code', 'trade_date']).drop(columns=['_sort_code']).reset_index(drop=True)
 
     log_print(f"[finance] Total: {len(df)} rows, {len(df.columns)} columns")
+
+    if stock_filter:
+        _keep = set(stock_filter)
+        before = len(df)
+        df = df[df['stock_code'].astype(str).str[:6].isin(_keep)]
+        log_print(f"[finance] stock-filter (Code_num): {before} -> {len(df)} rows")
 
     if output is None:
         output = f"{DATA_DIR}/finance.parquet"

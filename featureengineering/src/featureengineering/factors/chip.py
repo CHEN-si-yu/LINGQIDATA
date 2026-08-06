@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, rolling_group_std, safe_divide
+
+
+def _close_adj_basis(daily_panel: pd.DataFrame) -> pd.Series:
+    """返回未复权 close，与 cyq 成本价直接比较（历史数据原则）。
+
+    不再做任何复权折算。旧实现用 adj = cumprod(1+pct_chg/100) × K(末值锚定)
+    把 close 折算到 cyq 复权口径——但除权日交易所的 pct_chg 按"除权参考价"
+    口径计算, close 与 cumprod 基座失去一致性,K 锚点跨过除权日会把全历史
+    close_adj 整体重标定 → 同一日期的因子值随构建日(数据末端)变化,即
+    "0804 构建的 0804 因子 ≠ 0805 构建的 0804 因子"(未来函数)。
+
+    直接用未复权 close:除权日 close 跳变与 cyq 复权成本价短暂失真(与
+    历史上一批"daily_adj 依赖替换为 daily 依赖"的因子同一取舍),但因子值
+    只由 ≤当日 的数据决定,不再被未来事件改写。
+    """
+    return daily_panel["close"].replace(0, np.nan)
 
 
 # ── Chip structure (cyq_perf) ────────────────────────────────────────────
@@ -38,16 +55,17 @@ def factor_chip_concentration(context: FactorContext):
     description="筹码位置因子，(close-cost_5pct)/(cost_95pct-cost_5pct)截面排名。",
     category="price",
     thesis="当前价在筹码分布中的相对位置反映获利盘大小，高位=接近套牢区上沿，上行阻力增大。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
+    dependencies=("daily.parquet", "cyq_perf.parquet"),
 )
 def factor_chip_position(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
     perf = context.load("cyq_perf.parquet")
-    close = daily_adj["close"]
+    # cyq 成本价为复权口径,把 close 折算到同一空间后再比较(见 _close_adj_basis)
+    close_adj = _close_adj_basis(daily_panel)
     lo = perf["cost_5pct"]
     hi = perf["cost_95pct"]
-    common = close.index.intersection(lo.index).intersection(hi.index)
-    position = (close.loc[common] - lo.loc[common]) / (hi.loc[common] - lo.loc[common]).replace(0, np.nan)
+    common = close_adj.index.intersection(lo.index).intersection(hi.index)
+    position = (close_adj.loc[common] - lo.loc[common]) / (hi.loc[common] - lo.loc[common]).replace(0, np.nan)
     return cross_sectional_rank(-position)
 
 
@@ -56,15 +74,15 @@ def factor_chip_position(context: FactorContext):
     description="成本偏离因子，(close-weight_avg)/weight_avg截面排名（取负向=大幅偏离排后）。",
     category="price",
     thesis="现价偏离加权平均成本越大，获利回吐/抄底反弹的均值回归动力越强。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
+    dependencies=("daily.parquet", "cyq_perf.parquet"),
 )
 def factor_cost_displacement(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
     perf = context.load("cyq_perf.parquet")
-    close = daily_adj["close"]
+    close_adj = _close_adj_basis(daily_panel)
     wavg = perf["weight_avg"]
-    common = close.index.intersection(wavg.index)
-    displacement = (close.loc[common] - wavg.loc[common]) / wavg.loc[common].replace(0, np.nan)
+    common = close_adj.index.intersection(wavg.index)
+    displacement = (close_adj.loc[common] - wavg.loc[common]) / wavg.loc[common].replace(0, np.nan)
     return cross_sectional_rank(-displacement)
 
 
@@ -137,15 +155,15 @@ def factor_chip_range_normalized(context: FactorContext):
     description="筹码支撑距离因子，close/cost_15pct-1截面排名。距离支撑位越近=反弹潜力越大。",
     category="price",
     thesis="收盘价接近15%分位成本线意味着当前价格处于筹码密集支撑区附近，技术性反弹概率增大。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
+    dependencies=("daily.parquet", "cyq_perf.parquet"),
 )
 def factor_chip_support_distance(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
     perf = context.load("cyq_perf.parquet")
-    close = daily_adj["close"]
+    close_adj = _close_adj_basis(daily_panel)
     support = perf["cost_15pct"]
-    common = close.index.intersection(support.index)
-    result = close.loc[common] / support.loc[common].replace(0, np.nan) - 1
+    common = close_adj.index.intersection(support.index)
+    result = close_adj.loc[common] / support.loc[common].replace(0, np.nan) - 1
     return cross_sectional_rank(result)
 
 
@@ -154,15 +172,15 @@ def factor_chip_support_distance(context: FactorContext):
     description="筹码阻力距离因子，cost_85pct/close-1截面排名（取负向=接近阻力排后）。",
     category="price",
     thesis="收盘价接近85%分位成本线意味着上方套牢盘压力近在咫尺，短期上行阻力增大，存在回落风险。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
+    dependencies=("daily.parquet", "cyq_perf.parquet"),
 )
 def factor_chip_resistance_distance(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
+    daily_panel = context.load("daily.parquet")
     perf = context.load("cyq_perf.parquet")
-    close = daily_adj["close"]
+    close_adj = _close_adj_basis(daily_panel)
     resistance = perf["cost_85pct"]
-    common = close.index.intersection(resistance.index)
-    result = resistance.loc[common] / close.loc[common].replace(0, np.nan) - 1
+    common = close_adj.index.intersection(resistance.index)
+    result = resistance.loc[common] / close_adj.loc[common].replace(0, np.nan) - 1
     return cross_sectional_rank(-result)
 
 
@@ -191,24 +209,6 @@ def factor_chip_winner_rate_stability_20d(context: FactorContext):
     perf = context.load("cyq_perf.parquet")
     stable = perf["winner_rate"].groupby(level="Code").transform(lambda s: s.rolling(20).std())
     return cross_sectional_rank(-stable)
-
-
-@register_factor(
-    name="chip_historical_position",
-    description="历史位置因子，(close-his_low)/(his_high-his_low)截面排名（取负向=接近历史高位排后）。",
-    category="price",
-    thesis="当前价格在历史最低到最高区间内的相对位置。接近历史高位=获利盘积累较大，上行阻力增大；接近历史低位=超卖反弹机会。",
-    dependencies=("daily_adj.parquet", "cyq_perf.parquet"),
-)
-def factor_chip_historical_position(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    perf = context.load("cyq_perf.parquet")
-    close = daily_adj["close"]
-    lo = perf["his_low"]
-    hi = perf["his_high"]
-    common = close.index.intersection(lo.index).intersection(hi.index)
-    position = (close.loc[common] - lo.loc[common]) / (hi.loc[common] - lo.loc[common]).replace(0, np.nan)
-    return cross_sectional_rank(-position)
 
 
 @register_factor(
@@ -260,9 +260,10 @@ def factor_chip_winner_rate_acceleration(context: FactorContext):
 
 @register_factor(
     name="chip_cost_kurtosis_20d",
-    description="20日成本分布峰度因子 (高尖峰排前)。",
+    description="成本分布尖峰度因子 (85%-15%价差/95%-5%价差, 低值=分布尖峰排前)。",
     category="price",
-    thesis="成本分布的尖峰形态意味着筹码高度集中在窄区间，支撑/阻力更明确",
+    thesis="成本分布的尖峰形态意味着筹码高度集中在窄区间，支撑/阻力更明确。"
+           "2026-08-05 命名修正:实现为当日截面代理(非20日滚动),'20d'后缀保留仅为兼容既有 .fea 文件名。",
     dependencies=("cyq_perf.parquet",),
 )
 def factor_chip_cost_kurtosis_20d(context: FactorContext):

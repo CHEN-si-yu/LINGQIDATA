@@ -5,7 +5,7 @@ These factors exploit raw data fields that are completely unused or severely
 underused in the existing 560+ factor library:
 
   Completely UNUSED fields:
-    - daily_adj.parquet: change (raw price difference)
+    - daily.parquet: change (raw price difference)
     - finance.parquet:   pe, pe_ttm (raw PE values)
     - stock_list.parquet: is_hs, act_ent_type, area, list_date
 
@@ -85,7 +85,7 @@ def _broadcast_identity_to_daily(
     The identity values are static per stock and are replicated across all
     trading dates in the daily panel.
     """
-    daily_adj = context.load("daily_adj.parquet")
+    daily_adj = context.load("daily.parquet")
     all_dates = daily_adj.index.get_level_values("Date").unique()
     all_codes = daily_adj.index.get_level_values("Code").unique()
 
@@ -102,58 +102,17 @@ def _broadcast_identity_to_daily(
     return result
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Section A: Raw Price Change Factor (daily_adj.parquet: change field)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="change_raw",
-    description="价格变动绝对值因子，change截面排名（大变动=高波动弹性排前）。",
-    category="price",
-    thesis=(
-        "change字段是原始价格变动（close - pre_close的绝对值方向），"
-        "不同于pct_chg的百分比度量。change捕捉的是绝对资本变动幅度，"
-        "高价股有更大的change区间。change的截面差异同时反映了价格水平和波动性，"
-        "高change股票往往伴随更强的日内资金博弈。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_change_raw(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    change = daily_adj["change"].replace([np.inf, -np.inf], np.nan)
-    return cross_sectional_rank(change)
-
-@register_factor(
-    name="change_amplitude_ratio",
-    description="价格变动振幅比因子，|change|/(high-low)截面排名（高占比=单边行情排前）。",
-    category="price",
-    thesis=(
-        "change绝对值占日内振幅(high-low)的比例反映了价格运动的单边程度。"
-        "高占比意味着日内价格以趋势性运动为主、往返较少，"
-        "是动量持续性的微观结构信号。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_change_amplitude_ratio(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    amplitude = daily_adj["high"] - daily_adj["low"]
-    change_abs = daily_adj["change"].abs()
-    ratio = safe_divide(change_abs, amplitude)
-    ratio = ratio.clip(0, 1.5)
-    return cross_sectional_rank(ratio)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # Section B: Raw PE / PE_TTM Valuation Factors (finance.parquet: pe, pe_ttm)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @register_factor(
     name="pe_ttm_absolute",
-    description="PE_TTM原始值截面排名取负，低PE=价值信号。与pe_ttm_percentile互补——该因子做截面比较而非历史比较。",
+    description="PE_TTM原始值截面排名取负，低PE=价值信号（当期所有股票的截面比较）。",
     category="valuation",
     thesis=(
         "PE_TTM原始值截面排名取负。低PE是经典的价值信号——低PE股票在A股中长期有超额收益。"
-        "现有因子pe_ttm_percentile做的是历史分位比较(当前PE在过去5年的位置)，"
-        "该因子做的是截面比较(当期所有股票PE排序)，提供独立于历史分位的估值维度。"
+        "本因子做当期截面比较(当期所有股票PE排序)。注:finance.parquet 的"
+        "pe_ttm_percentile 字段(历史分位)属禁用数据源,不用于任何因子。"
     ),
     dependencies=("finance.parquet",),
 )
@@ -275,117 +234,4 @@ def factor_turnover_f_delta_5(context: FactorContext):
     )
     delta = delta.clip(-1, 3)
     return cross_sectional_rank(-delta)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Section D: Stock Identity Factors (stock_list.parquet)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="area_return_effect",
-    description="地区动量效应因子（同area股票20日动量均值+个股偏离截面排名）。",
-    category="sector",
-    thesis=(
-        "同一地区的上市公司共享本地经济环境、政策影响和投资者关注度。"
-        "地区内股票存在协同效应：同地区股票平均动量代表了该地区的"
-        "系统性信息冲击，个股动量偏离地区均值反映了公司特异性信息。"
-        "两者结合捕捉了区域层面的alpha分层。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_area_return_effect(context: FactorContext):
-    identity = _load_stock_identity(context)
-    daily_adj = context.load("daily_adj.parquet")
-
-    # Calculate 20-day momentum per stock
-    close = daily_adj["close"]
-    mom_20 = close.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
-    )
-    mom_20 = mom_20.clip(-0.5, 1.0)
-
-    # Build area→codes mapping
-    area_map: dict[str, list[str]] = {}
-    for code, row in identity.iterrows():
-        area = str(row.get("area", "")).strip()
-        if area and area != "nan":
-            area_map.setdefault(area, []).append(code)
-
-    # Unstack for cross-sectional operations
-    mom_frame = mom_20.unstack("Code")  # Date × Code
-
-    # For each area, compute area-mean momentum and individual deviation
-    result_parts = []
-    for area, codes in area_map.items():
-        available = [c for c in codes if c in mom_frame.columns]
-        if len(available) < 2:
-            continue
-        area_mom = mom_frame[available]
-        area_mean = area_mom.mean(axis=1)
-        # Individual deviation from area mean
-        for c in available:
-            dev = area_mom[c] - area_mean
-            dev.name = c
-            result_parts.append(dev.to_frame())
-
-    if not result_parts:
-        return cross_sectional_rank(mom_20)
-
-    combined = pd.concat(result_parts, axis=1)
-    combined = combined.T.groupby(level=0).mean().T  # average across areas if multi-mapped
-    result = stack_date_code(combined)
-    result.name = "area_return_effect"
-    return cross_sectional_rank(result)
-
-@register_factor(
-    name="owner_type_momentum_div",
-    description="实控人类型动量偏离因子（个股动量偏离同实控人类型均值排前=加速）。",
-    category="sector",
-    thesis=(
-        "不同实控人类型（国企/民企/外资等）具有不同的典型动量水平。"
-        "国企由于市值大、机构持仓多，动量通常低于民企。"
-        "在同类型内比较动量偏离可以更公平地识别加速/减速股票，"
-        "避免将民企系统性高动量误判为alpha信号。"
-    ),
-    dependencies=("daily_adj.parquet",),
-)
-def factor_owner_type_momentum_div(context: FactorContext):
-    identity = _load_stock_identity(context)
-    daily_adj = context.load("daily_adj.parquet")
-
-    # 20-day momentum
-    close = daily_adj["close"]
-    mom_20 = close.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
-    )
-    mom_20 = mom_20.clip(-0.5, 1.0)
-
-    # Build owner type → codes mapping
-    owner_map: dict[str, list[str]] = {}
-    for code, row in identity.iterrows():
-        owner = str(row.get("act_ent_type", "")).strip()
-        if owner and owner != "nan":
-            owner_map.setdefault(owner, []).append(code)
-
-    mom_frame = mom_20.unstack("Code")
-
-    result_parts = []
-    for owner, codes in owner_map.items():
-        available = [c for c in codes if c in mom_frame.columns]
-        if len(available) < 3:
-            continue
-        owner_mom = mom_frame[available]
-        owner_mean = owner_mom.mean(axis=1)
-        for c in available:
-            dev = owner_mom[c] - owner_mean
-            dev.name = c
-            result_parts.append(dev.to_frame())
-
-    if not result_parts:
-        return cross_sectional_rank(mom_20)
-
-    combined = pd.concat(result_parts, axis=1)
-    combined = combined.T.groupby(level=0).mean().T
-    result = stack_date_code(combined)
-    result.name = "owner_type_momentum_div"
-    return cross_sectional_rank(result)
 

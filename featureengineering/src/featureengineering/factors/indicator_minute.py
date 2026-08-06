@@ -313,27 +313,9 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
         1.0, results["boll_width"] + 1e-10
     )
 
-    # Bollinger touch fractions
-    df["above_upper"] = (df["ma5"] > df["boll_upper"]).astype(float)
-    df["below_lower"] = (df["ma5"] < df["boll_lower"]).astype(float)
-    results["boll_touch_upper"] = grouped["above_upper"].mean()
-    results["boll_touch_lower"] = grouped["below_lower"].mean()
-    results["boll_touch_net"] = (
-        results["boll_touch_upper"] - results["boll_touch_lower"]
-    )
-
-    # Bollinger bandwalk: max consecutive minutes outside bands
-    def _max_consecutive(series):
-        """Max consecutive True values in a boolean series."""
-        if len(series) == 0:
-            return 0
-        # Identify run boundaries
-        groups = (series != series.shift()).cumsum()
-        runs = series.groupby(groups).sum()
-        return runs.max() if len(runs) > 0 else 0
-
-    results["boll_bandwalk_upper"] = grouped["above_upper"].apply(_max_consecutive)
-    results["boll_bandwalk_lower"] = grouped["below_lower"].apply(_max_consecutive)
+    # 注:2026-07-26 删除 boll_touch_ratio / boll_bandwalk_upper / boll_bandwalk_lower
+    # (零截面方差),其底层指标 boll_touch_net / boll_bandwalk_* / _max_consecutive
+    # 于 2026-08-05 一并移除。
 
     # Bollinger mid slope: intraday trend of mid band
     boll_mid_o = results["boll_mid_open"]
@@ -395,7 +377,7 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Price vs MA deviations (normalized)
-    results["price_vs_ma5"] = safe_divide(close_proxy - ma5, ma5.abs())
+    # 注:price_vs_ma5 于 2026-08-05 移除(仅服务于已删除的 price_vs_ma5_deviation)
     results["price_vs_ma10"] = safe_divide(close_proxy - ma10, ma10.abs())
     results["price_vs_ma20"] = safe_divide(close_proxy - ma20, ma20.abs())
     results["price_vs_ma30"] = safe_divide(close_proxy - ma30, ma30.abs())
@@ -537,9 +519,14 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     signals = {}
     for c in signal_cols:
         s = results.get(c, pd.Series(0.0, index=close_proxy.index))
-        # Normalize to roughly [-1, 1] range
-        if s.std() > 0:
-            signals[c] = (s - s.mean()) / s.std()
+        # 仅用"截至当日"的历史做归一化(expanding)——全序列 mean/std 会把未来数据
+        # 泄漏进历史值:0804 的 z-score 会用到 0805 才存在的序列统计,同一日期因子值
+        # 随构建日(数据末端)变化(2026-08-05 切片对比发现的 indicator_dispersion /
+        # multi_indicator_extreme 全日期段差异即由此而来)。
+        if s.std() > 0:  # 整段序列非恒定才标准化,与旧逻辑同判断
+            em = s.expanding(min_periods=20).mean()
+            es = s.expanding(min_periods=20).std().replace(0, np.nan)
+            signals[c] = (s - em) / es
         else:
             signals[c] = s.fillna(0)
     sig_df = pd.DataFrame(signals, index=close_proxy.index)
@@ -596,6 +583,43 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
         results.get("pm_rsi_mean", pd.Series(np.nan, index=close_proxy.index)),
     )
 
+    # ── 2026-08-05: position-in-range & cross-day indicator structure ─────
+    # RSI/KDJ 收盘在当日区间的相对位置(与 rsi_range/j_range 的绝对宽度互补)
+    rsi_span = (results["rsi_max"] - results["rsi_min"]).replace(0, np.nan)
+    results["rsi_day_position"] = (results["rsi_close"] - results["rsi_min"]) / rsi_span
+    j_span = (results["j_max"] - results["j_min"]).replace(0, np.nan)
+    results["j_day_position"] = (results["j_close"] - results["j_min"]) / j_span
+
+    # MACD 柱面积均量(日内 |macd| 均值,能量口径) —— 向量化:
+    # SeriesGroupBy 无 .abs(),先取绝对值再按日期分组求均值
+    results["macd_bar_energy"] = (
+        df["macd"].abs().groupby(df["trade_date"]).mean()
+    )
+
+    # MA10/MA30 斜率(与已有 ma5_slope/ma20_slope 构成全斜率谱)
+    ma10_o = results["ma10_open"]
+    ma30_o = results["ma30_open"]
+    results["ma10_slope"] = safe_divide(
+        results["ma10_close"] - ma10_o, ma10_o.abs()
+    )
+    results["ma30_slope"] = safe_divide(
+        results["ma30_close"] - ma30_o, ma30_o.abs()
+    )
+    # MA5 与 MA10 的乖离(短均线系统的内部结构)
+    results["ma5_ma10_gap"] = safe_divide(
+        results["ma5_close"] - results["ma10_close"], results["ma10_close"]
+    )
+
+    # ── Cross-day structure(跨日,与 rv_rolling_5d_std 同模式) ─────────────
+    # 布林带宽5日变化(>0=波动扩张启动)
+    results["boll_width_5d_chg"] = results["boll_width"] - results["boll_width"].shift(5)
+    # RSI 超额(收盘−50)5日均值(中期动能水平)
+    results["rsi_excess_ma5"] = results["rsi_excess"].rolling(5, min_periods=3).mean()
+    # KDJ 多头占比5日变化(金叉状态增强/衰减)
+    results["kdj_bull_frac_5d_chg"] = results["kdj_bull_frac"] - results["kdj_bull_frac"].shift(5)
+    # J 值5日变化(KDJ 动能加速)
+    results["j_close_5d_gap"] = results["j_close"] - results["j_close"].shift(5)
+
     # ═════════════════════════════════════════════════════════════════════
     # Return the full metrics DataFrame
     # ═════════════════════════════════════════════════════════════════════
@@ -642,25 +666,26 @@ INDICATOR_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "rsi_overbought_frac":         ("rsi_overbought_frac",  "neg"),
     "rsi_oversold_frac":           ("rsi_oversold_frac",    "pos"),
     # ── Bollinger family ────────────────────────────────────────────────
+    # 注:2026-07-26 已删除 boll_touch_ratio / boll_bandwalk_upper / boll_bandwalk_lower
+    # (零截面方差),其 spec 条目一并移除,避免被构建器重建。
     "boll_position":               ("boll_position",        "pos"),
     "boll_width_20":               ("boll_width",           "neg"),
-    "boll_touch_ratio":            ("boll_touch_net",       "pos"),
     "boll_squeeze":                ("boll_squeeze",         "neg"),
-    "boll_bandwalk_upper":         ("boll_bandwalk_upper",  "neg"),
-    "boll_bandwalk_lower":         ("boll_bandwalk_lower",  "pos"),
     "boll_mid_slope":              ("boll_mid_slope",       "pos"),
     "boll_width_change":           ("boll_width_change",    "pos"),
     "boll_band_deviation":         ("boll_band_deviation",  "neg_abs"),
     # ── MA family ───────────────────────────────────────────────────────
+    # 注:2026-07-26 已删除 price_vs_ma5_deviation (零截面方差),spec 条目一并移除。
     "ma_alignment_score":          ("ma_alignment",         "pos"),
     "ma_dispersion":               ("ma_dispersion",        "neg"),
-    "price_vs_ma5_deviation":      ("price_vs_ma5",         "neg_abs"),
     "price_vs_ma20_deviation":     ("price_vs_ma20",        "neg_abs"),
     "price_vs_ma60_deviation":     ("price_vs_ma60",        "neg_abs"),
     "ma5_slope":                   ("ma5_slope",            "pos"),
     "ma20_slope":                  ("ma20_slope",           "pos"),
     "ma_convergence":              ("ma_convergence",       "neg"),
-    "ma_cross_count":              ("ma_cross_count",       "pos"),
+    # 方向 "neg" 与回退函数 cross_sectional_rank(-cc) 及 description
+    # "交叉多=方向切换频繁排后" 一致 (2026-08-05 修复,原误写 "pos" 与回退路径相反)
+    "ma_cross_count":              ("ma_cross_count",       "neg"),
     "ma_bull_bear_ratio":          ("ma_bull_bear_ratio",   "pos"),
     "ma_curvature":                ("ma_curvature",         "pos"),
     # ── Volume MA family ────────────────────────────────────────────────
@@ -688,17 +713,25 @@ INDICATOR_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "pm_rsi_trend":                ("pm_rsi_trend",         "pos"),
     "am_pm_macd_ratio":            ("am_pm_macd_ratio",     "pos"),
     "am_pm_rsi_ratio":             ("am_pm_rsi_ratio",      "pos"),
-    # ── New: additional transforms of existing metrics (10) ──
-    "macd_signal_momentum":         ("macd_signal_raw",      "momentum"),
-    "macd_trend_momentum_rev":      ("macd_trend_strength",  "momentum_rev"),
-    "kdj_j_momentum":               ("j_close",              "momentum_rev"),
-    "kdj_cross_net_momentum":       ("kdj_cross_net",        "momentum"),
-    "rsi_trend_momentum":           ("rsi_time_corr",        "momentum"),
-    "boll_position_momentum":       ("boll_position",        "momentum"),
-    "boll_squeeze_pos":             ("boll_squeeze",         "pos"),
-    "ma_alignment_momentum":        ("ma_alignment",         "momentum"),
-    "mavol_ratio_momentum":         ("mavol_ratio",          "momentum"),
-    "indicator_consensus_momentum": ("indicator_consensus",  "momentum"),
+    # 注:2026-08-05 清理 —— 10 个 *momentum/momentum_rev/boll_squeeze_pos 孤儿条目
+    # 无对应 register_factor 函数,且 Phase 3 不处理 "momentum"/"momentum_rev" 方向
+    # (会落入 else 分支产出空帧),全部移除。
+    # ── 2026-08-05 新增:未映射指标补位(3) ───────────────────────────────
+    "price_vs_ma10_deviation":   ("price_vs_ma10",        "neg_abs"),
+    "price_vs_ma30_deviation":   ("price_vs_ma30",        "neg_abs"),
+    "kdj_dead_cross_count":      ("kdj_dead_cross_count", "neg"),
+    # ── 2026-08-05 新增:日内区间位置与斜率结构(6) ──────────────────────
+    "rsi_day_position":          ("rsi_day_position",     "pos"),
+    "j_day_position":            ("j_day_position",       "pos"),
+    "macd_bar_energy":           ("macd_bar_energy",      "neg"),
+    "ma10_slope":                ("ma10_slope",           "pos"),
+    "ma30_slope":                ("ma30_slope",           "pos"),
+    "ma5_ma10_gap":              ("ma5_ma10_gap",         "pos"),
+    # ── 2026-08-05 新增:跨日结构(4) ────────────────────────────────────
+    "boll_width_5d_change":      ("boll_width_5d_chg",    "pos"),
+    "rsi_trend_ma5":             ("rsi_excess_ma5",       "pos"),
+    "kdj_bull_frac_5d_change":   ("kdj_bull_frac_5d_chg", "pos"),
+    "kdj_j_5d_acceleration":     ("j_close_5d_gap",       "pos"),
 }
 
 #: All metric columns produced by ``_indicator_all_metrics`` that map to factors.
@@ -791,6 +824,7 @@ def build_indicator_1min_new(
     from ..dataset import _load_allowed_codes
     from ..storage import (
         ensure_single_factor_frame,
+        record_build_elapsed,
         write_factor,
         write_factor_incremental,
     )
@@ -959,6 +993,7 @@ def build_indicator_1min_new(
 
     output: dict[str, pd.DataFrame] = {}
     errors_build: list[str] = []
+    fac_elapsed: dict[str, float] = {}  # per-factor assembly time (seconds)
 
     pbar_factor = tqdm(
         total=total_factors, desc="  Factors", unit="fac",
@@ -969,6 +1004,7 @@ def build_indicator_1min_new(
     for name in factor_names:
         pbar_factor.set_postfix_str(f"{name}")
         pbar_factor.update(0)
+        t_fac = time.perf_counter()
 
         if name not in INDICATOR_FACTOR_SPEC:
             output[name] = pd.DataFrame()
@@ -997,6 +1033,7 @@ def build_indicator_1min_new(
 
             frame = ensure_single_factor_frame(ranked, name)
             output[name] = frame
+            fac_elapsed[name] = time.perf_counter() - t_fac
         except Exception:
             output[name] = pd.DataFrame()
             errors_build.append(name)
@@ -1039,12 +1076,18 @@ def build_indicator_1min_new(
 
         spec = get_factor(name)
         try:
+            t_write = time.perf_counter()
             if not factor_path.exists() or min_trade_time is None:
                 write_factor(spec, frame, paths=paths)
                 action = "rebuild"
             else:
                 write_factor_incremental(spec, frame, paths=paths)
                 action = "incremental"
+            # Record the factor's generation time (seconds) in its manifest
+            record_build_elapsed(
+                paths.manifest_output_dir / f"{name}.json",
+                fac_elapsed.get(name, 0.0) + (time.perf_counter() - t_write),
+            )
             results.append(BuildResult(
                 factor_name=name, action=action, elapsed=0.0,
                 rows=len(frame), factor_path=factor_path,

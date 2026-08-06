@@ -15,6 +15,7 @@ import numpy as np
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, rolling_group_mean, safe_divide
+from .chip import _close_adj_basis
 
 
 # ── 筹码离散度与形态 ─────────────────────────────────────────────────────
@@ -119,19 +120,20 @@ def factor_chip_peak_shift(context: FactorContext):
     description="筹码压力比因子，(price-cost_85pct)/(cost_15pct-price)截面排名（上方套牢>下方获利=压力大排后）。",
     category="coupling",
     thesis="上方套牢盘与下方获利盘的比例关系衡量筹码的'重力方向'——上方套牢盘越重（高cost_85pct），股价上涨阻力越大；下方获利盘越多（低cost_15pct），股价下跌支撑越强。比值>2=压力远大于支撑。",
-    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
 )
 def factor_chip_above_below_ratio(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
-    daily = context.load("daily_adj.parquet")
+    daily = context.load("daily.parquet")
 
-    close = daily["close"]
+    # cyq 成本价为复权口径,把 close 折算到同一空间后再比较(见 chip._close_adj_basis)
+    close_adj = _close_adj_basis(daily)
     cost_85 = cyq["cost_85pct"]
     cost_15 = cyq["cost_15pct"]
 
-    common = close.index.intersection(cost_85.index).intersection(cost_15.index)
-    above = close.loc[common] - cost_85.loc[common]  # distance above 85th pct
-    below = cost_15.loc[common] - close.loc[common]  # distance below 15th pct
+    common = close_adj.index.intersection(cost_85.index).intersection(cost_15.index)
+    above = close_adj.loc[common] - cost_85.loc[common]  # distance above 85th pct
+    below = cost_15.loc[common] - close_adj.loc[common]  # distance below 15th pct
 
     ratio = safe_divide(above, below)
     return cross_sectional_rank(-ratio)
@@ -142,18 +144,18 @@ def factor_chip_above_below_ratio(context: FactorContext):
     description="筹码支撑强度因子，cost_15pct处的筹码密度×1/(价格-成本15pct距离)截面排名。",
     category="coupling",
     thesis="底部的筹码密集区形成支撑——筹码支撑强度=底部筹码密度×距离倒数。底部筹码越多、价格离支撑越近，支撑力越强。这是技术分析中'筹码密集区是强支撑'的量化表达。",
-    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
 )
 def factor_chip_support_strength(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
-    daily = context.load("daily_adj.parquet")
+    daily = context.load("daily.parquet")
 
-    close = daily["close"]
+    close_adj = _close_adj_basis(daily)
     cost_15 = cyq["cost_15pct"]
     cost_5 = cyq["cost_5pct"]
 
-    common = close.index.intersection(cost_15.index)
-    price = close.loc[common]
+    common = close_adj.index.intersection(cost_15.index)
+    price = close_adj.loc[common]
     c15 = cost_15.loc[common]
     c5 = cost_5.loc[common]
 
@@ -196,15 +198,15 @@ def factor_winner_rate_change_20d(context: FactorContext) -> np.ndarray:
         "抛售意愿降低+抄底意愿增强=强支撑区域。价格远高于中位成本=获利盘充裕,"
         "存在获利回吐压力。该因子做多超跌(远离成本线下方)的股票。"
     ),
-    dependencies=("cyq_perf.parquet", "daily_adj.parquet"),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
 )
 def factor_cost_support_strength(context: FactorContext) -> np.ndarray:
     cyq = context.load("cyq_perf.parquet")
-    d = context.load("daily_adj.parquet")
-    common = cyq.index.intersection(d.index)
+    d = context.load("daily.parquet")
+    close_adj = _close_adj_basis(d)
+    common = cyq.index.intersection(close_adj.index)
     cost50 = cyq.loc[common, "cost_50pct"]
-    close = d.loc[common, "close"]
-    deviation = safe_divide(close - cost50, cost50)
+    deviation = safe_divide(close_adj.loc[common] - cost50, cost50)
     return cross_sectional_rank(-deviation)
 
 
@@ -224,3 +226,27 @@ def factor_chip_cost_convergence_20d(context: FactorContext) -> np.ndarray:
     width = safe_divide(cyq["cost_85pct"] - cyq["cost_5pct"], cyq["cost_50pct"])
     chg = width.groupby(level="Code").transform(lambda s: s.diff(20))
     return cross_sectional_rank(-chg)
+
+
+# ── 成本溢价动量 ───────────────────────────────────────────────────────────
+
+@register_factor(
+    name="chip_cost_premium_change_20",
+    description="成本溢价动量：(close-cost_50pct)/cost_50pct的20日变化截面排名。溢价率抬升=资金持续高于成本线买入。",
+    category="price",
+    thesis=(
+        "cost_support_strength 是现价相对50%成本位的溢价水平，本因子捕捉其20日变化——"
+        "溢价率持续抬升=资金不断以高于筹码成本的价格承接，成本线正在被夯实为支撑；"
+        "溢价率走低=价格向成本线靠拢，支撑在失守。与 chip_cost_momentum_20d 的"
+        "weight_avg 口径互补(本因子用成本中位数位)。"
+    ),
+    dependencies=("cyq_perf.parquet", "daily.parquet"),
+)
+def factor_chip_cost_premium_change_20(context: FactorContext) -> np.ndarray:
+    cyq = context.load("cyq_perf.parquet")
+    d = context.load("daily.parquet")
+    close_adj = _close_adj_basis(d)
+    cost50 = cyq["cost_50pct"]
+    premium = safe_divide(close_adj - cost50, cost50)
+    chg = premium.groupby(level="Code").transform(lambda s: s.diff(20))
+    return cross_sectional_rank(chg)

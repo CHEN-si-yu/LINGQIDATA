@@ -106,35 +106,8 @@ def factor_order_size_ratio_change(context: FactorContext):
     return cross_sectional_rank(chg)
 
 @register_factor(
-    name="mf_price_divergence",
-    description="资金流-价格背离因子，(主力净流入排名-涨跌幅排名)截面排名（流入但不涨=压盘吸筹排前）。",
-    category="fund_flow",
-    thesis="主力资金持续流入但股价不涨甚至下跌是'压盘吸筹'的典型特征——主力通过大单拆小、限价挂单等方式隐藏买入意图，在低位默默收集筹码。这种背离积累到一定程度后通常伴随爆发性上涨。",
-    dependencies=("main_fund_flow.parquet", "daily_adj.parquet"),
-)
-def factor_mf_price_divergence(context: FactorContext):
-    ff = context.load("main_fund_flow.parquet")
-    daily = context.load("daily_adj.parquet")
-
-    net = ff["net_mf_amount"]
-    total = _total_amount(ff)
-    net_ratio = net / total
-
-    close = daily["close"]
-    ret_5d = close.groupby(level="Code").transform(
-        lambda s: s.pct_change(5)
-    )
-
-    common = net_ratio.index.intersection(ret_5d.index)
-    net_rank = net_ratio.loc[common].groupby(level="Date").rank(pct=True)
-    ret_rank = ret_5d.loc[common].groupby(level="Date").rank(pct=True)
-
-    divergence = net_rank - ret_rank
-    return cross_sectional_rank(divergence)
-
-@register_factor(
     name="smart_money_concentration",
-    description="聪明钱集中度因子，(特大单净买-小单净卖)/abs(all net)截面排名（聪明钱相对噪音交易者越集中排前）。",
+    description="聪明钱集中度因子，(特大单+大单净买-小单-中单净卖)/总成交额截面排名（聪明钱相对噪音交易者越集中排前）。",
     category="fund_flow",
     thesis="将订单按规模分为聪明钱(特大+大单)和噪音(小+中单)——"
            "聪明钱净买入远大于噪音交易者净买入时=机构主导定价权、方向可靠；"
@@ -183,8 +156,7 @@ def factor_order_size_concentration(context: FactorContext):
         + (lg_total / total_amount) ** 2
         + (elg_total / total_amount) ** 2
     )
-    # Direction sign: large+elg net direction
-    big_net = (lg_total - 2 * (ff["sell_lg_amount"] - ff["buy_lg_amount"]).abs() / total_amount)  # proxy
+    # 注:旧 big_net 死代码已于 2026-08-05 移除(未使用且单位混乱)
     # Simplified: if ELG+LG net is positive, HHI is positive; if negative, HHI is negative
     smart_direction = (
         ff["buy_elg_amount"] - ff["sell_elg_amount"]

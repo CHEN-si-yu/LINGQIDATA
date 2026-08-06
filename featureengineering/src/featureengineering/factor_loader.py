@@ -12,7 +12,7 @@ _LOADED = False
 # Mirrors the same classification in prepared_data.py's
 # _identify_continuous_daily_factors().
 _DAILY_SOURCES = {
-    "daily_adj.parquet", "daily.parquet", "finance.parquet",
+    "daily.parquet", "finance.parquet",
     "cyq_perf.parquet", "main_fund_flow.parquet", "margin_detail.parquet",
     "limit_up.parquet", "dragon_tiger.parquet", "top_list.parquet",
     "limit_list.parquet", "ths_daily.parquet", "ths_sector_categories.parquet",

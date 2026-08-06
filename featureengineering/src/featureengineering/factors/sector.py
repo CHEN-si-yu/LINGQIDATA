@@ -1,3 +1,15 @@
+"""
+行业板块因子模块（基于 stock_list.parquet 的静态行业映射）。
+
+⚠️ 时点风险：stock_list.parquet 为当前快照，行业归属按当前值回填历史日期。
+行业板块成分变动缓慢（区别于概念板块），影响有限；此警示保留。
+
+历史说明：本模块原依赖 ths_constituent_stocks / ths_sector_categories /
+ths_daily，但 type='I' 行业板块在现有数据中成分数为 0（5000 行成分全部为
+type='BB'），THS 查询路径必然回退到 stock_list.industry，并白读 57.5MB 的
+ths_daily.parquet。2026-07-31 重构：回退路径提升为唯一实现。
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,7 +18,6 @@ import pandas as pd
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, stack_date_code
 
-# ── THS 板块数据加载辅助 ───────────────────────────────────────────────────────
 
 def _pad_code(code: str) -> str:
     """Strip exchange suffix and zero-pad to 6 digits, e.g. '000001.SZ' → '000001'."""
@@ -16,163 +27,134 @@ def _pad_code(code: str) -> str:
             code = code[: -len(suffix)]
     return code.zfill(6)
 
-def _load_ths_sector_panel(context: FactorContext) -> pd.DataFrame:
-    """Load THS sector daily close prices as a Date x ths_code wide DataFrame."""
-    src = context.repo.paths.source_root
-    raw = context.repo._read_parquet(src / "ths_daily.parquet")
-    raw = raw.copy()
-    raw["trade_date"] = raw["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
-    panel = raw.pivot(index="trade_date", columns="ths_code", values="close")
-    panel.index.name = "Date"
-    panel.columns.name = "ths_code"
-    return panel.sort_index()
 
-def _load_stock_sector_map(context: FactorContext) -> dict[str, list[str]]:
-    """Build a mapping: stock_code (6-digit) -> list of THS industry sector codes.
+def _load_industry_map(context: FactorContext) -> dict[str, list[str]]:
+    """Build a mapping: stock_code (6-digit) -> list of industry names.
 
-    Only includes sectors of type 'I' (industry classification).
+    Uses ``stock_list.parquet``'s static ``industry`` field (申万/东财行业).
     Cached at module level to avoid redundant I/O.
-
-    .. warning::
-       **数据泄露风险**: ``ths_constituent_stocks.parquet`` 不含日期字段，
-       为静态快照。板块/概念成分股会随时间变化（新增、剔除），
-       但此映射将所有历史日期统一应用当前快照，可能引入前瞻偏差。
-       对于 type='I'（行业板块）成分股变化较慢、影响有限；
-       对于 type='N'（概念板块）主题板块更动态、泄漏风险更高。
-       若数据源提供历史成分股快照，应改为按日期动态加载。
-       当前实现仅使用 type='I' 行业板块以最小化泄露风险。
     """
-    cache = getattr(_load_stock_sector_map, "_cache", None)
+    cache = getattr(_load_industry_map, "_cache", None)
     if cache is not None:
         return cache
 
     src = context.repo.paths.source_root
-    cs = context.repo._read_parquet(src / "ths_constituent_stocks.parquet")
-    sc = context.repo._read_parquet(src / "ths_sector_categories.parquet")
-
-    import logging
-    _logger = logging.getLogger(__name__)
-
-    # Only use industry sectors
-    industry_codes = set(sc[sc["type"] == "I"]["index_code"])
-    cs_industry = cs[cs["index_code"].isin(industry_codes)]
-    if cs_industry.empty:
-        _logger.debug(
-            "sector: type=I industry sectors not found in constituent data, "
-            "trying stock_list.parquet industry field (申万行业) as fallback."
-        )
-        # ── Fallback 1: stock_list.parquet industry field ──
-        try:
-            stock_list = context.repo._read_parquet(src / "stock_list.parquet")
-            if "industry" in stock_list.columns:
-                stock_map_fb: dict[str, list[str]] = {}
-                for _, row in stock_list.iterrows():
-                    code = _pad_code(row["stock_code"])
-                    ind = (row.get("industry") or "").strip()
-                    if ind:
-                        stock_map_fb.setdefault(code, []).append(ind)
-                if stock_map_fb:
-                    n_sec = len({i for v in stock_map_fb.values() for i in v})
-                    _logger.debug(
-                        "sector: using stock_list industry (%d sectors, %d stocks).",
-                        n_sec, len(stock_map_fb),
-                    )
-                    _load_stock_sector_map._cache = stock_map_fb
-                    return stock_map_fb
-        except Exception:
-            _logger.warning("sector: stock_list fallback failed, trying type=BB/N.")
-
-        # ── Fallback 2: BB/N market-relative ──
-        _logger.warning(
-            "sector: falling back to type=BB/N — factors become market-relative."
-        )
-        industry_codes = set(sc[sc["type"].isin(["BB", "N"])]["index_code"])
-        cs_industry = cs[cs["index_code"].isin(industry_codes)]
+    stock_list = context.repo._read_parquet(src / "stock_list.parquet")
+    allowed = context.repo.allowed_codes
 
     stock_map: dict[str, list[str]] = {}
-    for _, row in cs_industry.iterrows():
+    for _, row in stock_list.iterrows():
         code = _pad_code(row["stock_code"])
-        ths = row["index_code"]
-        stock_map.setdefault(code, []).append(ths)
+        if allowed and code not in allowed:
+            continue
+        ind = (row.get("industry") or "").strip()
+        if ind:
+            stock_map.setdefault(code, []).append(ind)
 
-    _load_stock_sector_map._cache = stock_map
+    _load_industry_map._cache = stock_map
     return stock_map
 
-# ── THS 板块因子 ───────────────────────────────────────────────────────────────
+
+def _build_sector_stocks(
+    stock_map: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """Invert the stock→industry map into industry→[stocks]."""
+    sector_stocks: dict[str, list[str]] = {}
+    for code, industries in stock_map.items():
+        for ind in industries:
+            sector_stocks.setdefault(ind, []).append(code)
+    return sector_stocks
+
+
+def _map_sector_metric_to_stocks(
+    sector_metric: pd.DataFrame,
+    sector_stocks: dict[str, list[str]],
+) -> pd.Series:
+    """Broadcast a Date × industry metric back to (Date, Code), averaging
+    across a stock's industries when it belongs to several."""
+    parts: list[pd.DataFrame] = []
+    for ind, codes in sector_stocks.items():
+        if ind not in sector_metric.columns:
+            continue
+        ind_values = sector_metric[ind]
+        available_codes = [c for c in codes]
+        if not available_codes:
+            continue
+        df = pd.DataFrame(
+            {code: ind_values for code in available_codes},
+            index=ind_values.index,
+        )
+        parts.append(df)
+
+    if not parts:
+        idx = pd.MultiIndex.from_tuples([], names=["Date", "Code"])
+        return pd.Series(dtype=float, index=idx, name="value")
+
+    combined = pd.concat(parts, axis=1)
+    combined = combined.T.groupby(level=0).mean().T
+    combined.columns.name = "Code"
+    combined = stack_date_code(combined)
+    combined.name = "value"
+    return combined
+
+
+# ── 行业内排名因子 ─────────────────────────────────────────────────────────
 
 @register_factor(
     name="sector_mv_rank",
-    description="板块内市值占比因子，个股总市值在所属THS行业板块内的截面排名。",
+    description="行业内市值占比因子，个股总市值在所属行业内的截面排名。",
     category="sector",
-    thesis="板块内市值最大的公司通常是行业龙头，享有流动性溢价、机构关注度和定价权优势。板块内市值排名比绝对市值排名更能反映公司在细分赛道中的竞争地位。",
-    dependencies=("finance.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
+    thesis="行业内市值最大的公司通常是行业龙头，享有流动性溢价、机构关注度和定价权优势。行业内排名比绝对市值排名更能反映公司在细分赛道中的竞争地位。",
+    dependencies=("finance.parquet", "stock_list.parquet"),
 )
 def factor_sector_mv_rank(context: FactorContext):
     finance = context.load("finance.parquet")
     total_mv = finance["total_mv"].where(finance["total_mv"] > 0, np.nan)
 
-    stock_map = _load_stock_sector_map(context)
-    sector_panel = _load_ths_sector_panel(context)
+    stock_map = _load_industry_map(context)
+    sector_stocks = _build_sector_stocks(stock_map)
 
-    # Build sector→stocks mapping
-    # When using non-THS sector codes (e.g. stock_list industry names),
-    # skip the sector_panel filter since codes won't match ths_daily columns.
-    _any_ths_code = any(str(s).endswith(".TI") for sectors in stock_map.values() for s in sectors)
-    sector_stocks: dict[str, list[str]] = {}
-    for code, sectors in stock_map.items():
-        for ths in sectors:
-            if (not _any_ths_code) or (ths in sector_panel.columns):
-                sector_stocks.setdefault(ths, []).append(code)
-
-    # For each sector on each date, rank stocks by market value within the sector
+    # For each industry on each date, rank stocks by market value within it
     mv_frame = total_mv.unstack("Code")  # Date × Code
     rank_parts: list[pd.Series] = []
 
-    for ths, codes in sector_stocks.items():
+    for ind, codes in sector_stocks.items():
         available = [c for c in codes if c in mv_frame.columns]
         if len(available) < 3:
             continue
         sector_mv = mv_frame[available]
-        sector_rank = sector_mv.rank(axis=1, pct=True)  # within-sector rank
+        sector_rank = sector_mv.rank(axis=1, pct=True)  # within-industry rank
         rank_parts.append(sector_rank)
 
     if not rank_parts:
         return cross_sectional_rank(total_mv)
 
-    # Average within-sector rank across all sectors each stock belongs to
+    # Average within-industry rank across all industries each stock belongs to
     combined = pd.concat(rank_parts, axis=1)
     combined = combined.T.groupby(level=0).mean().T
     combined = stack_date_code(combined)
     combined.name = "sector_mv_rank"
     return cross_sectional_rank(combined)
 
+
 @register_factor(
     name="sector_amount_rank",
-    description="板块内成交额占比因子，个股成交额在所属THS行业板块内的截面排名。",
+    description="行业内成交额占比因子，个股成交额在所属行业内的截面排名。",
     category="sector",
-    thesis="板块内成交额占比高的个股是资金关注的焦点，具有更好的流动性和价格发现效率。成交额占比持续领先的个股往往是板块的情绪龙头或机构重仓标的。",
-    dependencies=("daily_adj.parquet", "ths_constituent_stocks.parquet", "ths_sector_categories.parquet"),
+    thesis="行业内成交额占比高的个股是资金关注的焦点，具有更好的流动性和价格发现效率。成交额占比持续领先的个股往往是行业的情绪龙头或机构重仓标的。",
+    dependencies=("daily.parquet", "stock_list.parquet"),
 )
 def factor_sector_amount_rank(context: FactorContext):
-    daily_adj = context.load("daily_adj.parquet")
-    amount = daily_adj["amount"].where(daily_adj["amount"] > 0, np.nan)
+    daily = context.load("daily.parquet")
+    amount = daily["amount"].where(daily["amount"] > 0, np.nan)
 
-    stock_map = _load_stock_sector_map(context)
-    sector_panel = _load_ths_sector_panel(context)
-
-    # When using non-THS sector codes (e.g. stock_list industry names),
-    # skip the sector_panel filter since codes won't match ths_daily columns.
-    _any_ths_code = any(str(s).endswith(".TI") for sectors in stock_map.values() for s in sectors)
-    sector_stocks: dict[str, list[str]] = {}
-    for code, sectors in stock_map.items():
-        for ths in sectors:
-            if (not _any_ths_code) or (ths in sector_panel.columns):
-                sector_stocks.setdefault(ths, []).append(code)
+    stock_map = _load_industry_map(context)
+    sector_stocks = _build_sector_stocks(stock_map)
 
     amt_frame = amount.unstack("Code")
     rank_parts: list[pd.DataFrame] = []
 
-    for ths, codes in sector_stocks.items():
+    for ind, codes in sector_stocks.items():
         available = [c for c in codes if c in amt_frame.columns]
         if len(available) < 3:
             continue
@@ -188,5 +170,3 @@ def factor_sector_amount_rank(context: FactorContext):
     combined = stack_date_code(combined)
     combined.name = "sector_amount_rank"
     return cross_sectional_rank(combined)
-
-# ═══════════════════════════════════════════════════════════════════════════════

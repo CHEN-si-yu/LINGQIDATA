@@ -33,6 +33,7 @@ from .registry import FactorSpec, get_factor
 from .settings import ProjectPaths, configure_paths
 from .storage import (
     ensure_single_factor_frame,
+    record_build_elapsed,
     write_factor,
     write_factor_incremental,
     write_target,
@@ -467,6 +468,8 @@ def _compute_group_sequential(
             _write_done_marker(spec.name, action, paths.manifest_output_dir)
 
             elapsed = time.perf_counter() - t0
+            # Record the factor's generation time (seconds) in its manifest
+            record_build_elapsed(manifest_path, elapsed)
             results.append(BuildResult(
                 factor_name=spec.name,
                 factor_path=factor_path,
@@ -575,6 +578,8 @@ def _compute_group_parallel(
             _write_done_marker(spec.name, action, paths.manifest_output_dir)
 
             elapsed = time.perf_counter() - t0
+            # Record the factor's generation time (seconds) in its manifest
+            record_build_elapsed(manifest_path, elapsed)
             logger.info("  %-35s %-15s %8.1fs %5d rows", spec.name, action, elapsed, rows)
             return BuildResult(
                 factor_name=spec.name,

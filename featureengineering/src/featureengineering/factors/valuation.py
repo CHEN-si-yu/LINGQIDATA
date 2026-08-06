@@ -151,21 +151,6 @@ def factor_volume_ratio(context: FactorContext):
     return cross_sectional_rank(-vol_ratio)
 
 
-# ── PE percentile ───────────────────────────────────────────────────────
-
-@register_factor(
-    name="pe_ttm_percentile",
-    description="PE_TTM历史分位因子（低分位=估值处于历史低位，排前）。",
-    category="valuation",
-    thesis="估值相对于自身历史的低位是价值回归的潜在信号。",
-    dependencies=("finance.parquet",),
-)
-def factor_pe_ttm_percentile(context: FactorContext):
-    finance = context.load("finance.parquet")
-    percentile = finance["pe_ttm_percentile"]
-    return cross_sectional_rank(-percentile)
-
-
 # ── Dividend composite ────────────────────────────────────────────────────
 
 @register_factor(
@@ -182,9 +167,5 @@ def factor_dv_composite(context: FactorContext):
         rank_ttm = finance["dv_ttm"].groupby(level="Date").rank(pct=True)
     composite = (rank_ratio + rank_ttm) / 2.0
     return composite.rename("dv_composite")
-
-from .neutral import _industry_neutral_rank
-
-
 
 

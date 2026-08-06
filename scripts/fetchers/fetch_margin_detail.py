@@ -65,9 +65,14 @@ def _fetch_page(start_time, end_time, page, page_size, api_key, retries=3):
             return data["list"], data["total"]
 
         except (requests.RequestException, ValueError, KeyError, RuntimeError) as e:
+            is_429 = (
+                (hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429)
+                or "429" in str(e) or "频繁" in str(e)
+            )
             if attempt < retries - 1:
                 import time
-                time.sleep(2 ** attempt)
+                # 429 限流: 用更长的退避让服务器冷却, 避免多 worker 同时重试放大压力
+                time.sleep((15 * (2 ** attempt)) if is_429 else (2 ** attempt))
                 log_print(f"  [retry {attempt+1}/{retries}] {e}")
             else:
                 raise
@@ -117,7 +122,7 @@ def _fetch_and_save(start_time, end_time, label, api_key, checkpoints_dir):
 
 
 def fetch_margin_detail(start_date="2019-01-01", end_date=None, output=None,
-                        resume=True, workers=6, cleanup=True):
+                        resume=True, workers=6, cleanup=True, stock_filter=None):
     """Fetch margin trading detail (融资融券) for all stocks, daily.
 
     This is the largest-volume fetch — daily data across ~5000 stocks
@@ -205,6 +210,25 @@ def fetch_margin_detail(start_date="2019-01-01", end_date=None, output=None,
         df = df.sort_values(['_sort_code', 'trade_date']).drop(columns=['_sort_code']).reset_index(drop=True)
 
     log_print(f"[margin_detail] Total: {len(df)} rows, {len(df.columns)} columns")
+
+    if stock_filter:
+        _keep = set(stock_filter)
+        before = len(df)
+        df = df[df['stock_code'].astype(str).str[:6].isin(_keep)]
+        log_print(f"[margin_detail] stock-filter (Code_num): {before} -> {len(df)} rows")
+
+    # 服务器偶发同一 (stock_code, trade_date) 返回多行 (仅 exchange_id 不同:
+    # SZ/SZSE/空 等变体), 全量拉取路径无增量合并去重, 会原样落盘导致下游
+    # pivot 报 "Index contains duplicate entries" (2026-08-01 实测 5105 行)。
+    # 优先保留 exchange_id 非空的行。
+    before = len(df)
+    df['_has_ex'] = df['exchange_id'].astype(str).str.len() > 0
+    df = (df.sort_values('_has_ex')
+            .drop_duplicates(subset=['stock_code', 'trade_date'], keep='last')
+            .drop(columns='_has_ex')
+            .reset_index(drop=True))
+    if len(df) < before:
+        log_print(f"[margin_detail] dedup (exchange_id 变体): {before} -> {len(df)} rows")
 
     if output is None:
         output = f"{DATA_DIR}/margin_detail.parquet"

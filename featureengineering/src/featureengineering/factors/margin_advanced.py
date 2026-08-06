@@ -3,11 +3,13 @@ Advanced margin / short-selling factors — Class 1 panel factors.
 
 These factors extend beyond the basic margin and short-selling signals
 with cross-data-source interactions:
-  - margin_detail + daily_adj: price-margin confirmation
-  - margin_detail + daily: leverage bet ratio (long vs short)
   - margin_detail + finance: total leverage to market cap
 
-Data sources: margin_detail.parquet, daily_adj.parquet, daily.parquet, finance.parquet
+Data sources: margin_detail.parquet, finance.parquet
+
+时点对齐:margin_detail 因上游延迟一天,数据层已统一 shift(1)
+(Date=T 上的 margin 值 = 原始 T-1)。跨源混算时非 margin 数据必须
+同步 shift(1) 对齐(见 factor_total_leverage_ratio 的分母 total_mv)。
 """
 
 from __future__ import annotations
@@ -18,52 +20,8 @@ import pandas as pd
 from ..registry import FactorContext, register_factor
 from ..utils import (
     cross_sectional_rank,
-    rolling_group_mean,
-    rolling_group_std,
     safe_divide,
 )
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Section A: Price-Margin Confirmation — margin_detail + daily_adj
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="margin_price_confirmation_5d",
-    description="融资余额5日变化率×当日收益率，量价确认信号。量价齐升=排名高，背离=排名低。",
-    category="fund_flow",
-    thesis="融资余额变化率乘以当日价格变化率，构成量价确认信号。融资增加+价格上涨(量价齐升)"
-           "意味着杠杆资金推动的上涨有基本面支撑；融资增加+价格下跌(量价背离)意味着"
-           "杠杆资金接盘但股价不涨——典型的机构出货信号。",
-    dependencies=("margin_detail.parquet", "daily_adj.parquet"),
-)
-def factor_margin_price_confirmation_5d(context: FactorContext) -> np.ndarray:
-    m = context.load("margin_detail.parquet")
-    d = context.load("daily_adj.parquet")
-    rzye_chg = m["rzye"].groupby(level="Code").transform(lambda s: s.pct_change(5))
-    common_idx = rzye_chg.index.intersection(d.index)
-    confirmation = rzye_chg.loc[common_idx] * d.loc[common_idx, "pct_chg"] / 100.0
-    confirmation = confirmation.clip(-0.5, 0.5)
-    return cross_sectional_rank(confirmation)
-
-
-@register_factor(
-    name="short_price_reversal_5d",
-    description="融券余额5日变化率×当日收益率取反。空头加仓+价格上涨=恶劣信号，排名低。",
-    category="fund_flow",
-    thesis="融券余额变化率乘以当日收益率取反排名。融券增加+价格上涨(空头在上涨中加仓)"
-           "意味着聪明钱认为上涨不可持续——是恶劣的看空信号；融券减少+价格下跌"
-           "(空头在下跌中回补)意味着空头开始离场，可能反转。",
-    dependencies=("margin_detail.parquet", "daily_adj.parquet"),
-)
-def factor_short_price_reversal_5d(context: FactorContext) -> np.ndarray:
-    m = context.load("margin_detail.parquet")
-    d = context.load("daily_adj.parquet")
-    rqye_chg = m["rqye"].groupby(level="Code").transform(lambda s: s.pct_change(5))
-    common_idx = rqye_chg.index.intersection(d.index)
-    reversal = rqye_chg.loc[common_idx] * d.loc[common_idx, "pct_chg"] / 100.0
-    reversal = reversal.clip(-0.5, 0.5)
-    return cross_sectional_rank(-reversal)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -82,10 +40,13 @@ def factor_short_price_reversal_5d(context: FactorContext) -> np.ndarray:
 def factor_total_leverage_ratio(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
     f = context.load("finance.parquet")
-    common_idx = m.index.intersection(f.index)
+    # margin 面板已 shift(1):Date=T 上的 rzrqye 是原始 T-1 值。
+    # 分母 total_mv 未 shift,必须同步 shift(1) 对齐,否则分子(T-1)÷分母(T) 产生 1 日错配。
+    mv_lag = f["total_mv"].groupby(level="Code").shift(1)
+    common_idx = m.index.intersection(mv_lag.index)
     ratio = safe_divide(
         m.loc[common_idx, "rzrqye"],
-        f.loc[common_idx, "total_mv"],
+        mv_lag.loc[common_idx],
     )
     ratio = ratio.clip(0, 0.5)
     return cross_sectional_rank(-ratio)

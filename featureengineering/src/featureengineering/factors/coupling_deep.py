@@ -17,7 +17,6 @@ import pandas as pd
 from ..registry import FactorContext, register_factor
 from ..utils import (
     cross_sectional_rank,
-    rolling_group_mean,
     rolling_group_std,
     safe_divide,
 )
@@ -36,74 +35,9 @@ def _delta(s: pd.Series, window: int) -> pd.Series:
 def _momentum(s: pd.Series, window: int) -> pd.Series:
     return s.groupby(level="Code").transform(lambda x: x.pct_change(window))
 
-def _rolling_corr(a: pd.Series, b: pd.Series, window: int, min_periods: int | None = None) -> pd.Series:
-    """Per-code rolling correlation between two (Date, Code) MultiIndex Series."""
-    mp = min_periods or max(1, window // 2)
-    result = pd.Series(np.nan, index=a.index)
-    for code in a.index.get_level_values("Code").unique():
-        try:
-            sa = a.xs(code, level="Code")
-            sb = b.xs(code, level="Code")
-            corr = sa.rolling(window, min_periods=mp).corr(sb)
-            idx = pd.MultiIndex.from_arrays(
-                [corr.index, [code] * len(corr)], names=["Date", "Code"]
-            )
-            tmp = pd.Series(corr.values, index=idx)
-            result.update(tmp)
-        except KeyError:
-            continue
-    return result.dropna()
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# A — Triple Interactions & Resonance
+# A — Interactions & Resonance
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="bp_mom_resonance",
-    description="BP-动量共振因子，(bp排名-0.5)×(mom_20排名-0.5)×2截面排名（正向共振=高估值+正动量排前）。",
-    category="coupling",
-    thesis="BP和动量的共振(同向)比背离更具信息量——高BP+正动量=价值重估确认，低BP+负动量=价值陷阱。共振强度量化了价值和趋势的'协调度'。",
-    dependencies=("__factors__", "bp", "mom_20"),
-)
-def factor_bp_mom_resonance(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    mom = ctx.load_factor("mom_20")
-
-    common = bp.index.intersection(mom.index)
-    bp_dev = _rank(bp.loc[common]) - 0.5
-    mom_dev = _rank(mom.loc[common]) - 0.5
-    resonance = bp_dev * mom_dev * 2.0  # range [-0.5, 0.5]
-    return cross_sectional_rank(resonance)
-
-@register_factor(
-    name="size_momentum_interaction",
-    description="规模-动量交互因子，(1-规模排名)×动量排名截面排名（小盘+高动量=成长爆发排前）。",
-    category="coupling",
-    thesis="规模和动量的交互捕捉小盘成长股的爆发力——小市值股票的高动量往往伴随更大的上涨空间。大盘股的动量虽然可靠但弹性有限，小盘+高动量是A股中弹性最大的因子组合。",
-    dependencies=("__factors__", "log_total_mv", "mom_20"),
-)
-def factor_size_momentum_interaction(ctx: FactorContext) -> pd.Series:
-    size = ctx.load_factor("log_total_mv")
-    mom = ctx.load_factor("mom_20")
-
-    common = size.index.intersection(mom.index)
-    interaction = (1 - _rank(size.loc[common])) * _rank(mom.loc[common])
-    return cross_sectional_rank(interaction)
-
-@register_factor(
-    name="volatility_reversal_interaction",
-    description="波动率-反转交互因子，(高波动率排名)×(低动量排名)截面排名（高波+超跌=反弹潜力排前）。",
-    category="coupling",
-    thesis="高波动率股票在经历大幅下跌后的反弹力度最强——波动率提供了反弹的'弹簧'，低动量提供了反弹的'位置'(超跌)。高波+超跌是经典的均值回复策略标的。",
-    dependencies=("__factors__", "volatility_20", "mom_20"),
-)
-def factor_volatility_reversal_interaction(ctx: FactorContext) -> pd.Series:
-    vol = ctx.load_factor("volatility_20")
-    mom = ctx.load_factor("mom_20")
-
-    common = vol.index.intersection(mom.index)
-    interaction = _rank(vol.loc[common]) * (1 - _rank(mom.loc[common]))
-    return cross_sectional_rank(interaction)
 
 @register_factor(
     name="fundflow_value_interaction",
@@ -119,21 +53,6 @@ def factor_fundflow_value_interaction(ctx: FactorContext) -> pd.Series:
     common = mf.index.intersection(bp.index)
     interaction = _rank(mf.loc[common]) * _rank(bp.loc[common])
     return cross_sectional_rank(interaction)
-
-@register_factor(
-    name="sector_momentum_coupling",
-    description="板块-个股动量耦合因子，板块动量排名×个股动量排名截面排名。板块与个股动量共振。",
-    category="coupling",
-    thesis="板块动量与个股动量的耦合效应是行业轮动策略的核心——在强势板块中选择强势个股(双强)是顺势而为的最佳策略。板块弱而个股强可能不可持续，板块强而个股弱则有补涨空间。",
-    dependencies=("__factors__", "sector_mv_rank", "mom_20"),
-)
-def factor_sector_momentum_coupling(ctx: FactorContext) -> pd.Series:
-    sector = ctx.load_factor("sector_mv_rank")
-    mom = ctx.load_factor("mom_20")
-
-    common = sector.index.intersection(mom.index)
-    coupling = _rank(sector.loc[common]) * _rank(mom.loc[common])
-    return cross_sectional_rank(coupling)
 
 @register_factor(
     name="factor_trend_strength_60",
@@ -223,56 +142,6 @@ def factor_factor_consistency_score(ctx: FactorContext) -> pd.Series:
     return cross_sectional_rank(consistency)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# C — Orthogonalization & Neutral
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@register_factor(
-    name="multi_factor_orthogonal",
-    description="多因子正交残差因子，mom_20对size+bp+volatility回归残差截面排名（纯动量alpha）。",
-    category="coupling",
-    thesis="将动量对规模、价值和波动率同时正交化后，得到的残差是最纯净的动量alpha——它剔除了常见风险因子的影响，代表了无法被其他因子解释的独立趋势信号。",
-    dependencies=("__factors__", "mom_20", "log_total_mv", "bp", "volatility_20"),
-)
-def factor_multi_factor_orthogonal(ctx: FactorContext) -> pd.Series:
-    mom = ctx.load_factor("mom_20")
-    size = ctx.load_factor("log_total_mv")
-    bp = ctx.load_factor("bp")
-    vol = ctx.load_factor("volatility_20")
-
-    common = mom.index.intersection(size.index).intersection(bp.index).intersection(vol.index)
-    mom_a = mom.loc[common]
-    size_a = size.loc[common]
-    bp_a = bp.loc[common]
-    vol_a = vol.loc[common]
-
-    residual = pd.Series(np.nan, index=mom_a.index)
-    for date in mom_a.index.get_level_values("Date").unique():
-        m = mom_a.xs(date, level="Date")
-        s = size_a.xs(date, level="Date")
-        b = bp_a.xs(date, level="Date")
-        v = vol_a.xs(date, level="Date")
-        mask = m.notna() & s.notna() & b.notna() & v.notna()
-        if mask.sum() < 50:
-            continue
-        X = np.column_stack([s[mask].values, b[mask].values, v[mask].values])
-        y = m[mask].values
-        try:
-            coeffs = np.linalg.lstsq(
-                np.column_stack([np.ones(len(y)), X]), y, rcond=None
-            )[0]
-            predicted = coeffs[0] + X @ coeffs[1:]
-            resid_vals = y - predicted
-            idx = pd.MultiIndex.from_arrays(
-                [[date] * len(resid_vals), s[mask].index], names=["Date", "Code"]
-            )
-            tmp = pd.Series(resid_vals, index=idx)
-            residual.update(tmp)
-        except np.linalg.LinAlgError:
-            continue
-
-    return cross_sectional_rank(residual)
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # D — Factor Crowding & Risk
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -327,39 +196,6 @@ def factor_sentiment_value_gap(ctx: FactorContext) -> pd.Series:
     common = mf.index.intersection(bp.index)
     gap = _rank(mf.loc[common]) - _rank(bp.loc[common])
     return cross_sectional_rank(-gap.abs())
-
-@register_factor(
-    name="sentiment_momentum_confirmation",
-    description="情绪-动量确认因子，资金流排名×动量排名截面排名（情绪+趋势双确认=最强短线排前）。",
-    category="coupling",
-    thesis="资金情绪和价格趋势的同向确认是短线交易的最强信号——资金在买+价格在涨=市场共识。两者背离(资金在买但价格在跌)则需要更深入分析。",
-    dependencies=("__factors__", "mf_net_inflow_ratio", "mom_20"),
-)
-def factor_sentiment_momentum_confirmation(ctx: FactorContext) -> pd.Series:
-    mf = ctx.load_factor("mf_net_inflow_ratio")
-    mom = ctx.load_factor("mom_20")
-
-    common = mf.index.intersection(mom.index)
-    confirm = _rank(mf.loc[common]) * _rank(mom.loc[common])
-    return cross_sectional_rank(confirm)
-
-@register_factor(
-    name="momentum_value_resonance_deep",
-    description="动量价值深度共振因子，(mom_20排名×bp排名)×(1+|mom_20排名-bp排名|)截面排名。",
-    category="coupling",
-    thesis="动量与价值不仅需要同向(共振)，还需要强度匹配——高动量+高价值的'完美共振'比一高一低的'弱共振'更有投资价值。深度共振评分综合了方向一致性和强度匹配度。",
-    dependencies=("__factors__", "mom_20", "bp"),
-)
-def factor_momentum_value_resonance_deep(ctx: FactorContext) -> pd.Series:
-    mom = ctx.load_factor("mom_20")
-    bp = ctx.load_factor("bp")
-
-    common = mom.index.intersection(bp.index)
-    mom_r = _rank(mom.loc[common])
-    bp_r = _rank(bp.loc[common])
-
-    resonance = mom_r * bp_r * (1 - np.abs(mom_r - bp_r))
-    return cross_sectional_rank(resonance)
 
 @register_factor(
     name="factor_cycle_position",
@@ -464,20 +300,3 @@ def factor_factor_multi_horizon_momentum(ctx: FactorContext) -> pd.Series:
 
     return cross_sectional_rank(composite)
 
-@register_factor(
-    name="factor_style_rotation_20",
-    description="因子风格轮动信号因子，(bp排名20日变化-mom_20排名20日变化)截面排名（正=转向价值排前）。",
-    category="coupling",
-    thesis="因子排名的相对变化捕捉因子层面的风格轮动——价值排名上升+动量排名下降=市场正在转向价值风格。因子风格轮动信号是宏观因子配置的核心参考。",
-    dependencies=("__factors__", "bp", "mom_20"),
-)
-def factor_factor_style_rotation_20(ctx: FactorContext) -> pd.Series:
-    bp = ctx.load_factor("bp")
-    mom = ctx.load_factor("mom_20")
-
-    common = bp.index.intersection(mom.index)
-    bp_chg = _rank(bp.loc[common]).groupby(level="Code").diff(20)
-    mom_chg = _rank(mom.loc[common]).groupby(level="Code").diff(20)
-
-    rotation = bp_chg.fillna(0) - mom_chg.fillna(0)
-    return cross_sectional_rank(rotation)
