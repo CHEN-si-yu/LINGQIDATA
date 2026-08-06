@@ -35,7 +35,7 @@ from ..utils import cross_sectional_rank
 
 @register_factor(
     name="volume_price_liftoff_20",
-    description="量价起飞因子：momentum_20×volume_breakout_confirm_20×(1−drawdown_60)截面排名。",
+    description="量价起飞因子：momentum_20×volume_breakout_confirm_20×drawdown_60截面排名。",
     category="coupling",
     thesis="A股「量价起飞」的量化刻画:价格突破(动量+接近突破位)必须有量能确认"
            "(放量突破)且趋势完整(回撤浅)——三者共振=资金推动的实质行情启动,"
@@ -46,7 +46,7 @@ def factor_volume_price_liftoff_20(ctx: FactorContext):
     mom = ctx.load_factor("momentum_20")
     brk = ctx.load_factor("volume_breakout_confirm_20")
     dd = ctx.load_factor("drawdown_60")
-    return cross_sectional_rank(mom * brk * (1.0 - dd))
+    return cross_sectional_rank(mom * brk * dd)
 
 
 @register_factor(
@@ -99,7 +99,7 @@ def factor_lowvol_liftoff_combo_20(ctx: FactorContext):
 
 @register_factor(
     name="liftoff_pulse_combo_20",
-    description="资金脉冲起飞因子：amount_surge_count_20×momentum_10×(1−drawdown_60)截面排名。",
+    description="资金脉冲起飞因子：amount_surge_count_20×momentum_10×drawdown_60截面排名。",
     category="coupling",
     thesis="资金脉冲频繁(成交额异常放大反复出现)+短期动量+趋势完整=大资金反复"
            "进出的活跃票正处于启动段——脉冲是资金行为痕迹,动量确认方向,"
@@ -111,7 +111,7 @@ def factor_liftoff_pulse_combo_20(ctx: FactorContext):
     pulse = ctx.load_factor("amount_surge_count_20")
     mom = ctx.load_factor("momentum_10")
     dd = ctx.load_factor("drawdown_60")
-    return cross_sectional_rank(pulse * mom * (1.0 - dd))
+    return cross_sectional_rank(pulse * mom * dd)
 
 
 @register_factor(
@@ -186,7 +186,7 @@ def factor_chip_price_resonance_20(ctx: FactorContext):
 
 @register_factor(
     name="defensive_momentum_combo_60",
-    description="防御动量复合因子：(1−beta_60)×momentum_60×ulcer_index_20截面排名。",
+    description="防御动量复合因子：beta_60×momentum_60×ulcer_index_20截面排名。",
     category="coupling",
     thesis="低beta(市场敏感度低)+中期动量+低溃疡(回撤浅而短)=「不靠市场也能涨」"
            "的防御型趋势——低beta过滤系统性行情依赖,溃疡指数约束回撤体验,"
@@ -197,7 +197,7 @@ def factor_defensive_momentum_combo_60(ctx: FactorContext):
     beta = ctx.load_factor("beta_60")
     mom = ctx.load_factor("momentum_60")
     ulcer = ctx.load_factor("ulcer_index_20")
-    return cross_sectional_rank((1.0 - beta) * mom * ulcer)
+    return cross_sectional_rank(beta * mom * ulcer)
 
 
 @register_factor(
@@ -218,7 +218,7 @@ def factor_multi_horizon_momentum_combo_20(ctx: FactorContext):
 
 @register_factor(
     name="fund_flow_alpha_combo_60",
-    description="主力资金独立alpha因子：mf_net_inflow_5d×momentum_60×(1−corr_market_60)截面排名。",
+    description="主力资金独立alpha因子：mf_net_inflow_5d×momentum_60×corr_market_60截面排名。",
     category="coupling",
     thesis="主力净流入+中期动量+低市场相关=「资金推动的独立行情」——低相关"
            "排除市场beta贡献(独立alpha),主力流入提供机构证据,动量确认趋势。"
@@ -229,7 +229,7 @@ def factor_fund_flow_alpha_combo_60(ctx: FactorContext):
     mf = ctx.load_factor("mf_net_inflow_5d")
     mom = ctx.load_factor("momentum_60")
     corr = ctx.load_factor("corr_market_60")
-    return cross_sectional_rank(mf * mom * (1.0 - corr))
+    return cross_sectional_rank(mf * mom * corr)
 
 
 @register_factor(
@@ -267,7 +267,7 @@ def factor_reversal_liquidity_combo_5(ctx: FactorContext):
 
 @register_factor(
     name="margin_trend_combo_20",
-    description="杠杆趋势复合因子：margin_net_flow_ratio×momentum_20×(1−drawdown_60)截面排名。",
+    description="杠杆趋势复合因子：margin_net_flow_ratio×momentum_20×drawdown_60截面排名。",
     category="coupling",
     thesis="融资净流入+价格动量+趋势完整的杠杆资金确认——融资加仓是杠杆资金"
            "的真金白银表态,动量确认方向,浅回撤确认趋势健康。三因子共振="
@@ -280,7 +280,7 @@ def factor_margin_trend_combo_20(ctx: FactorContext):
     mf = ctx.load_factor("margin_net_flow_ratio")
     mom = ctx.load_factor("momentum_20").reindex(mf.index)
     dd = ctx.load_factor("drawdown_60").reindex(mf.index)
-    return cross_sectional_rank(mf * mom * (1.0 - dd))
+    return cross_sectional_rank(mf * mom * dd)
 
 
 @register_factor(

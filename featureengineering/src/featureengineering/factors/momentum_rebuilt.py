@@ -46,7 +46,9 @@ def _adjusted_close(daily: pd.DataFrame) -> pd.Series:
 def factor_momentum_5(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    mom = adj.groupby(level="Code").transform(lambda s: s.pct_change(5))
+    mom = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(5, fill_method=None)
+    )
     return cross_sectional_rank(mom)
 
 
@@ -60,7 +62,9 @@ def factor_momentum_5(context: FactorContext):
 def factor_momentum_10(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    mom = adj.groupby(level="Code").transform(lambda s: s.pct_change(10))
+    mom = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(10, fill_method=None)
+    )
     return cross_sectional_rank(mom)
 
 
@@ -75,7 +79,9 @@ def factor_momentum_10(context: FactorContext):
 def factor_momentum_20(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    mom = adj.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    mom = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(20, fill_method=None)
+    )
     return cross_sectional_rank(mom)
 
 
@@ -90,7 +96,9 @@ def factor_momentum_20(context: FactorContext):
 def factor_momentum_60(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    mom = adj.groupby(level="Code").transform(lambda s: s.pct_change(60))
+    mom = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(60, fill_method=None)
+    )
     return cross_sectional_rank(mom)
 
 
@@ -105,7 +113,9 @@ def factor_momentum_60(context: FactorContext):
 def factor_short_term_reversal_5(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    mom5 = adj.groupby(level="Code").transform(lambda s: s.pct_change(5))
+    mom5 = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(5, fill_method=None)
+    )
     return cross_sectional_rank(-mom5)
 
 
@@ -122,8 +132,8 @@ def factor_momentum_stability_20_60(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
     g = adj.groupby(level="Code")
-    mom20 = g.transform(lambda s: s.pct_change(20))
-    mom60 = g.transform(lambda s: s.pct_change(60))
+    mom20 = g.transform(lambda s: s.pct_change(20, fill_method=None))
+    mom60 = g.transform(lambda s: s.pct_change(60, fill_method=None))
     accel = mom20 - mom60
     return cross_sectional_rank(accel)
 
@@ -191,7 +201,9 @@ def factor_drawdown_60(context: FactorContext):
         lambda s: s.rolling(60, min_periods=30).max()
     )
     drawdown = adj / peak.replace(0, np.nan) - 1.0  # ≤ 0
-    return cross_sectional_rank(-drawdown)
+    # drawdown is non-positive, so ranking it directly puts values closest to
+    # zero (the shallowest drawdowns) first, as required by the factor thesis.
+    return cross_sectional_rank(drawdown)
 
 
 @register_factor(
@@ -210,7 +222,7 @@ def factor_drawdown_120(context: FactorContext):
         lambda s: s.rolling(120, min_periods=60).max()
     )
     drawdown = adj / peak.replace(0, np.nan) - 1.0  # ≤ 0
-    return cross_sectional_rank(-drawdown)
+    return cross_sectional_rank(drawdown)
 
 
 @register_factor(

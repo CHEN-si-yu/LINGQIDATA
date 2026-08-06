@@ -54,11 +54,13 @@ def factor_sector_amount_momentum_5d(context: FactorContext):
 
     if not sector_avg_amount:
         return cross_sectional_rank(
-            amount.groupby(level="Code").transform(lambda s: s.pct_change(5))
+            amount.groupby(level="Code").transform(
+                lambda s: s.pct_change(5, fill_method=None)
+            )
         )
 
     sector_avg_df = pd.DataFrame(sector_avg_amount)
-    sector_amount_mom_5 = sector_avg_df.pct_change(5)
+    sector_amount_mom_5 = sector_avg_df.pct_change(5, fill_method=None)
     sector_amount_mom_5 = sector_amount_mom_5.replace([np.inf, -np.inf], np.nan)
 
     stock_metric = _map_sector_metric_to_stocks(sector_amount_mom_5, sector_stocks)
@@ -92,7 +94,9 @@ def factor_industry_relative_momentum_20(context: FactorContext):
     sector_stocks = _build_sector_stocks(stock_map)
 
     adj = _adjusted_close(daily)
-    mom20 = adj.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    mom20 = adj.groupby(level="Code").transform(
+        lambda s: s.pct_change(20, fill_method=None)
+    )
     mom_frame = mom20.unstack("Code")
 
     # Industry mean 20d momentum (Date × industry), then broadcast back to

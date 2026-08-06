@@ -76,7 +76,7 @@ def factor_chip_cost_momentum_20d(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
     wa = cyq["weight_avg"]
     mom = wa.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
+        lambda s: s.pct_change(20, fill_method=None)
     )
     return cross_sectional_rank(mom)
 
@@ -108,7 +108,7 @@ def factor_chip_peak_shift(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
     c50 = cyq["cost_50pct"]
     shift = c50.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
+        lambda s: s.pct_change(20, fill_method=None)
     )
     return cross_sectional_rank(shift)
 

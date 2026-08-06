@@ -47,7 +47,14 @@ def _intraday_all_metrics(
         ``close.shift(1)`` fallback is used (only for uncalled code paths).
     """
     df = stock_df.copy()
-    # Use .dt accessor — trade_time is datetime64[us], not string
+    # Parquet row order is not a data contract.  first/last/shift/cummax below
+    # must operate in chronological minute order.
+    df["trade_time"] = pd.to_datetime(df["trade_time"], errors="coerce")
+    df = (
+        df.dropna(subset=["trade_time"])
+        .sort_values("trade_time", kind="stable")
+        .reset_index(drop=True)
+    )
     ts = df["trade_time"]
     df["trade_date"] = ts.dt.strftime("%Y%m%d")
     df["minute"] = ts.dt.hour * 60 + ts.dt.minute
@@ -1033,7 +1040,7 @@ def build_intraday_new(
                 s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
-            raw_metrics[col] = s
+            raw_metrics[col] = s.sort_index()
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
@@ -1085,7 +1092,7 @@ def build_intraday_new(
                 ranked = cross_sectional_rank(raw)
             else:  # "neg"
                 ranked = cross_sectional_rank(-raw)
-            frame = ensure_single_factor_frame(ranked, name)
+            frame = ensure_single_factor_frame(ranked, name, paths=paths)
             output[name] = frame
             fac_elapsed[name] = time.perf_counter() - t_fac
         except Exception:
@@ -1310,7 +1317,7 @@ def build_intraday_unified(
             # calls get_level_values("Date") / groupby(level="Date").
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
-            raw_metrics[col] = s
+            raw_metrics[col] = s.sort_index()
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
@@ -1340,7 +1347,7 @@ def build_intraday_unified(
             continue
 
         ranked = cross_sectional_rank(raw if direction == "pos" else -raw)
-        frame = ensure_single_factor_frame(ranked, name)
+        frame = ensure_single_factor_frame(ranked, name, paths=paths)
 
         # No per-factor file read needed here — the date filter was
         # already applied above (or we're in full-rebuild mode).

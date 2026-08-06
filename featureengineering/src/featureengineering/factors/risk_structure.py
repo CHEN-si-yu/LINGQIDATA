@@ -24,7 +24,7 @@ from .market_relative import _market_proxy, _ret_wide
 
 @register_factor(
     name="cvar_95_120",
-    description="120日CVaR因子：低于5%分位收益日的均值（条件尾部损失），排名高=尾部风险小。",
+    description="120日CVaR因子：1%至5%滚动分位的积分近似（条件尾部损失），排名高=尾部风险小。",
     category="risk",
     thesis="CVaR(条件VaR)取最坏5%日收益的均值,比 var_95_20 的单点分位数更稳健地"
            "度量尾部损失的期望深度——两只股票 VaR 相同但 CVaR 更负者尾部更肥"
@@ -35,9 +35,15 @@ from .market_relative import _market_proxy, _ret_wide
 def factor_cvar_95_120(context: FactorContext):
     daily = context.load("daily.parquet")
     ret_w = _ret_wide(daily)
-    q05 = ret_w.rolling(120, min_periods=60).quantile(0.05)
-    tail = ret_w.where(ret_w <= q05)
-    cvar_w = tail.rolling(120, min_periods=3).mean()
+    # CVaR_5% = (1/0.05) * integral_0^0.05 VaR_q dq.  Averaging five
+    # contemporaneous rolling quantiles is a vectorised Riemann approximation
+    # and, unlike filtering each old return by its old threshold, describes
+    # the *current* 120-day distribution at every date.
+    quantiles = [
+        ret_w.rolling(120, min_periods=60).quantile(q)
+        for q in (0.01, 0.02, 0.03, 0.04, 0.05)
+    ]
+    cvar_w = sum(quantiles) / len(quantiles)
     return cross_sectional_rank(stack_date_code(cvar_w))
 
 

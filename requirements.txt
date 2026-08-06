@@ -1,0 +1,21 @@
+# LINGQIDATA - A-share cross-sectional factor engineering
+# Core data processing
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+
+# Deep learning (Model training)
+torch>=2.0.0
+pytorch-lightning>=2.0.0
+tensorboard>=2.14.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Utilities
+tqdm>=4.65.0
+python-dateutil>=2.8.0
+
+# Jupyter (for notebooks in debug/)
+jupyter>=1.0.0
+ipykernel>=6.25.0

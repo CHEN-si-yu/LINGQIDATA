@@ -40,11 +40,13 @@ def _compute_rsrs_beta(high, low, window=18):
     y = high
     n = window
 
-    sum_x = x.groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n//2).sum())
-    sum_y = y.groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n//2).sum())
-    sum_xy = (x * y).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n//2).sum())
-    sum_x2 = (x * x).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n//2).sum())
-    sum_y2 = (y * y).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n//2).sum())
+    # The closed-form OLS equations below use n explicitly, so values are
+    # valid only once the complete n-observation window is present.
+    sum_x = x.groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n).sum())
+    sum_y = y.groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n).sum())
+    sum_xy = (x * y).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n).sum())
+    sum_x2 = (x * x).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n).sum())
+    sum_y2 = (y * y).groupby(level="Code").transform(lambda s: s.rolling(n, min_periods=n).sum())
 
     denominator = n * sum_x2 - sum_x * sum_x
     beta = safe_divide(n * sum_xy - sum_x * sum_y, denominator)
@@ -188,7 +190,8 @@ def factor_donchian_position_20(context: FactorContext):
     adj_low = daily["low"] * scale
     adj = _adjusted_close(daily)
 
-    highest = adj_high.groupby(level="Code").transform(
+    previous_high = adj_high.groupby(level="Code").shift(1)
+    highest = previous_high.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).max()
     )
     lowest = adj_low.groupby(level="Code").transform(
@@ -277,5 +280,4 @@ def factor_atr_ratio_20(context: FactorContext):
 
     atr_pct = safe_divide(atr, adj + 1e-10)
     return cross_sectional_rank(-atr_pct)  # low relative ATR = stable
-
 

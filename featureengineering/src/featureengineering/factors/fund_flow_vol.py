@@ -212,10 +212,10 @@ def factor_mf_vol_amount_corr_20(context: FactorContext):
 
     # Daily change rates
     vol_chg = total_vol.groupby(level="Code").transform(
-        lambda s: s.pct_change(1)
+        lambda s: s.pct_change(1, fill_method=None)
     )
     amt_chg = total_amt.groupby(level="Code").transform(
-        lambda s: s.pct_change(1)
+        lambda s: s.pct_change(1, fill_method=None)
     )
 
     # 20-day rolling correlation of daily changes
@@ -265,7 +265,7 @@ def factor_mf_avg_trade_price_momentum(context: FactorContext):
 
     # 5-day momentum of ratio
     mom = ratio.groupby(level="Code").transform(
-        lambda s: s.pct_change(5)
+        lambda s: s.pct_change(5, fill_method=None)
     )
     mom = mom.clip(-0.3, 0.5)
 

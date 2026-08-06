@@ -12,6 +12,7 @@ from .settings import ProjectPaths, configure_paths
 
 
 _MAX_CACHE_SIZE = 16
+_MARGIN_CALENDAR_BUFFER_DAYS = 14
 
 
 # ── allowed stock pool ──────────────────────────────────────────────────────
@@ -45,28 +46,17 @@ def _load_allowed_codes(path: Path) -> set[str]:
 
 
 
-def _fill_source_gaps(df, extend_to_date: str | None = None):
-    """Forward-fill internal date gaps in source data, and optionally extend
-    forward to *extend_to_date* using the daily_adj calendar (for margin_detail
-    T+1 alignment).
-    """
+def _fill_source_gaps(
+    df: pd.DataFrame,
+    trading_dates: list[str],
+    extend_to_date: str | None = None,
+) -> pd.DataFrame:
+    """Forward-fill whole-date source gaps on the canonical daily calendar."""
     if df.empty:
         return df
     if not hasattr(df.index, "names") or list(df.index.names) != ["Date", "Code"]:
         return df
-    from pathlib import Path as _Path
-    import pandas as _pd
-
-    # Resolve daily_adj path from settings rather than hardcoding
-    from .settings import PATHS
-    ref_daily = _pd.read_parquet(
-        PATHS.source_root / "daily.parquet",
-        columns=["trade_date"],
-    )
-    ref_dates_raw = (
-        ref_daily["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
-    )
-    ref_dates = sorted(ref_dates_raw.unique())
+    ref_dates = trading_dates
     current_dates = df.index.get_level_values("Date").unique()
     current_min, current_max = current_dates.min(), current_dates.max()
 
@@ -89,16 +79,16 @@ def _fill_source_gaps(df, extend_to_date: str | None = None):
             if prev is None:
                 continue
             prev_data = result.loc[prev]
-            new_idx = _pd.MultiIndex.from_product(
+            new_idx = pd.MultiIndex.from_product(
                 [[miss_d], codes], names=["Date", "Code"]
             )
             new_data = prev_data.reindex(codes)
             new_data.index = new_idx
             fill_parts.append(new_data)
         if fill_parts:
-            fill_df = _pd.concat(fill_parts)
+            fill_df = pd.concat(fill_parts)
             fill_df = fill_df.reorder_levels(["Date", "Code"]).sort_index()
-            result = _pd.concat([result, fill_df])
+            result = pd.concat([result, fill_df])
             result = result[~result.index.duplicated(keep="last")]
             result = result.sort_index()
 
@@ -118,15 +108,47 @@ def _fill_source_gaps(df, extend_to_date: str | None = None):
                 last_data = result.loc[current_max_str]
                 tail_codes = last_data.index.unique()
                 for ext_d in ext_dates:
-                    new_idx = _pd.MultiIndex.from_product(
+                    new_idx = pd.MultiIndex.from_product(
                         [[ext_d], tail_codes], names=["Date", "Code"]
                     )
                     new_data = last_data.reindex(tail_codes)
                     new_data.index = new_idx
-                    result = _pd.concat([result, new_data])
+                    result = pd.concat([result, new_data])
                 result = result.sort_index()
 
     return result
+
+
+def _lag_panel_one_trading_day(
+    df: pd.DataFrame,
+    trading_dates: list[str],
+) -> pd.DataFrame:
+    """Move each observation to the next canonical trading date.
+
+    ``margin_detail`` is published one trading day late.  Relabelling raw date
+    T-1 as availability date T is stricter than ``groupby().shift(1)``: if a
+    stock is missing on T-1, T remains missing instead of silently reusing an
+    older observation.
+    """
+    if df.empty:
+        return df
+    next_date = dict(zip(trading_dates[:-1], trading_dates[1:]))
+    source_dates = df.index.get_level_values("Date")
+    available_dates = source_dates.map(next_date)
+    keep = available_dates.notna()
+    if not keep.any():
+        return df.iloc[0:0].copy()
+
+    result = df.loc[keep].copy()
+    result.index = pd.MultiIndex.from_arrays(
+        [
+            available_dates[keep],
+            df.index.get_level_values("Code")[keep],
+        ],
+        names=["Date", "Code"],
+    )
+    result = result[~result.index.duplicated(keep="last")]
+    return result.sort_index()
 
 def _normalize_index_frame(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize a flat parquet DataFrame into a (Date, Code) MultiIndex panel.
@@ -272,6 +294,7 @@ class DataRepository:
     paths: ProjectPaths | None = None
     _cache: dict[str, pd.DataFrame] = field(default_factory=dict)
     _cache_order: deque[str] = field(default_factory=deque)
+    _trading_dates_cache: list[str] | None = None
     on_progress: Callable[[str, int, int], None] | None = None
 
     def __post_init__(self) -> None:
@@ -329,6 +352,21 @@ class DataRepository:
         self._cache_order.append(key)
         return self._cache[key]
 
+    def _trading_dates(self) -> list[str]:
+        """Return the canonical trading calendar from unadjusted daily data."""
+        if self._trading_dates_cache is None:
+            raw = self._read_parquet_columns(
+                self.paths.source_root / "daily.parquet", ["trade_date"]
+            )
+            dates = (
+                raw["trade_date"]
+                .astype(str)
+                .str.replace("-", "", regex=False)
+                .str.slice(0, 8)
+            )
+            self._trading_dates_cache = sorted(dates.dropna().unique().tolist())
+        return self._trading_dates_cache
+
     # ── daily panel loading ───────────────────────────────────────────
 
     # Date column candidates for parquet predicate pushdown, in priority order.
@@ -366,7 +404,7 @@ class DataRepository:
         if min_date is not None:
             min_dt = _dt.strptime(min_date, "%Y%m%d") - _td(days=lookback_days)
             # Source data uses YYYY-MM-DD format (verified against
-            # daily_adj.parquet, finance.parquet, etc.).
+            # daily.parquet, finance.parquet, etc.).
             filters.append((date_col, ">=", min_dt.strftime("%Y-%m-%d")))
         if max_date is not None:
             # max_date is YYYYMMDD, convert to YYYY-MM-DD for the filter
@@ -390,10 +428,15 @@ class DataRepository:
         cache_key = relative_path
         filepath = self.paths.source_root / relative_path
         is_margin = "margin_detail" in relative_path
-        margin_extra = 1 if is_margin else 0
+        # A fourteen-calendar-day read buffer covers weekends and the longest
+        # regular mainland-China public-holiday closures.  The buffer is only
+        # used to obtain T-1 and is removed again after calendar relabelling.
+        margin_buffer = _MARGIN_CALENDAR_BUFFER_DAYS if is_margin else 0
 
         # Try parquet-level pushdown first
-        pq_filters, _ = self._build_date_filters(filepath, min_date, max_date, lookback_days + margin_extra)
+        pq_filters, _ = self._build_date_filters(
+            filepath, min_date, max_date, lookback_days + margin_buffer
+        )
 
         if pq_filters is not None:
             # Partial read — don't cache (the full file isn't in memory).
@@ -401,11 +444,18 @@ class DataRepository:
             normalized = _normalize_index_frame(raw)
             result = self._filter_by_allowed(normalized)
             result = self._drop_backfill_rows(result)
-            # Still apply memory-side filter for belt-and-suspenders safety
-            result = _filter_by_date_range(result, min_date, max_date, lookback_days=margin_extra)
-            result = _fill_source_gaps(result, extend_to_date=max_date if is_margin else None)
             if is_margin:
-                result = result.groupby(level="Code").shift(1)
+                result = _lag_panel_one_trading_day(result, self._trading_dates())
+                result = _filter_by_date_range(
+                    result, min_date, max_date, lookback_days=lookback_days
+                )
+            else:
+                # Still apply memory-side filtering for safety if parquet
+                # predicate pushdown used a source-specific date dtype.
+                result = _filter_by_date_range(
+                    result, min_date, max_date, lookback_days=lookback_days
+                )
+                result = _fill_source_gaps(result, self._trading_dates())
             return result
 
         # Full-file read path (cached)
@@ -422,10 +472,19 @@ class DataRepository:
             full = self._cache[cache_key]
         else:
             full = cached
-        full = _filter_by_date_range(full, min_date, max_date, lookback_days + margin_extra)
-        full = _fill_source_gaps(full, extend_to_date=max_date if is_margin else None)
         if is_margin:
-            full = full.groupby(level="Code").shift(1)
+            full = _filter_by_date_range(
+                full, min_date, max_date, lookback_days + margin_buffer
+            )
+            full = _lag_panel_one_trading_day(full, self._trading_dates())
+            full = _filter_by_date_range(
+                full, min_date, max_date, lookback_days=lookback_days
+            )
+        else:
+            full = _filter_by_date_range(
+                full, min_date, max_date, lookback_days=lookback_days
+            )
+            full = _fill_source_gaps(full, self._trading_dates())
         return full
 
     # ── report-frequency financial loading ────────────────────────────
@@ -457,7 +516,7 @@ class DataRepository:
             Extra days subtracted from *min_date* for rolling-window context.
         """
         is_margin = "margin_detail" in relative_path
-        margin_extra = 1 if is_margin else 0
+        margin_extra = _MARGIN_CALENDAR_BUFFER_DAYS if is_margin else 0
         cols_tag = "" if value_cols is None else f"_{'_'.join(sorted(value_cols))}"
         cache_key = f"__financial__{relative_path}{cols_tag}_{date_col}"
         cached = self._cache_get(cache_key)
@@ -484,9 +543,13 @@ class DataRepository:
 
         full = self._cache[cache_key]
         full = _filter_by_date_range(full, min_date, max_date, lookback_days + margin_extra)
-        full = _fill_source_gaps(full, extend_to_date=max_date if is_margin else None)
         if is_margin:
-            full = full.groupby(level="Code").shift(1)
+            full = _lag_panel_one_trading_day(full, self._trading_dates())
+            full = _filter_by_date_range(
+                full, min_date, max_date, lookback_days=lookback_days
+            )
+        else:
+            full = _fill_source_gaps(full, self._trading_dates())
         return full
 
     # ── stock pool ─────────────────────────────────────────────────────

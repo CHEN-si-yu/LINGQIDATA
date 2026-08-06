@@ -216,7 +216,10 @@ def factor_macd_daily_hist_5d(context: FactorContext):
     wide = _adjusted_close(daily).unstack("Code")
     ema12 = wide.ewm(span=12, adjust=False).mean()
     ema26 = wide.ewm(span=26, adjust=False).mean()
-    dif = ema12 - ema26
+    # Normalise by the slow EMA before cross-sectional comparison.  Raw MACD
+    # is denominated in price units and would otherwise mostly reflect the
+    # arbitrary base level of each self-built adjusted-price index.
+    dif = safe_divide(ema12 - ema26, ema26)
     dea = dif.ewm(span=9, adjust=False).mean()
     hist = dif - dea
     chg = hist.diff(5)
@@ -226,6 +229,30 @@ def factor_macd_daily_hist_5d(context: FactorContext):
 # ═══════════════════════════════════════════════════════════════════════════════
 # 日频 RSI / KDJ / CCI / ROC / Aroon / DPO / Williams / STOCH
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _rolling_extreme_age(
+    wide: pd.DataFrame, window: int, *, find_max: bool
+) -> pd.DataFrame:
+    """Trading-day age of the most recent extreme inside a trailing window.
+
+    Lag zero wins ties, which is the conventional Aroon interpretation.  The
+    fixed lag loop is vectorised over all dates and stocks and, unlike forward
+    filling a past breakout flag, can never refer to an extreme outside the
+    requested rolling window.
+    """
+    values = wide.to_numpy(dtype=float, copy=True)
+    best = values.copy()
+    age = np.where(np.isfinite(values), 0.0, np.nan)
+    for lag in range(1, window):
+        candidate = np.full_like(values, np.nan)
+        candidate[lag:] = values[:-lag]
+        valid = np.isfinite(candidate)
+        missing_best = ~np.isfinite(best)
+        more_extreme = candidate > best if find_max else candidate < best
+        replace = valid & (missing_best | more_extreme)
+        best[replace] = candidate[replace]
+        age[replace] = float(lag)
+    return pd.DataFrame(age, index=wide.index, columns=wide.columns)
 
 @register_factor(
     name="rsi_spread_6_14",
@@ -238,24 +265,27 @@ def factor_macd_daily_hist_5d(context: FactorContext):
 )
 def factor_rsi_spread_6_14(context: FactorContext):
     daily = context.load("daily.parquet")
-    wide = (daily["pct_chg"] / 100.0).unstack("Code")
+    # pct_chg itself is the one-day price change used by RSI.  Differencing it
+    # again would calculate an RSI of return acceleration, not a price RSI.
+    delta = (daily["pct_chg"] / 100.0).unstack("Code")
 
-    def _rsi(w, n):
-        delta = w.diff()
+    def _rsi(delta, n):
         gain = delta.clip(lower=0.0)
         loss = (-delta).clip(lower=0.0)
-        avg_gain = gain.ewm(span=n, adjust=False).mean()
-        avg_loss = loss.ewm(span=n, adjust=False).mean()
+        # Wilder smoothing: alpha=1/n.  min_periods avoids presenting a
+        # partially initialised oscillator as a fully formed RSI value.
+        avg_gain = gain.ewm(alpha=1.0 / n, adjust=False, min_periods=n).mean()
+        avg_loss = loss.ewm(alpha=1.0 / n, adjust=False, min_periods=n).mean()
         rs = safe_divide(avg_gain, avg_loss + 1e-10)
         return 100.0 - 100.0 / (1.0 + rs)
 
-    spread = _rsi(wide, 6) - _rsi(wide, 14)
+    spread = _rsi(delta, 6) - _rsi(delta, 14)
     return cross_sectional_rank(stack_date_code(spread))
 
 
 @register_factor(
     name="kdj_daily_j",
-    description="日频KDJ的J值因子：J=3K−2D截面排名（超买动能排前，反向排名）。",
+    description="日频KDJ的J值因子：J=3K−2D取负截面排名（极端超买排后）。",
     category="price",
     thesis="策略29/40用KDJ金叉做信号——J值最灵敏(3K−2D)，>100超买、<0超卖。"
            "J值衡量短期随机动能，极端J=均值回归风险高，故负向排名。"
@@ -325,21 +355,14 @@ def factor_roc_12(context: FactorContext):
 def factor_aroon_up_25(context: FactorContext):
     daily = context.load("daily.parquet")
     wide = _adjusted_close(daily).unstack("Code")
-    is_high = wide.eq(wide.rolling(25, min_periods=1).max())
-    pos = pd.DataFrame(
-        np.tile(np.arange(len(wide))[:, None], (1, wide.shape[1])),
-        index=wide.index,
-        columns=wide.columns,
-    )
-    last_high = pos.where(is_high).ffill()
-    days_since = pos - last_high
+    days_since = _rolling_extreme_age(wide, window=25, find_max=True)
     aroon = safe_divide(25.0 - days_since, 25.0) * 100.0
     return cross_sectional_rank(stack_date_code(aroon))
 
 
 @register_factor(
     name="aroon_down_25",
-    description="Aroon下行因子：25日窗口内距最近新低的距离位置截面排名（破位风险排前，负向排名）。",
+    description="Aroon下行因子：25日窗口内距最近新低的位置取负排名（近期破位排后）。",
     category="price",
     thesis="Aroon下行衡量距离上次创新低的时间——越接近新低=趋势越弱。"
            "与aroon_up_25互补，反映空头主导程度。基于复权基座，除权日不产生假新低。",
@@ -348,33 +371,27 @@ def factor_aroon_up_25(context: FactorContext):
 def factor_aroon_down_25(context: FactorContext):
     daily = context.load("daily.parquet")
     wide = _adjusted_close(daily).unstack("Code")
-    is_low = wide.eq(wide.rolling(25, min_periods=1).min())
-    pos = pd.DataFrame(
-        np.tile(np.arange(len(wide))[:, None], (1, wide.shape[1])),
-        index=wide.index,
-        columns=wide.columns,
-    )
-    last_low = pos.where(is_low).ffill()
-    days_since = pos - last_low
+    days_since = _rolling_extreme_age(wide, window=25, find_max=False)
     aroon = safe_divide(25.0 - days_since, 25.0) * 100.0
     return cross_sectional_rank(-stack_date_code(aroon))
 
 
 @register_factor(
     name="dpo_20",
-    description="20日DPO区间震荡因子：(adj−11日前价格)的20日SMA截面排名（中期趋势偏离排前）。",
+    description="20日DPO去趋势因子：(11日前复权价−当前20日均价)/20日均价截面排名。",
     category="price",
-    thesis="DPO(Detrended Price Oscillator)去趋势化后衡量价格对中期均衡的偏离——"
-           "DPO>0=价格高于其中期趋势(强势)，DPO<0=低于趋势。shift(11)为20日周期的一半。",
+    thesis="DPO(Detrended Price Oscillator)用11日前价格减去当前20日均价，以移除中期趋势后"
+           "观察价格周期位置；shift(11)为20日周期的一半加一。再除以均价以保证股票间可比。",
     dependencies=("daily.parquet",),
 )
 def factor_dpo_20(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    detrended = adj - adj.groupby(level="Code").shift(11)
-    dpo = detrended.groupby(level="Code").transform(
+    ma20 = adj.groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).mean()
     )
+    lagged = adj.groupby(level="Code").shift(11)
+    dpo = safe_divide(lagged - ma20, ma20)
     return cross_sectional_rank(dpo)
 
 
@@ -439,11 +456,11 @@ def factor_force_index_13(context: FactorContext):
 
 @register_factor(
     name="eom_14",
-    description="14日EOM简易波动因子：价格中点位移×量/区间的14日均值截面排名（放量推动排前）。",
+    description="14日EOM简易波动因子：价格中点位移÷(量/区间)的14日均值截面排名（上涨越省量排前）。",
     category="price",
-    thesis="Ease of Movement(简易波动指标)=价格中点位移×(成交量/价格区间)——"
-           "量能推动价格移动的效率。EOM高=单位波动被大资金推动(有效上涨)；"
-           "EOM低=无量空跌(虚假波动)。14日均值平滑。",
+    thesis="Ease of Movement(简易波动指标)=价格中点位移÷(成交量/价格区间)——"
+           "衡量价格在较少成交量下移动的容易程度。EOM高=较宽区间、较低成交量下向上移动；"
+           "EOM低=价格向下移动或上行需要较大成交量。14日均值平滑。",
     dependencies=("daily.parquet",),
 )
 def factor_eom_14(context: FactorContext):
@@ -456,7 +473,9 @@ def factor_eom_14(context: FactorContext):
     mid = (adj_h + adj_l) / 2.0
     box_ratio = daily["vol"] / (adj_h - adj_l).replace(0, np.nan)
     distance = mid - mid.groupby(level="Code").shift(1)
-    eom = distance * box_ratio
+    # Ease of Movement divides by the box ratio.  Multiplication would reward
+    # high-volume/narrow-range days and is the inverse of the named indicator.
+    eom = safe_divide(distance, box_ratio)
     eom_w = eom.unstack("Code")
     eom_avg = eom_w.rolling(14, min_periods=7).mean()
     return cross_sectional_rank(stack_date_code(eom_avg))

@@ -8,9 +8,8 @@ Exploits underutilized margin_detail.parquet fields:
 These capture short-selling intensity and short-squeeze risk.
 NaN ~9% (2022 后实测), acceptable per skill.md <20% threshold.
 
-时点对齐:margin_detail 因上游延迟一天,数据层已统一 shift(1)
-(Date=T 上的 margin 值 = 原始 T-1)。跨源混算时非 margin 数据必须
-同步 shift(1) 对齐(见 factor_short_sell_volume_ratio 的分母 vol)。
+时点对齐:margin_detail 因上游延迟一天,数据层已统一映射为 Date=T 上的
+margin 值 = 原始 T-1；daily 等正常日频数据在 Date=T 直接使用 T 日值。
 """
 
 from __future__ import annotations
@@ -69,11 +68,9 @@ def factor_short_interest_volatility_20d(context: FactorContext) -> np.ndarray:
 def factor_short_sell_volume_ratio(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
     d = context.load("daily.parquet")
-    # margin 面板已 shift(1):Date=T 上的 rqmcl 是原始 T-1 值。
-    # 分母 vol 未 shift,必须同步 shift(1) 对齐,否则分子(T-1)÷分母(T) 产生 1 日错配。
-    vol_lag = d["vol"].groupby(level="Code").shift(1)
-    common = m.index.intersection(vol_lag.index)
-    ratio = safe_divide(m.loc[common, "rqmcl"], vol_lag.loc[common])
+    # Date=T 使用当时可获得的 T-1 融券卖出量和 T 日总成交量。
+    vol_t = d["vol"].reindex(m.index)
+    ratio = safe_divide(m["rqmcl"], vol_t)
     ratio = ratio.clip(0, 1)
     return cross_sectional_rank(ratio)
 

@@ -85,9 +85,9 @@ def _broadcast_identity_to_daily(
     The identity values are static per stock and are replicated across all
     trading dates in the daily panel.
     """
-    daily_adj = context.load("daily.parquet")
-    all_dates = daily_adj.index.get_level_values("Date").unique()
-    all_codes = daily_adj.index.get_level_values("Code").unique()
+    daily = context.load("daily.parquet")
+    all_dates = daily.index.get_level_values("Date").unique()
+    all_codes = daily.index.get_level_values("Code").unique()
 
     # Align identity to the daily panel's stock universe
     aligned = identity_series.reindex(all_codes)
@@ -135,19 +135,20 @@ def factor_pe_ttm_absolute(context: FactorContext):
 def factor_pe_ttm_change_20d(context: FactorContext):
     f = context.load("finance.parquet")
     pe = f["pe_ttm"]
-    chg = pe.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    chg = pe.groupby(level="Code").transform(
+        lambda s: s.pct_change(20, fill_method=None)
+    )
     chg = chg.clip(-0.5, 1.0)
     return cross_sectional_rank(-chg)
 
 
 @register_factor(
     name="pe_pb_divergence",
-    description="PE与PB百分位排名差。正偏离=轻资产高盈利(优质)，负偏离=周期/重资产。",
+    description="PB与PE百分位排名差。正偏离=隐含ROE较高，负偏离=隐含ROE较低。",
     category="valuation",
     thesis=(
-        "PE与PB截面百分位排名的差值。PE排名高但PB排名低的股票(正偏离)往往是轻资产高盈利公司"
-        "(如消费、医药)——市场对盈利给予溢价但资产价值未被重估，是优质信号。"
-        "PE排名低但PB排名高的股票(负偏离)可能是周期股或重资产低盈利公司。"
+        "PB与PE截面百分位排名的差值。由ROE≈PB/PE可知，PB相对PE越高通常对应"
+        "更高的隐含净资产收益率；反之则可能对应重资产、低盈利或周期高点。"
     ),
     dependencies=("finance.parquet",),
 )
@@ -155,7 +156,7 @@ def factor_pe_pb_divergence(context: FactorContext):
     f = context.load("finance.parquet")
     pe_rank = f["pe_ttm"].groupby(level="Date").rank(pct=True)
     pb_rank = f["pb"].groupby(level="Date").rank(pct=True)
-    divergence = pe_rank - pb_rank
+    divergence = pb_rank - pe_rank
     return cross_sectional_rank(divergence)
 
 
@@ -189,7 +190,9 @@ def factor_float_share_ratio(context: FactorContext):
 def factor_ps_ttm_momentum_20d(context: FactorContext):
     f = context.load("finance.parquet")
     ps = f["ps_ttm"]
-    chg = ps.groupby(level="Code").transform(lambda s: s.pct_change(20))
+    chg = ps.groupby(level="Code").transform(
+        lambda s: s.pct_change(20, fill_method=None)
+    )
     chg = chg.clip(-0.5, 1.0)
     return cross_sectional_rank(-chg)
 
@@ -230,8 +233,7 @@ def factor_turnover_f_delta_5(context: FactorContext):
     finance = context.load("finance.parquet")
     turnover = finance["turnover_rate_f"]
     delta = turnover.groupby(level="Code").transform(
-        lambda s: s.pct_change(5)
+        lambda s: s.pct_change(5, fill_method=None)
     )
     delta = delta.clip(-1, 3)
     return cross_sectional_rank(-delta)
-

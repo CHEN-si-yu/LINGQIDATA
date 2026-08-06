@@ -188,7 +188,7 @@ def _preload_group_data(
     """Pre-load all shared data for a group of factors.
 
     Returns a dict mapping cache keys to DataFrames:
-      - Daily panels keyed by relative path (e.g. ``"daily_adj.parquet"``)
+      - Daily panels keyed by relative path (e.g. ``"daily.parquet"``)
       - Financial panels keyed by ``"__financial__{path}_{date_col}"``
     """
     all_daily: set[str] = set()
@@ -426,7 +426,10 @@ def _compute_group_sequential(
                 end_date=effective_end,
             )
             raw_output = spec.compute(context)
-            factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
+            factor_frame = ensure_single_factor_frame(
+                raw_output, spec.name,
+                skip_ffill=(spec.category == "target"), paths=paths,
+            )
 
             if action == "incremental" and reason:
                 factor_frame = factor_frame.loc[factor_frame.index > reason]
@@ -458,7 +461,10 @@ def _compute_group_sequential(
                         end_date=effective_end,
                     )
                     full_output = spec.compute(full_context)
-                    full_frame = ensure_single_factor_frame(full_output, spec.name, skip_ffill=(spec.category == "target"))
+                    full_frame = ensure_single_factor_frame(
+                        full_output, spec.name,
+                        skip_ffill=(spec.category == "target"), paths=paths,
+                    )
                     factor_path, manifest_path = write_factor(spec, full_frame, paths=paths)
                 else:
                     factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)
@@ -536,7 +542,10 @@ def _compute_group_parallel(
                 end_date=effective_end,
             )
             raw_output = spec.compute(context)
-            factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
+            factor_frame = ensure_single_factor_frame(
+                raw_output, spec.name,
+                skip_ffill=(spec.category == "target"), paths=paths,
+            )
 
             if action == "incremental" and reason:
                 factor_frame = factor_frame.loc[factor_frame.index > reason]
@@ -568,7 +577,10 @@ def _compute_group_parallel(
                         end_date=effective_end,
                     )
                     full_output = spec.compute(full_context)
-                    full_frame = ensure_single_factor_frame(full_output, spec.name, skip_ffill=(spec.category == "target"))
+                    full_frame = ensure_single_factor_frame(
+                        full_output, spec.name,
+                        skip_ffill=(spec.category == "target"), paths=paths,
+                    )
                     factor_path, manifest_path = write_factor(spec, full_frame, paths=paths)
                 else:
                     factor_path, manifest_path = write_factor_incremental(spec, factor_frame, paths=paths)

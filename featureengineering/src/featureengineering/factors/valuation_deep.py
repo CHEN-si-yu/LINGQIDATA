@@ -116,7 +116,7 @@ def factor_bp_momentum_20(context: FactorContext):
     bp = 1.0 / pb
 
     delta = bp.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
+        lambda s: s.pct_change(20, fill_method=None)
     )
     delta = delta.clip(-0.5, 1.0)
     return cross_sectional_rank(delta)  # BP rising = more value = ranks high
@@ -138,7 +138,7 @@ def factor_sp_ttm_momentum_20(context: FactorContext):
     sp = 1.0 / ps
 
     delta = sp.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
+        lambda s: s.pct_change(20, fill_method=None)
     )
     delta = delta.clip(-0.5, 1.0)
     return cross_sectional_rank(delta)

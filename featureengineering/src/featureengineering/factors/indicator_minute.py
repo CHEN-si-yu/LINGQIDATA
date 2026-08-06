@@ -79,9 +79,13 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     df = stock_df.copy()
 
     # ── Ensure trade_time is datetime ────────────────────────────────────
+    df["trade_time"] = pd.to_datetime(df["trade_time"], errors="coerce")
+    df = (
+        df.dropna(subset=["trade_time"])
+        .sort_values("trade_time", kind="stable")
+        .reset_index(drop=True)
+    )
     ts = df["trade_time"]
-    if not pd.api.types.is_datetime64_any_dtype(ts):
-        ts = pd.to_datetime(ts)
     df["trade_date"] = ts.dt.strftime("%Y%m%d")
     df["minute"] = ts.dt.hour * 60 + ts.dt.minute
 
@@ -136,7 +140,9 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
         with np.errstate(invalid='ignore'):
             return x.corr(y)
 
-    results["macd_price_corr"] = grouped.apply(
+    results["macd_price_corr"] = df.groupby("trade_date")[[
+        "ma5_vs_open", "macd_vs_open"
+    ]].apply(
         lambda g: _pearson(g["ma5_vs_open"], g["macd_vs_open"])
     )
 
@@ -477,7 +483,7 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     results["rsi_boll_combo"] = rsi_z * results["boll_position"].fillna(0)
 
     # MA-RSI divergence: correlation of ma5 and rsi within day
-    results["ma_rsi_divergence"] = grouped.apply(
+    results["ma_rsi_divergence"] = df.groupby("trade_date")[["ma5", "rsi"]].apply(
         lambda g: _pearson(g["ma5"], g["rsi"])
     )
 
@@ -519,16 +525,13 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     signals = {}
     for c in signal_cols:
         s = results.get(c, pd.Series(0.0, index=close_proxy.index))
-        # 仅用"截至当日"的历史做归一化(expanding)——全序列 mean/std 会把未来数据
-        # 泄漏进历史值:0804 的 z-score 会用到 0805 才存在的序列统计,同一日期因子值
-        # 随构建日(数据末端)变化(2026-08-05 切片对比发现的 indicator_dispersion /
-        # multi_indicator_extreme 全日期段差异即由此而来)。
-        if s.std() > 0:  # 整段序列非恒定才标准化,与旧逻辑同判断
-            em = s.expanding(min_periods=20).mean()
-            es = s.expanding(min_periods=20).std().replace(0, np.nan)
-            signals[c] = (s - em) / es
-        else:
-            signals[c] = s.fillna(0)
+        # Only the expanding history available through the current date may
+        # determine normalization.  An earlier implementation gated this on
+        # s.std() over the *entire* series, so a variation appearing tomorrow
+        # could change whether yesterday was standardized.
+        em = s.expanding(min_periods=20).mean()
+        es = s.expanding(min_periods=20).std().replace(0, np.nan)
+        signals[c] = safe_divide(s - em, es).fillna(0.0)
     sig_df = pd.DataFrame(signals, index=close_proxy.index)
     results["indicator_dispersion"] = sig_df.std(axis=1)
 
@@ -972,7 +975,7 @@ def build_indicator_1min_new(
                 s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
-            raw_metrics[col] = s
+            raw_metrics[col] = s.sort_index()
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
@@ -1031,7 +1034,7 @@ def build_indicator_1min_new(
                 pbar_factor.update(1)
                 continue
 
-            frame = ensure_single_factor_frame(ranked, name)
+            frame = ensure_single_factor_frame(ranked, name, paths=paths)
             output[name] = frame
             fac_elapsed[name] = time.perf_counter() - t_fac
         except Exception:

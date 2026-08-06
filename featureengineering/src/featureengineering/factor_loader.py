@@ -29,6 +29,11 @@ _NON_DAILY_SOURCES = {
 
 _META_SOURCES = {"calendar.parquet"}
 _FACTOR_MARKER = "__factors__"
+# Current-snapshot attributes cannot be used to reconstruct a historical
+# cross-section.  Factors depending on them remain in source for future
+# re-enablement when a dated history is available, but are not buildable under
+# the strict point-in-time contract.
+_NON_POINT_IN_TIME_SOURCES = {"stock_list.parquet"}
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +101,14 @@ def _filter_non_continuous_factors() -> int:
 
     for name, info in factors.items():
         real_sources = set(info["data_refs"]) - _META_SOURCES
-        if real_sources & _NON_DAILY_SOURCES:
-            non_daily.add(name)
-        elif real_sources & _DAILY_SOURCES:
+        # A static mapping such as stock_list.industry may be an auxiliary
+        # grouping key for a genuinely daily signal.  Daily information wins
+        # when both kinds are present; only factors with no daily source are
+        # classified as non-continuous.
+        if real_sources & _DAILY_SOURCES:
             daily.add(name)
+        elif real_sources & _NON_DAILY_SOURCES:
+            non_daily.add(name)
 
     changed = True
     while changed:
@@ -108,12 +117,12 @@ def _filter_non_continuous_factors() -> int:
             if name in daily or name in non_daily:
                 continue
             real_sources = set(info["data_refs"]) - _META_SOURCES
-            if real_sources & _NON_DAILY_SOURCES:
-                non_daily.add(name)
+            if real_sources & _DAILY_SOURCES:
+                daily.add(name)
                 changed = True
                 continue
-            elif real_sources & _DAILY_SOURCES:
-                daily.add(name)
+            elif real_sources & _NON_DAILY_SOURCES:
+                non_daily.add(name)
                 changed = True
                 continue
             if info["factor_refs"]:
@@ -147,6 +156,24 @@ def _filter_non_continuous_factors() -> int:
     return removed
 
 
+def _filter_non_point_in_time_factors() -> int:
+    """Remove factors that use current snapshots as historical attributes."""
+    from .registry import FACTOR_REGISTRY
+
+    removed_names = [
+        name for name, spec in FACTOR_REGISTRY.items()
+        if set(spec.dependencies) & _NON_POINT_IN_TIME_SOURCES
+    ]
+    for name in removed_names:
+        del FACTOR_REGISTRY[name]
+    if removed_names:
+        logger.warning(
+            "Disabled %d non-point-in-time factors: %s",
+            len(removed_names), ", ".join(sorted(removed_names)),
+        )
+    return len(removed_names)
+
+
 def ensure_builtin_factors_loaded() -> None:
     global _LOADED
 
@@ -172,7 +199,8 @@ def ensure_builtin_factors_loaded() -> None:
                 module_info.name, exc,
             )
 
-    # ── Post-load: remove any remaining non-continuous factors ────────
+    # ── Post-load: enforce point-in-time and continuity contracts ─────
+    _filter_non_point_in_time_factors()
     _filter_non_continuous_factors()
 
     _LOADED = True

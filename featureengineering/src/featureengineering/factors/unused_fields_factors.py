@@ -61,8 +61,8 @@ def _total_vol(ff):
 def factor_mf_big_order_vol_ratio(context: FactorContext):
     ff = context.load("main_fund_flow.parquet")
     big_vol = (
-        ff["buy_lg_vol"] - ff["sell_lg_vol"]
-        + ff["buy_elg_vol"] - ff["sell_elg_vol"]
+        ff["buy_lg_vol"] + ff["sell_lg_vol"]
+        + ff["buy_elg_vol"] + ff["sell_elg_vol"]
     )
     ratio = big_vol / _total_vol(ff)
     return cross_sectional_rank(ratio)
@@ -169,4 +169,3 @@ def factor_sp_raw(context: FactorContext):
 # ═══════════════════════════════════════════════════════════════════════════
 # G.  Composite Factors from Unused Fields
 # ═══════════════════════════════════════════════════════════════════════════
-

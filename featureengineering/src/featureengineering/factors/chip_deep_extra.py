@@ -50,29 +50,29 @@ def _momentum(s: pd.Series, window: int = 5) -> pd.Series:
 
 @register_factor(
     name="chip_deep_trap_ratio",
-    description="深套筹码占比因子：价格<0.9×close的筹码比例截面排名（负向，深套盘多排后）。",
+    description="深套筹码占比因子：成本价>1.1×close的筹码比例截面排名（负向，深套盘多排后）。",
     category="price",
-    thesis="深套盘(成本在现价10%以下)是反弹的抛压来源——深套盘越重,上方解套卖出"
+    thesis="深套盘(成本在现价10%以上)是反弹的抛压来源——深套盘越重,上方解套卖出"
            "的意愿越强,反弹持续性越差;深套盘轻=筹码干净、拉升阻力小。"
-           "与 chip_below_ratio(全部下方筹码)区分:本因子聚焦深度套牢区。",
+           "与 chip_above_ratio(全部上方筹码)区分:本因子聚焦深度套牢区。",
     dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_deep_trap_ratio(context: FactorContext):
-    s = _chip_series(context, "chip_below_90", need_close=True)
+    s = _chip_series(context, "chip_upper_110", need_close=True)
     return cross_sectional_rank(-s)
 
 
 @register_factor(
     name="chip_high_float_ratio",
-    description="高位浮筹占比因子：价格>1.1×close的筹码比例截面排名（负向，高位浮筹多排后）。",
+    description="高浮盈筹码占比因子：成本价<0.9×close的筹码比例截面排名（负向，深度获利盘多排后）。",
     category="price",
-    thesis="高位浮筹(成本在现价10%以上)是获利兑现的来源——浮筹占比高=大量持仓者"
+    thesis="高浮盈筹码(成本在现价10%以下)是获利兑现的来源——浮筹占比高=大量持仓者"
            "盈利丰厚、随时可能卖出锁定利润(上涨持续性存疑);浮筹少=上方无阻力"
            "或获利盘已充分换手。是获利盘因子的分布细粒度版本。",
     dependencies=("cyq_chips", "daily.parquet"),
 )
 def factor_chip_high_float_ratio(context: FactorContext):
-    s = _chip_series(context, "chip_upper_110", need_close=True)
+    s = _chip_series(context, "chip_below_90", need_close=True)
     return cross_sectional_rank(-s)
 
 

@@ -31,7 +31,9 @@ from ..utils import cross_sectional_rank, rolling_group_mean, safe_divide
 )
 def factor_margin_balance_5d(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
-    chg = m["rzye"].groupby(level="Code").transform(lambda s: s.pct_change(5))
+    chg = m["rzye"].groupby(level="Code").transform(
+        lambda s: s.pct_change(5, fill_method=None)
+    )
     chg = chg.clip(-0.5, 1.0)
     return cross_sectional_rank(chg)
 
@@ -46,7 +48,9 @@ def factor_margin_balance_5d(context: FactorContext) -> np.ndarray:
 )
 def factor_margin_balance_20d(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
-    chg = m["rzye"].groupby(level="Code").transform(lambda s: s.pct_change(20))
+    chg = m["rzye"].groupby(level="Code").transform(
+        lambda s: s.pct_change(20, fill_method=None)
+    )
     chg = chg.clip(-0.5, 1.0)
     return cross_sectional_rank(chg)
 
@@ -148,7 +152,9 @@ def factor_margin_buy_momentum_5d(context: FactorContext) -> np.ndarray:
 )
 def factor_margin_leverage_trend_10d(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
-    chg = m["rzrqye"].groupby(level="Code").transform(lambda s: s.pct_change(10))
+    chg = m["rzrqye"].groupby(level="Code").transform(
+        lambda s: s.pct_change(10, fill_method=None)
+    )
     chg = chg.clip(-0.3, 0.3)
     return cross_sectional_rank(chg)
 
@@ -181,6 +187,8 @@ def factor_margin_balance_ma_divergence(context: FactorContext) -> np.ndarray:
 )
 def factor_margin_repay_deceleration(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
-    chg = m["rzche"].groupby(level="Code").transform(lambda s: s.pct_change(5))
+    chg = m["rzche"].groupby(level="Code").transform(
+        lambda s: s.pct_change(5, fill_method=None)
+    )
     chg = chg.clip(-0.5, 0.5)
     return cross_sectional_rank(-chg)

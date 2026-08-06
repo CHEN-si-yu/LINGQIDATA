@@ -25,7 +25,9 @@ def _delta(s: pd.Series, window: int) -> pd.Series:
 
 def _momentum(s: pd.Series, window: int) -> pd.Series:
     """Per-stock percentage change over *window* periods."""
-    return s.groupby(level="Code").transform(lambda x: x.pct_change(window))
+    return s.groupby(level="Code").transform(
+        lambda x: x.pct_change(window, fill_method=None)
+    )
 
 
 # ── Factor Momentum ──────────────────────────────────────────────────────────

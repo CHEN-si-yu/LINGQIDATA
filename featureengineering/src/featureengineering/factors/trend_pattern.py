@@ -35,7 +35,7 @@ def _directional_movement(high, low, pre_close, scale, window=14):
     down_move = adj_low.groupby(level="Code").diff()
     dm_plus = up_move.where((up_move > 0) & (up_move > down_move.abs()), 0.0)
     dm_minus = (-down_move).where((down_move < 0) & (down_move.abs() > up_move), 0.0)
-    atr = _true_range(high, low, pre_close).groupby(level="Code").transform(
+    atr = (_true_range(high, low, pre_close) * scale).groupby(level="Code").transform(
         lambda s: s.rolling(window, min_periods=window // 2).mean()
     )
     di_plus = 100 * dm_plus.groupby(level="Code").transform(
@@ -168,8 +168,9 @@ def keltner_position_20(ctx: FactorContext) -> pd.Series:
     high, low = daily["high"], daily["low"]
     # 主轨 MA 走复权基座,与已复权的 ATR 保持同口径(未复权 close 跨日窗口受除权污染)
     adj = _adjusted_close(daily)
+    scale = adj / daily["close"].replace(0, np.nan)
     tr = _true_range(high, low, daily["pre_close"])
-    atr = tr.groupby(level="Code").transform(
+    atr = (tr * scale).groupby(level="Code").transform(
         lambda s: s.rolling(20, min_periods=10).mean()
     )
     ma = rolling_group_mean(adj, 20)

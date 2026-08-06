@@ -122,7 +122,7 @@ def _resolve_effective_end_date(source_root: Path) -> str:
 
     daily_max = _read_source_max_date(source_root / "daily.parquet")
     if daily_max is None:
-        # Fallback: if daily_adj is missing, trust the clock alone
+        # Fallback: if daily is missing, trust the clock alone
         today = datetime.now().strftime("%Y%m%d")
         if datetime.now().hour < _EOD_CUTOFF_HOUR:
             from datetime import timedelta
@@ -519,15 +519,11 @@ def build_factor(
     nn_rows = 0
     error_msg = None
 
-    # Compute context start date for date-aware loading
-    _LOOKBACK = 252  # one calendar year, covers all rolling-window factors
-    context_start: str | None = None
-    if factor_start_date:
-        from datetime import datetime, timedelta
-        start_dt = datetime.strptime(factor_start_date, "%Y%m%d") - timedelta(days=_LOOKBACK)
-        context_start = start_dt.strftime("%Y%m%d")
+    # FactorContext applies the shared 800-calendar-day lookback.  Pass the
+    # actual incremental boundary here so it is subtracted exactly once.
+    context_start = factor_start_date
 
-    # Determine the effective end date (6 PM cutoff + daily_adj max)
+    # Determine the effective end date (6 PM cutoff + daily max)
     _effective_end = _resolve_effective_end_date(repo.paths.source_root)
     # For incremental builds, never cap BEFORE the factor's own max date
     if factor_start_date and _effective_end < factor_start_date:
@@ -540,7 +536,10 @@ def build_factor(
     try:
         context = FactorContext(repo=repo, start_date=context_start, end_date=_effective_end)
         raw_output = spec.compute(context)
-        factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
+        factor_frame = ensure_single_factor_frame(
+            raw_output, spec.name,
+            skip_ffill=(spec.category == "target"), paths=repo.paths,
+        )
 
         # If incremental, slice to only new dates
         if factor_start_date:
@@ -852,12 +851,8 @@ def _build_factor_worker(
     repo = DataRepository(paths=paths, on_progress=_on_progress)
 
     # Compute context start date for date-aware loading
-    _LOOKBACK = 252  # one calendar year, covers all rolling-window factors
-    context_start: str | None = None
-    if action == "incremental" and reason:
-        from datetime import datetime, timedelta
-        start_dt = datetime.strptime(reason, "%Y%m%d") - timedelta(days=_LOOKBACK)
-        context_start = start_dt.strftime("%Y%m%d")
+    # FactorContext owns the long-window lookback and subtracts it once.
+    context_start = reason if action == "incremental" and reason else None
 
     # Determine the effective end date — use the cached value when
     # provided, otherwise resolve from source data.
@@ -887,7 +882,10 @@ def _build_factor_worker(
         context = FactorContext(repo=repo, start_date=context_start, end_date=_effective_end)
         _set_stage("computing")
         raw_output = spec.compute(context)
-        factor_frame = ensure_single_factor_frame(raw_output, spec.name, skip_ffill=(spec.category == "target"))
+        factor_frame = ensure_single_factor_frame(
+            raw_output, spec.name,
+            skip_ffill=(spec.category == "target"), paths=paths,
+        )
 
         if action == "incremental" and reason:
             factor_frame = factor_frame.loc[factor_frame.index > reason]
@@ -1100,6 +1098,8 @@ def build_many_parallel(
                             manifest_path=Path(wr.get("manifest_path", "")),
                             elapsed=elapsed_w,
                             action=action,
+                            rows=int(wr.get("rows", 0)),
+                            non_null_rows=int(wr.get("non_null_rows", 0)),
                         ))
                         bar.update(1)
                         _counts[action] = _counts.get(action, 0) + 1
@@ -1216,4 +1216,3 @@ def build_many_parallel(
                 ok_count, skip_count, err_count, total_elapsed, total_rows)
 
     return results
-

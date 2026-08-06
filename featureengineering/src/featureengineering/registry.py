@@ -8,6 +8,12 @@ import pandas as pd
 from .dataset import DataRepository
 
 
+# Longest enabled rolling window is 500 trading days.  Calendar-day filtering
+# therefore needs substantially more than 500 days to survive weekends and
+# exchange holidays during incremental builds.
+DEFAULT_LOOKBACK_DAYS = 800
+
+
 @dataclass(frozen=True)
 class FactorSpec:
     name: str
@@ -23,7 +29,7 @@ class FactorContext:
     repo: DataRepository
     start_date: str | None = None
     end_date: str | None = None
-    _lookback_days: int = 252
+    _lookback_days: int = DEFAULT_LOOKBACK_DAYS
 
     def load(self, relative_path: str) -> pd.DataFrame:
         return self.repo.load_panel(

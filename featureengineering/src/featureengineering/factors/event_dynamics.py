@@ -216,7 +216,9 @@ def factor_three_black_crows(context: FactorContext):
     daily = context.load("daily.parquet")
     close = daily["close"]
     open_ = daily["open"]
-    cond = (close < open_) & (close < close.groupby(level="Code").shift(1))
+    # pre_close is the ex-date reference close supplied by daily.parquet;
+    # raw close.shift(1) fabricates a bearish step on corporate-action days.
+    cond = (close < open_) & (close < daily["pre_close"])
     cond_i = cond.astype(int)
     code = cond_i.index.get_level_values("Code")
     seg = (~cond_i.astype(bool)).groupby(level="Code").cumsum()

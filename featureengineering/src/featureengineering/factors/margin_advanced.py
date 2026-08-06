@@ -7,9 +7,8 @@ with cross-data-source interactions:
 
 Data sources: margin_detail.parquet, finance.parquet
 
-时点对齐:margin_detail 因上游延迟一天,数据层已统一 shift(1)
-(Date=T 上的 margin 值 = 原始 T-1)。跨源混算时非 margin 数据必须
-同步 shift(1) 对齐(见 factor_total_leverage_ratio 的分母 total_mv)。
+时点对齐:margin_detail 因上游延迟一天,数据层已统一映射为
+Date=T 上的 margin 值 = 原始 T-1；其他日频字段仍使用 T 日值。
 """
 
 from __future__ import annotations
@@ -40,13 +39,11 @@ from ..utils import (
 def factor_total_leverage_ratio(context: FactorContext) -> np.ndarray:
     m = context.load("margin_detail.parquet")
     f = context.load("finance.parquet")
-    # margin 面板已 shift(1):Date=T 上的 rzrqye 是原始 T-1 值。
-    # 分母 total_mv 未 shift,必须同步 shift(1) 对齐,否则分子(T-1)÷分母(T) 产生 1 日错配。
-    mv_lag = f["total_mv"].groupby(level="Code").shift(1)
-    common_idx = m.index.intersection(mv_lag.index)
+    # Date=T: margin 是可获得的原始 T-1 值，市值按用户约束使用 T 日值。
+    mv_t = f["total_mv"].reindex(m.index)
     ratio = safe_divide(
-        m.loc[common_idx, "rzrqye"],
-        mv_lag.loc[common_idx],
+        m["rzrqye"],
+        mv_t,
     )
     ratio = ratio.clip(0, 0.5)
     return cross_sectional_rank(-ratio)

@@ -106,7 +106,7 @@ def factor_cost_convergence_signal(context: FactorContext):
     cyq = context.load("cyq_perf.parquet")
     width = cyq["cost_95pct"] - cyq["cost_5pct"]
     chg = width.groupby(level="Code").transform(
-        lambda s: s.pct_change(20)
+        lambda s: s.pct_change(20, fill_method=None)
     )
     chg = chg.clip(-1, 1)
     return cross_sectional_rank(-chg)

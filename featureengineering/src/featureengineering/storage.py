@@ -13,16 +13,18 @@ from .settings import ProjectPaths, configure_paths
 INCR_SUFFIX = "_incr"
 
 # ── Reference frame cache ────────────────────────────────────────────────────
-_ref_cache: tuple[list[str], list[str]] | None = None
+_ref_cache: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
 
 
-def _get_reference_frame() -> tuple[list[str], list[str]]:
+def _get_reference_frame(
+    paths: ProjectPaths | None = None,
+) -> tuple[list[str], list[str]]:
     """Return (ref_dates, ref_codes) — canonical index from 2020-01-01."""
-    global _ref_cache
-    if _ref_cache is not None:
-        return _ref_cache
+    paths = paths or configure_paths()
+    key = (str(paths.source_root.resolve()), str(paths.stock_pool_file.resolve()))
+    if key in _ref_cache:
+        return _ref_cache[key]
 
-    paths = configure_paths()
     daily = pd.read_parquet(
         paths.source_root / "daily.parquet",
         columns=["stock_code", "trade_date"],
@@ -30,15 +32,18 @@ def _get_reference_frame() -> tuple[list[str], list[str]]:
     daily["d"] = daily["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
     ref_dates = sorted(d for d in daily["d"].unique() if d >= "20200101")
 
-    stock_pool_file = paths.project_root.parent / "Code_num.txt"
-    with open(stock_pool_file) as f:
+    with open(paths.stock_pool_file, encoding="utf-8") as f:
         ref_codes = sorted(set(line.strip() for line in f if line.strip()))
 
-    _ref_cache = (ref_dates, ref_codes)
-    return _ref_cache
+    _ref_cache[key] = (ref_dates, ref_codes)
+    return _ref_cache[key]
 
 
-def align_to_reference(wide: pd.DataFrame, skip_ffill: bool = False) -> pd.DataFrame:
+def align_to_reference(
+    wide: pd.DataFrame,
+    skip_ffill: bool = False,
+    paths: ProjectPaths | None = None,
+) -> pd.DataFrame:
     """Align a factor wide-format DataFrame to the canonical reference frame.
 
     - Dates: reindex to reference trading days, forward-fill gaps (source outages).
@@ -53,12 +58,12 @@ def align_to_reference(wide: pd.DataFrame, skip_ffill: bool = False) -> pd.DataF
     computation; only the column (stock) axis is aligned to the reference
     code pool.
     """
-    ref_dates, ref_codes = _get_reference_frame()
+    ref_dates, ref_codes = _get_reference_frame(paths)
 
     # Keep only dates >= 2020-01-01
     wide = wide[wide.index >= "20200101"]
 
-    # Drop extra dates (e.g. THS calendar days not in daily_adj)
+    # Drop extra dates (e.g. THS calendar days not in canonical daily data)
     extra_dates = sorted(set(wide.index) - set(ref_dates))
     if extra_dates:
         wide = wide.drop(extra_dates, errors="ignore")
@@ -72,10 +77,8 @@ def align_to_reference(wide: pd.DataFrame, skip_ffill: bool = False) -> pd.DataF
         # Add missing dates and forward-fill (source data outages)
         missing_dates = sorted(set(ref_dates) - set(wide.index))
         if missing_dates:
-            missing_df = pd.DataFrame(index=missing_dates, columns=wide.columns)
-            wide = pd.concat([wide, missing_df])
-            wide = wide.sort_index()
-            wide = wide.ffill()
+            combined_dates = sorted(set(wide.index).union(missing_dates))
+            wide = wide.reindex(combined_dates).ffill()
 
     # Drop extra codes (e.g. THS stocks not in pool)
     extra_codes = sorted(set(wide.columns) - set(ref_codes))
@@ -134,6 +137,7 @@ def ensure_single_factor_frame(
     data: pd.Series | pd.DataFrame,
     factor_name: str,
     skip_ffill: bool = False,
+    paths: ProjectPaths | None = None,
 ) -> pd.DataFrame:
     if isinstance(data, pd.Series):
         frame = data.to_frame(name=factor_name)
@@ -170,7 +174,7 @@ def ensure_single_factor_frame(
     wide.index.name = "Date"
 
     # ── Align to reference frame (uniform shape) ──
-    wide = align_to_reference(wide, skip_ffill=skip_ffill)
+    wide = align_to_reference(wide, skip_ffill=skip_ffill, paths=paths)
 
     return wide
 
@@ -295,7 +299,7 @@ def write_factor_incremental(
     # fills all missing dates (existing had them except the tail;
     # new_frame supplies the tail), *missing_dates* will be empty and
     # forward-fill will not be triggered.
-    merged = align_to_reference(merged)
+    merged = align_to_reference(merged, paths=paths)
 
     # Atomic write back to base
     tmp = base_path.with_suffix(".fea.tmp")
@@ -367,7 +371,7 @@ def write_target_incremental(
     merged = merged.sort_index()
 
     # Re-align after merge (target behaviour: no date padding)
-    merged = align_to_reference(merged, skip_ffill=True)
+    merged = align_to_reference(merged, skip_ffill=True, paths=paths)
 
     # Atomic write back to target
     tmp = target_path.with_suffix(".fea.tmp")

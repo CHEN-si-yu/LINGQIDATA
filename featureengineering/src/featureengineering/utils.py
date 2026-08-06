@@ -39,8 +39,10 @@ def cross_sectional_rank(
     to [*lower*, *upper*] quantiles per date to limit the influence of
     extreme outliers on the rank distribution.
     """
-    series = series.replace([np.inf, -np.inf], np.nan)
     series = pd.to_numeric(series, errors="coerce")
+    # Convert first, then replace infinities.  Replacing on object/bool input
+    # triggers deprecated silent downcasting and changes behaviour in pandas 3.
+    series = series.replace([np.inf, -np.inf], np.nan)
 
     if winsorize:
         # Vectorized winsorization — 7× faster than groupby.transform(_clip)
@@ -157,7 +159,8 @@ def event_decay(series: pd.Series, half_life: int = 5) -> pd.Series:
 
     Returns
     -------
-    pd.Series with the same MultiIndex, no NaN after each stock's first event.
+    pd.Series with the same MultiIndex.  Dates before a stock's first event
+    (and stocks that never experienced the event) carry the neutral value 0.
     """
     import numpy as np
 
@@ -165,7 +168,7 @@ def event_decay(series: pd.Series, half_life: int = 5) -> pd.Series:
 
     def _decay_one_stock(s: pd.Series) -> pd.Series:
         # Forward-fill event values
-        ffill = s.ffill()
+        ffill = s.ffill().fillna(0.0)
         # Days since last event — group_id increments on each new event
         grouper = s.notna().cumsum()
         days_since = s.groupby(grouper, group_keys=False).cumcount()

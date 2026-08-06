@@ -224,19 +224,21 @@ def factor_downside_upside_vol_60(context: FactorContext):
 
 @register_factor(
     name="drawdown_duration_120",
-    description="回撤持续期因子：当前回撤(复权价低于前高)持续天数截面排名（负向，深陷回撤排后）。",
+    description="120日回撤持续期因子：当前价格低于120日滚动前高的连续天数（上限120日，负向排名）。",
     category="risk",
     thesis="回撤持续期=从前期高点回落至今的天数——持续期长=趋势破坏久、套牢盘积压重。"
-           "基于复权基座的 cummax 判定前高，除权日无假回撤。负向排名。",
+           "基于复权基座的120日滚动高点判定前高，除权日无假回撤。负向排名。",
     dependencies=("daily.parquet",),
 )
 def factor_drawdown_duration_120(context: FactorContext):
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    cummax = adj.groupby(level="Code").cummax()
-    in_dd = adj.lt(cummax * 0.999)
+    rolling_high = adj.groupby(level="Code").transform(
+        lambda s: s.rolling(120, min_periods=1).max()
+    )
+    in_dd = adj.lt(rolling_high * 0.999)
     # 回撤段:从回到前高起计数,回撤中每天+1
-    duration = _consecutive_count(in_dd)
+    duration = _consecutive_count(in_dd).clip(upper=120)
     return cross_sectional_rank(-duration)
 
 

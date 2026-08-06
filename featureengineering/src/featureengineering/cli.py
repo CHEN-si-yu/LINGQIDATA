@@ -108,6 +108,17 @@ def _print_plan(selected: list[str], paths: ProjectPaths, force: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows may expose a GBK console that cannot encode mathematical
+    # symbols used in factor descriptions.  Keep the native encoding (so
+    # Chinese remains readable) but never let reporting abort a build.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="replace")
+            except (AttributeError, OSError):
+                pass
+
     p = build_parser()
     args = p.parse_args(argv)
     paths = configure_paths(
@@ -173,14 +184,30 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ── Build ────────────────────────────────────────────────────────────
-    # Class 2, 3, 4 always use unified single-pass builders.
-    # Separate factors by class so each data source is opened once.
+    # Preserve the dependency order Class 1 -> ... -> Class 5.  In particular,
+    # Class 5 consumes Class 1-4 .fea outputs and must never share a parallel
+    # worker pool with Class 1 when --all or a multi-class selection is used.
+    c1_names = [n for n in factor_names if classify_factor(n) == 1]
     c2_names = [n for n in factor_names if classify_factor(n) == 2]
     c3_names = [n for n in factor_names if classify_factor(n) == 3]
     c4_names = [n for n in factor_names if classify_factor(n) == 4]
-    other_names = [n for n in factor_names if classify_factor(n) not in (2, 3, 4)]
+    c5_names = [n for n in factor_names if classify_factor(n) == 5]
 
     all_results = []
+
+    def _build_regular(names: list[str]):
+        if not names:
+            return []
+        if len(names) == 1:
+            return build_many(names, paths=paths, force=args.force)
+        return build_many_parallel(
+            names, max_workers=args.jobs, paths=paths, force=args.force,
+            quality_check_days=args.quality_check_days,
+            use_dashboard=args.dashboard,
+        )
+
+    if c1_names:
+        all_results.extend(_build_regular(c1_names))
 
     if c2_names:
         from .factors.chip_deep import build_cyq_chips_new
@@ -210,15 +237,10 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             max_workers=args.jobs,
             quality_check_days=args.quality_check_days,
-    ))
-    if len(other_names) == 1:
-        all_results.extend(build_many(other_names, paths=paths, force=args.force))
-    else:
-        all_results.extend(build_many_parallel(
-            other_names, max_workers=args.jobs, paths=paths, force=args.force,
-            quality_check_days=args.quality_check_days,
-            use_dashboard=args.dashboard,
-            ))
+        ))
+
+    if c5_names:
+        all_results.extend(_build_regular(c5_names))
 
     for result in all_results:
         status = "OK" if result.action not in ("error",) else "ERR"

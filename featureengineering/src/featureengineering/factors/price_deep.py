@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from ..registry import FactorContext, register_factor
 from ..utils import cross_sectional_rank, safe_divide
@@ -80,23 +81,41 @@ def factor_shadow_asymmetry(context: FactorContext):
 
 @register_factor(
     name="gap_fill_5d",
-    description="5日缺口回补因子，(close-pre_close_5d_ago)/pre_close_5d_ago截面排名（接近0=缺口完全回补）。",
+    description="5日前跳空缺口的未回补比例取负排名（0=已回补，负值=仍有缺口）。",
     category="price",
     thesis="A股市场'缺口必补'观点广为流传——5日前的跳空缺口若未被回补则仍存在吸引价格回归的拉力。当前价格越接近缺口起点（pre_close_5d_ago），缺口回补压力越大。",
     dependencies=("daily.parquet",),
 )
 def factor_gap_fill_5d(context: FactorContext):
-    """Compute gap fill status relative to 5 days ago via the adjusted base:
-    adj_t / adj_{t-5} - 1.  The raw version mixed unadjusted close with the
-    vendor-adjusted pre_close from 5 days ago, which is dividend-distorted
-    whenever an ex-dividend occurs inside the 5-day window.
-    """
+    """Measure how much of the gap opened five sessions ago remains unfilled."""
     daily = context.load("daily.parquet")
     adj = _adjusted_close(daily)
-    gap_fill = adj.groupby(level="Code").transform(
-        lambda s: s.pct_change(5, fill_method=None)
+    scale = adj / daily["close"].replace(0, np.nan)
+    adj_high = daily["high"] * scale
+    adj_low = daily["low"] * scale
+    gap = safe_divide(daily["open"] - daily["pre_close"], daily["pre_close"])
+
+    event_gap = gap.groupby(level="Code").shift(5)
+    event_anchor = (daily["pre_close"] * scale).groupby(level="Code").shift(5)
+    high_since = adj_high.groupby(level="Code").transform(
+        lambda s: s.rolling(6, min_periods=6).max()
     )
-    return cross_sectional_rank(gap_fill)
+    low_since = adj_low.groupby(level="Code").transform(
+        lambda s: s.rolling(6, min_periods=6).min()
+    )
+    up_remaining = safe_divide(low_since - event_anchor, event_anchor.abs()).clip(lower=0)
+    down_remaining = safe_divide(event_anchor - high_since, event_anchor.abs()).clip(lower=0)
+    remaining = pd.Series(
+        np.where(
+            event_gap > 0.01,
+            up_remaining,
+            np.where(event_gap < -0.01, down_remaining, np.nan),
+        ),
+        index=daily.index,
+        dtype=float,
+    )
+    unfilled_fraction = safe_divide(remaining, event_gap.abs())
+    return cross_sectional_rank(-unfilled_fraction)
 
 
 @register_factor(
@@ -107,14 +126,14 @@ def factor_gap_fill_5d(context: FactorContext):
     dependencies=("daily.parquet",),
 )
 def factor_oi_divergence_intensity(context: FactorContext):
-    """Compute (close - open) - (open - pre_close).
-    Positive = intraday direction reinforces gap. Negative = intraday reverses gap.
-    """
+    """Signed intraday return in the direction of the opening gap."""
     daily = context.load("daily.parquet")
-    overnight_gap = daily["open"] - daily["pre_close"]
-    intraday_move = daily["close"] - daily["open"]
-    divergence = intraday_move - overnight_gap
-    return cross_sectional_rank(divergence)
+    overnight_gap = safe_divide(
+        daily["open"] - daily["pre_close"], daily["pre_close"]
+    )
+    intraday_ret = safe_divide(daily["close"] - daily["open"], daily["open"])
+    reinforcement = np.sign(overnight_gap) * intraday_ret
+    return cross_sectional_rank(reinforcement)
 
 
 # ── Overnight / Intraday gap factors ─────────────────────────────────────

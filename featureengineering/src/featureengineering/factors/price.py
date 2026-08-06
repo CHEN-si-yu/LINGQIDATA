@@ -216,7 +216,8 @@ def factor_breakout_60(context: FactorContext):
     # close base's rolling maximum (George-Hwang style approximation), which
     # is immune to ex-dividend jumps in the 60-day window.
     adj = _adjusted_close(daily)
-    adj_max = adj.groupby(level="Code").transform(
+    previous = adj.groupby(level="Code").shift(1)
+    adj_max = previous.groupby(level="Code").transform(
         lambda s: s.rolling(60, min_periods=30).max()
     )
     breakout = adj / adj_max.replace(0, np.nan) - 1.0

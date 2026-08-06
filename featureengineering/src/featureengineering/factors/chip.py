@@ -312,7 +312,7 @@ def factor_chip_winner_rate_ma5(context: FactorContext):
 
 @register_factor(
     name="chip_concentration_ma5",
-    description="筹码集中度5日均值因子 (低集中排后, 高集中度的负向截面排名取负=高集中排后)。",
+    description="筹码成本宽度5日均值因子：(cost95−cost5)/cost50取负排名，区间越窄（越集中）排前。",
     category="price",
     thesis="筹码集中度均值化后稳定性提升，高集中度意味着筹码被少数人掌控=拉升易但出货难",
     dependencies=("cyq_perf.parquet",),

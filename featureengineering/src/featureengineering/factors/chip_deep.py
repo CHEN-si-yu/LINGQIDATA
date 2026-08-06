@@ -102,10 +102,12 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
     topk = np.partition(percents, -k)[-k:]
     cr3 = topk.sum() / total_pct
 
-    # ── Gini coefficient (price-sorted Lorenz-curve area) ──
-    sort_idx = np.argsort(prices)
-    w_sorted = percents[sort_idx].astype(np.float64)
-    cs = np.cumsum(w_sorted) / total_pct  # normalised cumulative share
+    # ── Gini concentration of probability mass across price bins ──
+    # A Gini/Lorenz curve sorts the measured masses themselves.  Sorting by
+    # price would make the result depend on whether the dominant bin happened
+    # to be cheap or expensive and could even produce a signed location proxy.
+    w_sorted = np.sort(pcts.astype(np.float64))
+    cs = np.cumsum(w_sorted)
     # G = 1 - 2 * area_under_Lorenz = 1 - (1/n) * Σ (cs_i + cs_{i-1})
     cs_prev = np.concatenate([[0.0], cs[:-1]])
     n = len(w_sorted)
@@ -200,6 +202,7 @@ def _chip_daily_metrics(stock_df: pd.DataFrame,
     """
     df = stock_df.copy()
     df["trade_date"] = df["trade_date"].astype(str).str.replace("-", "").str.slice(0, 8)
+    df = df.sort_values(["trade_date", "price"], kind="stable")
 
     MAX_PRICE = 10000.0
     df = df[(df["price"] > 0) & (df["price"] < MAX_PRICE) & (df["percent"] > 0)]
@@ -222,7 +225,7 @@ def _chip_daily_metrics(stock_df: pd.DataFrame,
             rows.append(row)
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).sort_index()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -276,8 +279,8 @@ CHIP_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "chip_gini_momentum_rev":   ("chip_gini",            "momentum_rev"),
     "chip_cv_pos":              ("chip_cv",              "pos"),
     # ── 2026-08-05: close-relative trap ratios & shape extras (4) ──
-    "chip_deep_trap_ratio":     ("chip_below_90",        "neg"),
-    "chip_high_float_ratio":    ("chip_upper_110",       "neg"),
+    "chip_deep_trap_ratio":     ("chip_upper_110",       "neg"),
+    "chip_high_float_ratio":    ("chip_below_90",        "neg"),
     "chip_bimodality":          ("chip_mode_median_gap", "neg"),
     "chip_range_skew_factor":   ("chip_range_skew",      "neg"),
     # ── 2026-08-05: cost-centre momentum (2) ──
@@ -527,7 +530,7 @@ def build_cyq_chips_unified(
                 s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
-            raw_metrics[col] = s
+            raw_metrics[col] = s.sort_index()
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
@@ -571,7 +574,7 @@ def build_cyq_chips_unified(
         else:
             ranked = cross_sectional_rank(raw)
 
-        frame = ensure_single_factor_frame(ranked, name)
+        frame = ensure_single_factor_frame(ranked, name, paths=paths)
         output[name] = frame
 
     # ── Incremental: keep only new dates in output frames ──────────────────
@@ -818,7 +821,7 @@ def build_cyq_chips_new(
                 s = s[~s.index.duplicated(keep="last")]
             if isinstance(s.index, pd.MultiIndex):
                 s.index = s.index.set_names(["Date", "Code"])
-            raw_metrics[col] = s
+            raw_metrics[col] = s.sort_index()
         else:
             raw_metrics[col] = pd.Series(dtype=float, name=col)
 
@@ -885,7 +888,7 @@ def build_cyq_chips_new(
             else:
                 ranked = cross_sectional_rank(raw)
 
-            frame = ensure_single_factor_frame(ranked, name)
+            frame = ensure_single_factor_frame(ranked, name, paths=paths)
             output[name] = frame
             fac_elapsed[name] = time.perf_counter() - t_fac
         except Exception:
