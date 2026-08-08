@@ -1,0 +1,116 @@
+2026-08-07 20:46:13 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260807_204613.log
+2026-08-07 20:46:13 [INFO   ] root: Python    : 3.12.3
+2026-08-07 20:46:13 [INFO   ] root: pandas    : 3.0.3
+2026-08-07 20:46:13 [INFO   ] root: numpy     : 2.3.2
+2026-08-07 20:46:15 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:15 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:15 [INFO   ] featureengineering.builder: Effective end date: 20260807  |  370 factors to check
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:46:18 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-07 20:49:01 [INFO   ] featureengineering.builder: Build complete — 370 ok, 0 skip, 0 error | 4345 s wall | 591586 total rows
+2026-08-07 21:14:34 [INFO   ] featureengineering.builder: Effective end date: 20260807  |  116 factors to check
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:43 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:44 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:14:45 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-07 21:16:41 [INFO   ] featureengineering.builder: Build complete — 116 ok, 0 skip, 0 error | 1118 s wall | 185484 total rows

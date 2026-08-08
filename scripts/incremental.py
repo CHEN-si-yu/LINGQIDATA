@@ -139,18 +139,6 @@ DATASETS = [
         "type": "consolidated",
         "strict_dedup": True,
     },
-    # ═══ Day-by-day (consolidated output) ═══
-    {
-        "name": "ths_daily",
-        "module": "fetch_ths_daily", "fn_name": "fetch_ths_daily",
-        "file": "ths_daily.parquet",
-        "date_col": "trade_date",
-        "dedup": ["trade_date", "ths_code"],
-        "sort": ["ths_code", "trade_date"],
-        "start": "2019-01-01",
-        "type": "consolidated",
-        "strict_dedup": True,
-    },
     # ═══ Reference data (small, re-fetch entirely) ═══
     {
         "name": "calendar",
@@ -171,28 +159,6 @@ DATASETS = [
         "sort": ["stock_code"],
         "start": "2019-01-01",
         "type": "reference",
-    },
-    {
-        "name": "ths_sector_categories",
-        "module": "fetch_ths_sector_categories", "fn_name": "fetch_ths_sector_categories",
-        "file": "ths_sector_categories.parquet",
-        "date_col": None,
-        "dedup": ["index_code"],
-        "sort": ["type", "index_code"],
-        "start": "2019-01-01",
-        "type": "reference",
-        "weekly_update_day": 4,  # Friday only (Mon=0 ... Sun=6)
-    },
-    {
-        "name": "ths_constituent_stocks",
-        "module": "fetch_ths_constituent_stocks", "fn_name": "fetch_ths_constituent_stocks",
-        "file": "ths_constituent_stocks.parquet",
-        "date_col": None,
-        "dedup": ["index_code", "stock_code"],
-        "sort": ["index_code", "stock_code"],
-        "start": "2019-01-01",
-        "type": "reference",
-        "weekly_update_day": 4,  # Friday only (Mon=0 ... Sun=6)
     },
     # ═══ Per-stock data ═══
     {

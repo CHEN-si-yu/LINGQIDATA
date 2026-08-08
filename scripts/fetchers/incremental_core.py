@@ -37,13 +37,11 @@ CANARY_ENDPOINTS = [
     "stock/finance",
     "stock/margin_detail",
     "stock/main_fund_flow",
-    "index/ths_daily",
     "stock/cyq_chips",
     "stock/cyq_perf",
 ]
 CANARY_NO_STOCK_FILTER = {
     "stock/margin_detail",
-    "index/ths_daily",
 }
 CANARY_LAG_DAYS = {
     "stock/margin_detail": 1,
@@ -183,7 +181,7 @@ def _probe_canary_endpoint(endpoint, target_date, api_key):
     is_stock_level = endpoint not in CANARY_NO_STOCK_FILTER
 
     if not is_stock_level:
-        # Non-stock endpoint (margin_detail, ths_daily): single probe
+        # Non-stock endpoint (margin_detail): single probe
         try:
             resp = requests.post(url, headers=headers, json=base_payload, timeout=60)
             resp.raise_for_status()
@@ -289,7 +287,7 @@ def _canary_datasets_behind(target_date_str):
     - Per-stock (cyq_chips, indicator_1min, history_1min): sample 10 stocks
     - daily_dump_1min: check file exists on disk
     - Consolidated (cyq_perf, daily_adj, daily, finance, main_fund_flow,
-      margin_detail, ths_daily): row count for target_date >= 1000
+      margin_detail): row count for target_date >= 1000
     """
     THRESHOLD = 1000
     SAMPLE_SIZE = 10
@@ -385,7 +383,6 @@ def _canary_datasets_behind(target_date_str):
         ("finance",        "finance.parquet",         "trade_date", 0),
         ("main_fund_flow", "main_fund_flow.parquet",  "trade_date", 0),
         ("margin_detail",  "margin_detail.parquet",   "trade_date", 1),
-        ("ths_daily",      "ths_daily.parquet",       "trade_date", 0),
     ]
 
     for name, filename, date_col, lag in consolidated_checks:

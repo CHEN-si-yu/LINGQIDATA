@@ -4,27 +4,57 @@
 
 ### 1.1 日频约束（必须）
 
-因子**必须**使用日频原始字段。仅依赖静态属性（如 `stock_list.parquet` 的公司属性）而不使用任何日频数据的因子，一律不合格。
+因子**必须**使用日频原始字段，且数据源仅限**白名单 8 源**（2026-08-08 debug 实证定型，依据见 §1.3）。
+仅依赖静态属性（如 `stock_list.parquet` 的公司属性）而不使用任何日频数据的因子，一律不合格。
 
-| 许可数据源 | 频率 | 说明 |
+| 许可数据源（白名单） | 频率 | 说明 |
 |---|---|---|
-| `daily.parquet` | 日频 | 未复权日线 OHLCV（**唯一日线数据源**） |
-| `finance.parquet` | 日频 | 日频财务/市场数据（pb, pe_ttm, turnover_rate, dividend_yield 等；**pe_ttm_percentile 字段禁止使用**） |
-| `ths_daily.parquet` | 日频 | 同花顺板块指数日频 ⚠️ 注意：THS 板块→个股映射数据缺失，该数据源当前**不可用** |
-| `calendar.parquet` | 日频 | 交易日历 |
-| `main_fund_flow.parquet` | 日频 | 主力资金流向 |
-| `margin_detail.parquet` | 日频 | 融资融券明细 |
-| `cyq_perf.parquet` | 日频 | 筹码分布 |
+| `daily.parquet` | 日频 | 未复权日线 OHLCV（**唯一日线价格源**，pre_close / pct_chg 口径） |
+| `finance.parquet` | 日频 | 日频财务/市场数据（pb、pe_ttm、turnover_rate、total_mv 等；**pe_ttm_percentile 字段禁止使用**） |
+| `cyq_perf.parquet` | 日频 | 筹码分布（**his_low / his_high 字段禁止使用**，上游回溯改写） |
+| `main_fund_flow.parquet` | 日频 | 主力资金流向（大/中/小单分类） |
+| `margin_detail.parquet` | 日频 | 融资融券明细（T+1 到达，数据层已统一 shift(1) 对齐；只追加不修订） |
+| `cyq_chips/` | 日频 | 筹码分布面板（逐股目录，Class 2） |
+| `history_1min/` | 日频 | 1 分钟线（逐股目录，Class 3） |
+| `indicator_1min/` | 日频 | 分钟指标（逐股目录，Class 4） |
+| `calendar.parquet` | 辅助 | 交易日历，只追加不修改；可用于交易日对齐/时间编码，**不承载因子数值** |
 
-| 禁止依赖 | 原因 |
+| 禁止依赖 | 原因（debug 实证，详见 §1.3） |
 |---|---|
-| `stock_list.parquet` **单独使用** | 静态属性，无日频变动 |
-| `ths_constituent_stocks.parquet` | 映射数据缺失（type="I" 行业板块无数据） |
+| `daily_adj.parquet` | 前复权，除权事件回溯改写历史 OHLC（仅 target 标签可用） |
+| `finance.parquet.pe_ttm_percentile` | T 日 0 占位 → T+1 回填真实分位并全市场重算（字段级禁用） |
+| `cyq_perf.parquet.his_low / his_high` | 上游回溯改写、复权口径与未复权 close 混比（字段级禁用） |
+| `ths_daily.parquet` | T 日数据在 T+1 被修订（0805 vs 0806 对比 355 行改写先例） |
+| `ths_constituent_stocks.parquet` | 当前快照、无成员历史 → 无法 point-in-time 归属 |
+| `ths_sector_categories.parquet` | 指数元数据，随 ths 系不可用 |
+| `stock_list.parquet` | 静态快照（含上游重复行缺陷），构建时自动禁用依赖因子 |
+| `short_selling.parquet` | 非白名单（无因子依赖，历史已清理） |
 | 仅靠静态属性 broadcast 到每日 | 产出常量因子，无截面信息 |
 
 ### 1.2 时间编码型因子（例外）
 
 日历效应类因子（如 `month_start_effect`、`quarter_end_proximity`、`day_of_week_effect`）虽然截面方差极低，但使用日频 calendar 数据，属于**时间编码**，合格保留。
+
+### 1.3 point-in-time（PIT）契约 —— 白名单依据（2026-08-08 debug 实证定型）
+
+因子 T 日值必须满足两点：**只依赖 ≤ T 的数据**（无未来函数）；且上游对 ≤ T 的历史数据
+**只追加、不修改**（未来数据更新不回溯改写历史）。
+
+实证依据（debug 20260806 / 20260807 两次 10 日全量切片对比，9 个重叠交易日逐格 diff）：
+
+- **白名单 8 源数值零变动** → 满足"只追加不修改"：daily / finance / cyq_perf /
+  main_fund_flow / margin_detail / cyq_chips / history_1min / indicator_1min；
+- **daily_adj**：前复权，除权事件回溯改写历史 OHLC（0806 vs 0807 对比 57 行 / 274 格，
+  14 只股票 08-03~08-06 被改写）→ 禁用，仅 target 可用；
+- **finance.pe_ttm_percentile**：T 日 0 占位、T+1 回填真实分位并全市场重算
+  （0806 vs 0807 对比 3916 格；0805 vs 0806 对比 2073 格）→ 字段级禁用；
+- **ths_daily**：T 日数据在 T+1 被修订（0805 vs 0806 对比 355 行 / 393 格全列改写）→ 禁用；
+- **stock_list / ths_constituent_stocks / ths_sector_categories**：静态快照或成分无历史，
+  用当前数据回填历史 = 前视偏差 → 禁用（构建时由 factor_loader 自动拦截）。
+
+收敛结果：全部因子（运行时注册表 − 5 标签 = 686，与 debug 切片 .fea 数量一致）的
+上游依赖已收敛于白名单 8 源（20 种文件组合，无第 9 类来源），两次对比中 686 个 .fea
+在 9 个重叠交易日**零变动**。**新因子引入白名单外的数据源 = 违约**，构建评审不通过。
 
 ---
 
@@ -175,10 +205,11 @@ def factor_my_factor_name(context: FactorContext):
 
 在新建因子前，确认以下各项：
 
-- [ ] 依赖的数据源是日频的（daily / finance / calendar / 或同级别）
+- [ ] 依赖的数据源 ∈ 白名单 8 源：daily / finance / cyq_perf / main_fund_flow / margin_detail / cyq_chips / history_1min / indicator_1min（calendar 仅辅助，不承载因子数值）
 - [ ] 不依赖 daily_adj.parquet（target 例外）—— 所有因子统一使用 daily.parquet
-- [ ] 不使用 finance.parquet 中的 pe_ttm_percentile 字段
-- [ ] 不依赖 ths_daily.parquet（当前 THS 板块→个股映射不可用）
+- [ ] 不使用 finance.parquet 中的 pe_ttm_percentile 字段（T+1 回填改写）
+- [ ] 不使用 cyq_perf.parquet 中的 his_low / his_high 字段（上游回溯改写）
+- [ ] 不依赖 ths_daily / ths_constituent_stocks / ths_sector_categories / stock_list / short_selling
 - [ ] 不使用 `rolling().apply(lambda, raw=False)` 对宽 DataFrame
 - [ ] 不使用日期 × 日期双重循环
 - [ ] 使用 `stack_date_code()`、`safe_divide()`、`np.asarray()` 等 pandas 3.0 兼容工具
@@ -191,16 +222,21 @@ def factor_my_factor_name(context: FactorContext):
 
 | 数据源 | 状态 | 说明 |
 |---|---|---|
-| `daily_adj.parquet` | ❌ 因子禁用 | **仅 target 可用**，所有因子统一使用 daily.parquet |
-| `daily.parquet` | ✅ 可用 | 核心日线数据源（未复权 OHLCV） |
-| `finance.parquet` | ✅ 可用 | pb/pe/turnover_rate/dividend 等日频字段；**pe_ttm_percentile 字段禁止使用** |
-| `calendar.parquet` | ✅ 可用 | |
-| `main_fund_flow.parquet` | ✅ 可用 | 大单/中单/小单分类 |
-| `margin_detail.parquet` | ⚠️ 部分覆盖 | 仅约 85% 股票有融资融券，做因子需接受高 NaN |
-| `short_selling.parquet` | ⚠️ 部分覆盖 | 仅约 85% 股票有融券，做因子需接受高 NaN |
-| `ths_daily.parquet` | ❌ 不可用 | THS 板块→个股映射缺失，所有 sector_* 因子产出 100% NaN |
-| `ths_constituent_stocks.parquet` | ❌ 不可用 | type="I" 行业板块无匹配数据 |
-| `stock_list.parquet` | ⚠️ 辅助 | 仅作辅助（如行业名称补充），不可作为唯一数据源 |
+| `daily_adj.parquet` | ❌ 因子禁用 | **仅 target 可用**，前复权会回溯改写历史 |
+| `daily.parquet` | ✅ 白名单 | 核心日线数据源（未复权 OHLCV，pre_close / pct_chg 口径） |
+| `finance.parquet` | ✅ 白名单 | pb/pe_ttm/turnover_rate/total_mv 等；**pe_ttm_percentile 字段禁用**（T+1 回填） |
+| `cyq_perf.parquet` | ✅ 白名单 | 筹码分布；**his_low / his_high 字段禁用**（上游回溯改写） |
+| `main_fund_flow.parquet` | ✅ 白名单 | 大单/中单/小单分类 |
+| `margin_detail.parquet` | ✅ 白名单 | T+1 到达，数据层已 shift(1) 对齐；仅约 85% 股票覆盖，做因子需接受高 NaN |
+| `cyq_chips/` | ✅ 白名单 | 逐股筹码面板（Class 2） |
+| `history_1min/` | ✅ 白名单 | 逐股 1 分钟线（Class 3） |
+| `indicator_1min/` | ✅ 白名单 | 逐股分钟指标（Class 4） |
+| `calendar.parquet` | ✅ 辅助 | 只追加不修改；交易日对齐/时间编码用，不承载因子数值 |
+| `ths_daily.parquet` | ❌ 禁用 | 纯指数日线；T 日数据 T+1 被修订（0805 vs 0806 对比 355 行改写先例） |
+| `ths_constituent_stocks.parquet` | ❌ 禁用 | 当前快照、无成员历史，无法 point-in-time 归属 |
+| `ths_sector_categories.parquet` | ❌ 禁用 | 指数元数据，随 ths 系不可用 |
+| `stock_list.parquet` | ❌ 禁用 | 静态快照，构建时自动禁用依赖因子（factor_loader） |
+| `short_selling.parquet` | ❌ 非白名单 | 无因子依赖，历史已清理 |
 
 ---
 
@@ -637,3 +673,46 @@ open_volume_share / vwap_am_pm_gap_factor / open_30_range_share / am_close_posit
 - .fea 数据文件:700 → **694**;manifests json 700→694、done 500→494
 
 *最后更新:2026-08-05*
+
+---
+
+### 8.15 2026-08-08 debug 实证：数据源白名单定型（8 源）
+
+基于 debug/20260806、debug/20260807 两次 10 交易日全量切片（1782 只股票 × 10 日，
+逐格 diff，9 个重叠交易日）总结，数据源准入规则定型。
+
+**上游修订实证（谁在变）**：
+
+| 数据 | 0805 vs 0806 | 0806 vs 0807 | 判定 |
+|---|---|---|---|
+| `daily_adj.parquet` | 25 行 / 98 格 | 57 行 / 274 格（14 只除权，08-03~08-06，最大差 2.06） | ❌ 前复权改写历史 |
+| `finance.parquet` pe_ttm_percentile | 2073 格（08-05 回填 0→真实分位） | 3916 格（08-06 同模式） | ❌ T+1 回填重算；pe_ttm 本身零变动 |
+| `ths_daily.parquet` | 355 行 / 393 格（08-05 全列修订） | 0 | ❌ T 日数据 T+1 被改写 |
+| `daily.parquet` | 仅 stock_name 7 格 | 仅 stock_name 1 格 | ✅ 数值零变动（stock_name 为元数据） |
+| `cyq_perf` / `main_fund_flow` / `margin_detail` / `cyq_chips` / `history_1min` / `indicator_1min` | 0 | 0 | ✅ 只追加不修改 |
+| 686 个 factors/*.fea | 0 | 0 | ✅ 9 重叠日零变动 |
+
+（daily_dump_1min 同样零变动，但无任何因子依赖，按口径不列入白名单。）
+
+**结论 1 — 白名单 8 源**：因子开发仅允许使用
+`daily` / `finance` / `cyq_perf` / `main_fund_flow` / `margin_detail` / `cyq_chips` /
+`history_1min` / `indicator_1min`。
+这是实证"数值零变动（只追加不修改）"的完整集合；全部因子（运行时注册表 − 5 标签 = 686，
+与切片 .fea 数量一致）的上游依赖普查也恰好落在这 8 个源（20 种文件组合，无第 9 类来源）。
+
+**结论 2 — 字段级禁用**：
+- `finance.pe_ttm_percentile`：T 日 0 占位 → T+1 全市场回填真实分位，T 日用到它的因子值会被改写；
+- `cyq_perf.his_low / his_high`：上游回溯改写 + 复权口径与未复权 close 混比（§8.11 已删同源因子）。
+
+**结论 3 — THS 三件套永久不可用**（ths_daily / ths_constituent_stocks / ths_sector_categories）：
+- ths_daily 为**纯指数日线**（2571 个指数代码，无任何个股行），落地到个股必须经成分映射；
+- ths_constituent_stocks **无日期列**（当前快照）：700001.TI 一周内成员 5000→5537
+  （新增 537 只、0 移除），无成员历史 → 任何历史行业归属都是前视偏差；上游另有
+  875 只代码重复 ×2 的生成缺陷；
+- 时间覆盖不足：69% 的指数无 2019~2022 数据（700001.TI 全A指数仅 2023-01 起）；
+- 三文件指数口径不一致（2571 vs 1666 vs 1664）。
+- 工程侧已于 2026-07-31 将 sector 因子 THS 路径替换为 stock_list 兜底，与本节一致。
+
+规范落点：白名单 → §1.1；PIT 契约 → §1.3；开发前检查 → §6；数据源状态 → §7。
+
+*最后更新:2026-08-08*

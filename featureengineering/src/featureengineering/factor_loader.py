@@ -15,8 +15,7 @@ _DAILY_SOURCES = {
     "daily.parquet", "finance.parquet",
     "cyq_perf.parquet", "main_fund_flow.parquet", "margin_detail.parquet",
     "limit_up.parquet", "dragon_tiger.parquet", "top_list.parquet",
-    "limit_list.parquet", "ths_daily.parquet", "ths_sector_categories.parquet",
-    "ths_constituent_stocks.parquet", "pledge_stat.parquet",
+    "limit_list.parquet", "pledge_stat.parquet",
     "history_1min", "cyq_chips", "indicator_1min",
 }
 

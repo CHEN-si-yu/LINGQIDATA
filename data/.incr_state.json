@@ -1,52 +1,47 @@
 {
   "daily": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "daily_adj": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "finance": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "margin_detail": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-04",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-06",
     "pending": false
   },
   "main_fund_flow": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
-    "pending": false
-  },
-  "ths_daily": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "cyq_chips": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-07",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "cyq_perf": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-08",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "history_1min": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-07",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   },
   "indicators_1min": {
-    "last_run": "2026-08-05",
-    "last_fetch_max": "2026-08-05",
+    "last_run": "2026-08-07",
+    "last_fetch_max": "2026-08-07",
     "pending": false
   }
 }

@@ -30,7 +30,7 @@
 
 | 路径 | 内容 |
 |------|------|
-| `raw/*.parquet` | daily / daily_adj / finance / cyq_perf / main_fund_flow / margin_detail / ths_daily（各 10 日切片）+ calendar / stock_list / ths 成分 / ths 板块（整体拷贝） |
+| `raw/*.parquet` | daily / daily_adj / finance / cyq_perf / main_fund_flow / margin_detail（各 10 日切片）+ calendar / stock_list（整体拷贝） |
 | `raw/cyq_chips/` `history_1min/` `indicator_1min/` | 全部 1782 只股票 × 10 日 |
 | `raw/daily_dump_1min/` | 窗口内 10 个日期文件 |
 | `factors/*.fea` | 全量因子宽表（10 行 × 1782 列） |
@@ -80,3 +80,44 @@ T=08-03 → 07-31）。
   时 per-stock 目录为全量 1782 只股票（此前两次构建实际是抽样 1000 只，seed=42）；
   20260804 / 20260805 旧切片（含对比报告）已清除。脚本根目录改为自动探测
   （/root/autodl-fs/lingqiData 或 /autodl-fs/data/lingqiData），root / claude 用户均可运行。
+- **2026-08-06（当日记录）**：
+  - 数据刷新至 08-06（daily/daily_adj/finance 等；margin_detail 最新 08-05，T+1 正常）。
+  - 因子 point-in-time 修复（commit 3c1a990）：`_fill_source_gaps` 改为按统一交易日历
+    前向扩展、margin T+1 对齐等；重建时经 factor_loader 禁用 6 个非 point-in-time 因子
+    （industry_relative_momentum_20 / pb_industry_adjusted / ps_ttm_sector_neutral /
+    sector_amount_momentum_5d / sector_amount_rank / sector_mv_rank）。22:12–22:43 全量
+    重建完成（116 组 ok、686 个 .fea、1195s）。重建前 root 用户 20:50 留了一份
+    `20260805_copy/`（data + factors 快照）作为对比/备份。
+  - 构建 20260806 切片：6043 任务全 ok、0 err（窗口 20260724~20260806，10 交易日，
+    全量 1782 只，因子 686 个）。
+  - 对比 20260805 vs 20260806（报告见 `20260806/compare_report_20260805_20260806.*`）：
+    **686 个因子在 9 个重叠交易日上零变动** —— point-in-time 修复重建对历史日期无回归，
+    仅新增 08-06 行。raw 侧变动均为正常上游修订：4 只更名（001232/002214/300311/920038.BJ，
+    daily.stock_name）、~10 只复权价修订（688501.SH 等 08-05 除权，daily_adj OHLC）、
+    finance.pe_ttm_percentile 随新数据全市场重算（08-05 共 2069 格）、ths_daily 08-05
+    换手率等 355 行修订、stock_list +1 新股、calendar +1 开市日；cyq_chips /
+    history_1min / indicator_1min / daily_dump_1min / margin_detail 全零变动。
+- **2026-08-07（当日记录）**：
+  - 数据刷新至 08-07（daily/daily_adj/finance 等；margin_detail 最新 08-06，T+1 正常）。
+    因子 21:16 全量重建完成（686 个 .fea，含 08-07 行）。
+  - 构建 20260807 切片：6043 任务全 ok、0 err（窗口 20260727~20260807，全量 1782 只）。
+  - 对比 20260806 vs 20260807（报告见 `20260807/compare_report_20260806_20260807.*`）：
+    **686 个因子在 9 个重叠交易日上零变动**。raw 侧正常修订：603468.SH（08-06 上市新股）
+    名称空→N津富；14 只除权复权重算（000776/600060/600104/601336 等 08-07 除权，
+    daily_adj 08-03~08-06 按比例 0.965~0.991 整体下调）；finance.pe_ttm_percentile 08-06
+    回填（3916/5533 只旧值为 0 占位→真实分位，pe_ttm 本身零变动，与 08-05 模式相同）；
+    ths_daily / margin_detail / cyq_perf / main_fund_flow / cyq_chips / history_1min /
+    indicator_1min / daily_dump_1min / calendar 全零变动。
+  - ⚠️ 上游两处结构性问题（不影响因子值，建议反馈上游）：
+    ① stock_list.parquet 875 只代码重复各 ×2（行完全相同）：537 只在市 + 338 北交所
+    退市股，昨日无此问题 → 上游生成去重缺陷；
+    ② ths_constituent_stocks.parquet 从单指数（700001.TI 全A 5000 只）扩展为全部
+    1664 个同花顺指数（356208 行），其中 700001.TI 新增 537 只、0 移除（与 ① 中重复的
+    在市代码 507/537 重合 → 同源：~537 只新纳入全A）。sector 因子 2026-07-31 起已不
+    依赖该表，故因子零变动不受影响；但切片体积涨 ~70 倍，下游 join 需按 index_code 过滤，
+    stock_list join 需先去重。
+- **2026-08-08**：ths_* 数据全线清除。data/ 下 ths_daily / ths_constituent_stocks /
+  ths_sector_categories 三个原始文件删除，incremental.py 删除对应爬取任务、
+  incremental_core.py 删除 canary 探测端点（此后不再爬取更新）；本目录三个历史切片
+  （20260805 / 20260806 / 20260807）data10d/raw/ 中的 ths 拷贝一并删除，
+  build_debug_data_10d.py 不再切片 ths。历史对比报告中的 ths 记录保留（属当时的事实记录）。

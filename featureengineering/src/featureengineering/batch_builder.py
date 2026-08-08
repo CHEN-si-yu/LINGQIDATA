@@ -67,8 +67,6 @@ _REPORT_FREQUENCY_FILES: set[str] = {
 # They should not be pre-loaded as daily panels.
 _REPO_METHOD_FILES: set[str] = {
     "stock_list.parquet",
-    "ths_constituent_stocks.parquet",
-    "ths_sector_categories.parquet",
 }
 
 

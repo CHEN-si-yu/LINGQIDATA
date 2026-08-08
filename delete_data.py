@@ -77,11 +77,6 @@ FILE_DATASETS = {
         "date_col": "trade_date",
         "t_minus_1": False,
     },
-    "ths_daily": {
-        "path": "/root/autodl-fs/lingqiData/data/ths_daily.parquet",
-        "date_col": "trade_date",
-        "t_minus_1": False,
-    },
     "margin_detail": {
         "path": "/root/autodl-fs/lingqiData/data/margin_detail.parquet",
         "date_col": "trade_date",

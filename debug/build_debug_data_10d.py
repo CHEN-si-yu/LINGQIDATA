@@ -5,11 +5,12 @@ Debug 数据切片 v2 — 近 10 个交易日(截至锚点日期)的 raw + facto
 新思路: 不再只存哈希, 而是把原始字段/因子的最近 10 个交易日实际数据
 完整拷一份到 debug/<锚点日期>/data10d/ 下, 便于后续对比找变动因子。
 
-覆盖 (2026-08-06 起只保留 raw + factors, 不再切 targets/trainingdata):
+覆盖 (2026-08-06 起只保留 raw + factors, 不再切 targets/trainingdata;
+     2026-08-08 起 ths_* 已停爬停用, 不再切片):
   raw/        原始数据
     daily.parquet daily_adj.parquet finance.parquet cyq_perf.parquet
-    main_fund_flow.parquet margin_detail.parquet ths_daily.parquet
-    stock_list.parquet ths_constituent_stocks.parquet ths_sector_categories.parquet calendar.parquet
+    main_fund_flow.parquet margin_detail.parquet
+    stock_list.parquet calendar.parquet
     cyq_chips/     (全部股票 1782)
     history_1min/  (全部股票, 日内 → 按日期过滤)
     indicator_1min/(全部股票, 日内 → 按日期过滤)
@@ -218,14 +219,12 @@ def main():
         "cyq_perf.parquet": "trade_date",
         "main_fund_flow.parquet": "trade_date",
         "margin_detail.parquet": "trade_date",
-        "ths_daily.parquet": "trade_date",
     }
     for fn, dcol in long_singles.items():
         tasks.append((slice_long_single, (fn, DATA_DIR / fn, raw_dir / fn, dcol, wset)))
 
     # 2) 静态表 (整体拷贝)
-    for fn in ["stock_list.parquet", "ths_constituent_stocks.parquet",
-               "ths_sector_categories.parquet", "calendar.parquet"]:
+    for fn in ["stock_list.parquet", "calendar.parquet"]:
         tasks.append((slice_long_single, (fn, DATA_DIR / fn, raw_dir / fn, None, None)))
 
     # 3) daily_dump_1min: 窗口内日期文件直接拷贝
