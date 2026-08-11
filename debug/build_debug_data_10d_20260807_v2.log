@@ -1,0 +1,69 @@
+anchor=20260807 window=20260727~20260807 (10 交易日)
+per-stock dirs: 1782 stocks (全量, 不再抽样), e.g. ['000001.SZ.parquet', '000002.SZ.parquet', '000006.SZ.parquet']
+out: /autodl-fs/data/lingqiData/debug/20260807/data10d
+daily_dump_1min: copied 10/10
+total tasks: 6079 (factors=725)
+  [all] 100/6079  ok=100 err=0
+  [all] 200/6079  ok=200 err=0
+  [all] 300/6079  ok=300 err=0
+  [all] 400/6079  ok=400 err=0
+  [all] 500/6079  ok=500 err=0
+  [all] 600/6079  ok=600 err=0
+  [all] 700/6079  ok=700 err=0
+  [all] 800/6079  ok=800 err=0
+  [all] 900/6079  ok=900 err=0
+  [all] 1000/6079  ok=1000 err=0
+  [all] 1100/6079  ok=1100 err=0
+  [all] 1200/6079  ok=1200 err=0
+  [all] 1300/6079  ok=1300 err=0
+  [all] 1400/6079  ok=1400 err=0
+  [all] 1500/6079  ok=1500 err=0
+  [all] 1600/6079  ok=1600 err=0
+  [all] 1700/6079  ok=1700 err=0
+  [all] 1800/6079  ok=1800 err=0
+  [all] 1900/6079  ok=1900 err=0
+  [all] 2000/6079  ok=2000 err=0
+  [all] 2100/6079  ok=2100 err=0
+  [all] 2200/6079  ok=2200 err=0
+  [all] 2300/6079  ok=2300 err=0
+  [all] 2400/6079  ok=2400 err=0
+  [all] 2500/6079  ok=2500 err=0
+  [all] 2600/6079  ok=2600 err=0
+  [all] 2700/6079  ok=2700 err=0
+  [all] 2800/6079  ok=2800 err=0
+  [all] 2900/6079  ok=2900 err=0
+  [all] 3000/6079  ok=3000 err=0
+  [all] 3100/6079  ok=3100 err=0
+  [all] 3200/6079  ok=3200 err=0
+  [all] 3300/6079  ok=3300 err=0
+  [all] 3400/6079  ok=3400 err=0
+  [all] 3500/6079  ok=3500 err=0
+  [all] 3600/6079  ok=3600 err=0
+  [all] 3700/6079  ok=3700 err=0
+  [all] 3800/6079  ok=3800 err=0
+  [all] 3900/6079  ok=3900 err=0
+  [all] 4000/6079  ok=4000 err=0
+  [all] 4100/6079  ok=4100 err=0
+  [all] 4200/6079  ok=4200 err=0
+  [all] 4300/6079  ok=4300 err=0
+  [all] 4400/6079  ok=4400 err=0
+  [all] 4500/6079  ok=4500 err=0
+  [all] 4600/6079  ok=4600 err=0
+  [all] 4700/6079  ok=4700 err=0
+  [all] 4800/6079  ok=4800 err=0
+  [all] 4900/6079  ok=4900 err=0
+  [all] 5000/6079  ok=5000 err=0
+  [all] 5100/6079  ok=5100 err=0
+  [all] 5200/6079  ok=5200 err=0
+  [all] 5300/6079  ok=5300 err=0
+  [all] 5400/6079  ok=5400 err=0
+  [all] 5500/6079  ok=5500 err=0
+  [all] 5600/6079  ok=5600 err=0
+  [all] 5700/6079  ok=5700 err=0
+  [all] 5800/6079  ok=5800 err=0
+  [all] 5900/6079  ok=5900 err=0
+  [all] 6000/6079  ok=6000 err=0
+  [all] 6079/6079  ok=6079 err=0
+[all] done: 6079 ok, 0 err, 10753481 rows total
+summary: {"tool": "build_debug_data_10d", "snapshot_date": "20260807", "snapshot_time": "2026-08-08T18:37:46.993409", "window_days": 10, "date_range": "20260727 ~ 20260807", "window": ["20260727", "20260728", "20260729", "20260730", "20260731", "20260803", "20260804", "20260805", "20260806", "20260807"], "stock_sample": {"seed": null, "n": 1782, "full_universe": true}, "n_factor_files": 725, "tasks_total": 6079, "tasks_ok": 6079, "tasks_err": 0, "script_md5": "6c225000db7ae668bf1bcb29a0c61a5e"}
+DONE

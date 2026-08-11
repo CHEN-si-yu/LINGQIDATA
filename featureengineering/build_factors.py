@@ -34,10 +34,11 @@ if __name__ == "__main__":
 
     stages = [
         ["--only-class", "1", "--jobs", "28", "--quality-check-days", "5"],
+        # ["--only-class", "1", "--quality-check-days", "5"],
         ["--only-class", "2", "--jobs", "50"],
         ["--only-class", "3", "--jobs", "50"],
         ["--only-class", "4", "--jobs", "50"],
-        ["--only-class", "5", "--jobs", "50"],
+        ["--only-class", "5"],
     ]
 
     for args in stages:

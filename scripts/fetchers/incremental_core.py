@@ -159,6 +159,35 @@ EFFECTIVE_TODAY = _last_trading_day()
 # Pre-flight canary probe
 # ═══════════════════════════════════════════════════════════════════════════
 
+PROBE_RETRIES = 3
+
+
+def _probe_post(url, headers, payload, endpoint=""):
+    """POST a single canary probe, with retry + backoff for transient errors.
+
+    Mirrors _fetch_page's retry behaviour: a transient server-side 500
+    (e.g. while the vendor is publishing the evening data) must not be
+    mistaken for "data not published yet".  Also goes through the shared
+    rate limiter so probes are paced exactly like real fetches.
+    """
+    limiter = rate_limiter()
+    last_exc = None
+    for attempt in range(PROBE_RETRIES):
+        try:
+            limiter.acquire(endpoint)
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("code") != 200:
+                raise RuntimeError(f"API Error: code={result.get('code')}, msg={result.get('msg')}")
+            return result
+        except Exception as e:
+            last_exc = e
+            if attempt < PROBE_RETRIES - 1:
+                time.sleep(2 ** attempt)
+    raise last_exc
+
+
 def _probe_canary_endpoint(endpoint, target_date, api_key):
     """Check whether *endpoint* has rows for *target_date*.
 
@@ -183,11 +212,7 @@ def _probe_canary_endpoint(endpoint, target_date, api_key):
     if not is_stock_level:
         # Non-stock endpoint (margin_detail): single probe
         try:
-            resp = requests.post(url, headers=headers, json=base_payload, timeout=60)
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("code") != 200:
-                raise RuntimeError(f"API Error: code={result.get('code')}, msg={result.get('msg')}")
+            result = _probe_post(url, headers, base_payload, endpoint)
             rows = result.get("data", {}).get("list", [])
             for row in rows:
                 for key in ("trade_date", "date", "trade_time", "end_date"):
@@ -203,16 +228,12 @@ def _probe_canary_endpoint(endpoint, target_date, api_key):
         stocks_with_data = set()
         total_rows = 0
         errors = 0
+        first_error = None
         for stock in CANARY_STOCKS:
             payload = dict(base_payload)
             payload["stock_code"] = stock
             try:
-                resp = requests.post(url, headers=headers, json=payload, timeout=60)
-                resp.raise_for_status()
-                result = resp.json()
-                if result.get("code") != 200:
-                    errors += 1
-                    continue
+                result = _probe_post(url, headers, payload, endpoint)
                 rows = result.get("data", {}).get("list", [])
                 total_rows += len(rows)
                 for row in rows:
@@ -224,15 +245,18 @@ def _probe_canary_endpoint(endpoint, target_date, api_key):
                 # Early stop: enough stocks confirmed
                 if len(stocks_with_data) >= CANARY_MIN_STOCKS:
                     return True, total_rows, len(stocks_with_data)
-            except Exception:
+            except Exception as e:
                 errors += 1
+                if first_error is None:
+                    first_error = str(e)
                 continue
 
         n_found = len(stocks_with_data)
         ready = n_found >= CANARY_MIN_STOCKS
         if errors > 0:
             log_print(f"  [preflight] Canary probe {endpoint}: "
-                      f"{errors}/{len(CANARY_STOCKS)} stocks errored")
+                      f"{errors}/{len(CANARY_STOCKS)} stocks errored"
+                      + (f" (e.g. {first_error})" if first_error else ""))
         return ready, total_rows, n_found
 
 

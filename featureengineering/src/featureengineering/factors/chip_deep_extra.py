@@ -198,3 +198,48 @@ def factor_chip_width_ratio_momentum(context: FactorContext):
 def factor_chip_percentile_20d(context: FactorContext):
     s = _chip_series(context, "chip_percentile", need_close=True)
     return cross_sectional_rank(_momentum(s, window=20))
+
+
+@register_factor(
+    name="chip_win_peak_frac",
+    description="获利筹码集中度因子：现价下方筹码中最大成本峰占比截面排名（获利筹码集中锁筹排前）。",
+    category="price",
+    thesis="现价下方(获利)筹码中最大单箱的占比——衡量获利筹码是否集中成峰:"
+           "集中=主力成本密集单一(吸筹完成、锁筹特征,回踩有支撑、上方抛压轻);"
+           "分散=获利盘散落(浮筹多,涨时兑现压力大)。与 chip_peak_ratio(获利盘"
+           "总量占比)区分:本因子是获利盘的分布形态维度,「吸筹 vs 出货」的关键",
+    dependencies=("cyq_chips", "daily.parquet"),
+)
+def factor_chip_win_peak_frac(context: FactorContext):
+    s = _chip_series(context, "chip_win_peak_frac", need_close=True)
+    return cross_sectional_rank(s)
+
+
+@register_factor(
+    name="chip_loss_peak_frac",
+    description="套牢筹码集中度因子：现价上方筹码中最大成本峰占比截面排名（负向，单点套牢压力排后）。",
+    category="price",
+    thesis="现价上方(套牢)筹码中最大单箱的占比——套牢盘集中成峰=该价位是明确的"
+           "解套抛压点(突破时压力集中,反复受阻);分散=套牢盘零散(压力绵长但"
+           "单点薄弱)。方向 neg:集中套牢排后。与 chip_deep_trap_ratio(深套盘"
+           "总量)区分:本因子是套牢盘的分布形态维度。",
+    dependencies=("cyq_chips", "daily.parquet"),
+)
+def factor_chip_loss_peak_frac(context: FactorContext):
+    s = _chip_series(context, "chip_loss_peak_frac", need_close=True)
+    return cross_sectional_rank(-s)
+
+
+@register_factor(
+    name="chip_win_peak_growth",
+    description="获利筹码集中度动量因子：获利筹码集中度的5日变化截面排名（吸筹中成本峰强化排前）。",
+    category="price",
+    thesis="获利筹码集中度(chip_win_peak_frac)的5日变化——吸筹过程中,主力吸筹"
+           "导致获利筹码向成本峰凝聚(集中度抬升);派发阶段,获利盘扩散(集中度"
+           "下降)。集中度上升=主力成本结构在强化,是「吸筹进行时」的动态信号,"
+           "与 chip_win_peak_frac(静态水平)互补。",
+    dependencies=("cyq_chips", "daily.parquet"),
+)
+def factor_chip_win_peak_growth(context: FactorContext):
+    s = _chip_series(context, "chip_win_peak_frac", need_close=True)
+    return cross_sectional_rank(_momentum(s))

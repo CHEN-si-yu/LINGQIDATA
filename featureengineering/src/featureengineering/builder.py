@@ -433,31 +433,65 @@ def check_factor_dates(paths: ProjectPaths | None = None) -> dict[str, dict[str,
     return result
 
 
+def _available_memory_gb() -> float | None:
+    """Return the effective memory ceiling in GiB, or None if unknown.
+
+    The binding constraint on containerised hosts (e.g. AutoDL) is the
+    cgroup limit — /proc/meminfo reports the *host's* RAM, which can be
+    several times larger than the container's real ceiling.  Check cgroup
+    v2 (memory.max) then v1 (memory.limit_in_bytes) first, and fall back
+    to /proc/meminfo MemAvailable.
+    """
+    try:
+        for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+            try:
+                with open(path) as fh:
+                    value = fh.read().strip()
+                if not value or value == "max":
+                    continue  # no cgroup limit — try the next source
+                kb = int(value) // 1024
+                if kb > 0:
+                    return kb / (1024 * 1024)
+            except (OSError, ValueError):
+                continue
+        with open("/proc/meminfo") as fh:
+            import re
+            avail = re.search(r"MemAvailable:\s+(\d+)", fh.read())
+        if avail:
+            return int(avail.group(1)) / (1024 * 1024)
+    except Exception:
+        pass
+    return None
+
+
 def recommend_worker_count() -> int:
     """Return the recommended number of factor-level parallel workers.
 
-    Fixed at 3 to keep overall memory and I/O pressure controlled.
+    Memory-safe: each class-1 worker can hold a whole multi-parquet panel
+    (a previous run OOM-killed a 20-worker pool inside a 128 GiB cgroup),
+    so budget ~10 GiB per worker against the *effective* memory ceiling
+    (cgroup limit first — see :func:`_available_memory_gb`).  Capped at 16
+    workers and at the CPU count; small boxes keep the old conservative
+    behaviour (1–2 workers below 16 GiB).
+
     Individual factors may use internal threading for their own
     I/O parallelism — the factor pool size controls only how many factors
     are computed concurrently, not how each factor uses CPU internally.
     """
-    n = 3
     try:
-        # Linux /proc/meminfo is the most reliable across Python versions
-        with open("/proc/meminfo") as f:
-            meminfo = f.read()
-        import re
-        avail = re.search(r"MemAvailable:\s+(\d+)", meminfo)
-        if avail:
-            avail_kb = int(avail.group(1))
-            avail_gb = avail_kb / (1024 * 1024)
-            if avail_gb < 8:
-                n = 1
-            elif avail_gb < 16:
-                n = 2
+        import os as _os
+        avail_gb = _available_memory_gb()
+        if avail_gb is None:
+            return 3
+        if avail_gb < 8:
+            return 1
+        if avail_gb < 16:
+            return 2
+        n = max(1, int(avail_gb // 10))
+        n = min(n, 16, _os.cpu_count() or 4)
+        return n
     except Exception:
-        pass
-    return n
+        return 3
 
 
 def _category_rank(category: str) -> tuple[int, str]:
@@ -966,7 +1000,21 @@ def build_many_parallel(
 
     ensure_builtin_factors_loaded()
     configured_paths = paths or configure_paths()
-    max_workers = max_workers or recommend_worker_count()
+    if max_workers is None:
+        max_workers = recommend_worker_count()
+    else:
+        # Memory safety wins over explicit over-subscription: each worker
+        # can hold a multi-GB panel, and an oversized pool has OOM-killed
+        # the whole build (128 factors lost in one incident).  Cap at the
+        # memory-aware recommendation and say so.
+        recommended = recommend_worker_count()
+        if max_workers > recommended:
+            logger.warning(
+                "max_workers=%d exceeds memory-safe recommendation (%d) "
+                "for the available memory ceiling — using %d",
+                max_workers, recommended, recommended,
+            )
+            max_workers = recommended
     plan = _flatten_build_plan(names)
 
     # ── Resolve effective end date ONCE for the whole batch ──────────
@@ -1017,6 +1065,7 @@ def build_many_parallel(
     all_names = [name for _, name in plan]
     results: list[BuildResult] = []
     remaining_names: list[str] = []  # captured names when pool breaks
+    pool_broken_names: list[str] = []  # futures drained after pool death
 
     if all_names:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -1068,16 +1117,15 @@ def build_many_parallel(
                         try:
                             worker_result = fut.result()
                         except BrokenProcessPool:
-                            logger.error("%s: pool broken (OOM kill likely) — "
-                                         "%d remaining failed", name, len(pending) + 1)
+                            # The executor is dead (OOM kill, crash).  Every
+                            # future still in flight raises the same error,
+                            # so record this factor and stop draining — the
+                            # sequential fallback below redoes ALL of them.
+                            # Do NOT append an error result here: the factor
+                            # is retried, not lost.
+                            pool_broken_names.append(name)
                             pool_broken = True
-                            worker_result = {
-                                "factor_name": name, "factor_path": "",
-                                "manifest_path": "", "elapsed": 0.0,
-                                "action": "error", "category": "",
-                                "rows": 0, "non_null_rows": 0,
-                                "error": "Process pool terminated abruptly",
-                            }
+                            break
                         except Exception as e:
                             logger.exception("%s: worker failed", name)
                             worker_result = {
@@ -1170,15 +1218,23 @@ def build_many_parallel(
 
                     # ── Handle broken pool ──
                     if pool_broken:
-                        for remaining in list(pending):
-                            pending.discard(remaining)
-                            rname = futures[remaining]
-                            remaining_names.append(rname)
-                            try:
-                                remaining.cancel()
-                            except Exception:
-                                pass
-                        logger.warning("Pool broken — %d factors will retry sequentially", len(remaining_names))
+                        # Everything not yet collected is dead too — the
+                        # executor marked each pending future with
+                        # BrokenProcessPool.  Collect the remaining names
+                        # so the sequential fallback redoes every factor
+                        # that was in flight, not just the first one that
+                        # surfaced the break.
+                        remaining_names = (
+                            pool_broken_names
+                            + [futures[f] for f in pending]
+                        )
+                        pending.clear()
+                        bar.n = bar.total
+                        bar.refresh()
+                        logger.warning(
+                            "Pool broken (OOM kill likely) — %d factors "
+                            "will retry sequentially", len(remaining_names),
+                        )
                         break
 
                     if pending:

@@ -205,3 +205,112 @@ def factor_kdj_bull_frac_5d_change(context: FactorContext):
 )
 def factor_kdj_j_5d_acceleration(context: FactorContext):
     return cross_sectional_rank(_metric(context, "j_close_5d_gap"))
+
+
+@register_factor(
+    name="min_macd_hist_area_20",
+    description="分钟MACD柱面积因子：20日(Σ分钟MACD/当日收盘价)均值截面排名（日内动能净值排前）。",
+    category="intraday",
+    thesis="日内 MACD 柱净面积=红柱面积−绿柱面积=全天动能净值,按当日收盘价归一"
+           "(消除股价量纲)。区分「尾盘翻红但日内整体空头」与「全天单边红柱」。"
+           "与 am_macd_trend/pm_macd_trend(上下半场斜率)互补:本因子是全天积分。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_macd_hist_area_20(context: FactorContext):
+    return cross_sectional_rank(_metric(context, "min_macd_hist_area_20"))
+
+
+@register_factor(
+    name="min_j_overbought_frac_20",
+    description="分钟KDJ超买占比因子：20日(J>100分钟占比)均值截面排名（负向，盘中反复冲顶排后）。",
+    category="intraday",
+    thesis="J>100 的分钟占比=盘中超买状态的持续程度——持续超买=情绪票(买盘透支,"
+           "回调风险累积)。与日线 kdj_overbought_frac 区分:本因子是分钟粒度,"
+           "把「盘中反复冲顶」与「日线级别超买」分开,方向与既有超买类一致。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_j_overbought_frac_20(context: FactorContext):
+    return cross_sectional_rank(-_metric(context, "min_j_overbought_frac_20"))
+
+
+@register_factor(
+    name="min_boll_width_std_20",
+    description="分钟布林带宽波动因子：20日(分钟带宽日内标准差)均值截面排名（负向，带宽反复扩张挤压排后）。",
+    category="intraday",
+    thesis="分钟布林带宽的日内波动=挤压-扩张的日内反复次数——反复挤压扩张=变盘"
+           "酝酿(方向未定);带宽日内平稳=趋势节奏稳定。与 boll_squeeze/"
+           "boll_width_5d_change(日频带宽水平与变化)区分:本因子是带宽的"
+           "日内节奏维度。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_boll_width_std_20(context: FactorContext):
+    return cross_sectional_rank(-_metric(context, "min_boll_width_std_20"))
+
+
+@register_factor(
+    name="min_ma_alignment_frac_20",
+    description="分钟均线多头排列占比因子：20日(ma5>ma10>ma20>ma30分钟占比)均值截面排名（日内趋势稳固排前）。",
+    category="intraday",
+    thesis="盘中分钟均线多头排列的时间占比=日内趋势的稳固度:全天保持多头排列="
+           "趋势在日内持续(多方掌控);尾盘才翻多=日内反复。与日频"
+           "ma_alignment_score 区分:本因子是分钟粒度,尾盘偷袭与全天多头分离。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_ma_alignment_frac_20(context: FactorContext):
+    return cross_sectional_rank(_metric(context, "min_ma_alignment_frac_20"))
+
+
+@register_factor(
+    name="min_rsi_extreme_frac_20",
+    description="分钟RSI极值占比因子：20日(RSI>80或<20分钟占比)均值截面排名（负向，情绪烈度高排后）。",
+    category="intraday",
+    thesis="分钟 RSI 触及极端区(>80 或 <20)的时长占比=情绪化交易的主导程度,"
+           "不分多空方向。与日线 rsi_extreme_fraction/rsi_overbought_frac "
+           "区分:本因子是分钟粒度的情绪烈度,度量盘中反复过热的持续时长。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_rsi_extreme_frac_20(context: FactorContext):
+    return cross_sectional_rank(-_metric(context, "min_rsi_extreme_frac_20"))
+
+
+@register_factor(
+    name="min_expand_bull_frac_20",
+    description="分钟放量多头占比因子：20日(放量且多头排列分钟占比)均值截面排名（量价趋势三线确认排前）。",
+    category="intraday",
+    thesis="mavol5>mavol10(量能扩张)且 ma5>ma10(价格多头)的分钟占比——量价+趋势"
+           "三重确认的上涨质量。与 min_ma_alignment_frac_20(纯价格排列)区分:"
+           "本因子叠加量能维度,「多头但无量」的诱多形态在此被排除。"
+           "indicator_1min 无原始 vol 列,mavol 关系代理量能状态。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_expand_bull_frac_20(context: FactorContext):
+    return cross_sectional_rank(_metric(context, "min_expand_bull_frac_20"))
+
+
+@register_factor(
+    name="min_shrink_bull_frac_20",
+    description="分钟缩量多头占比因子：20日(缩量但多头排列分钟占比)均值截面排名（负向，无量上涨排后）。",
+    category="intraday",
+    thesis="多头排列但量能收缩(mavol5<mavol10)的分钟占比——价格上涨缺乏量能确认"
+           "=无量反弹/诱多嫌疑(拉高无人跟风)。与 min_expand_bull_frac_20 互补:"
+           "把「多头行情中的量能质量」拆成放量/缩量两轴,方向 neg。"
+           "与 Class 3 的 vp_shrink_up_share(真实分钟量四象限)区分:本因子用"
+           "mavol 代理与指标状态,粒度更粗但跨日更稳定。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_shrink_bull_frac_20(context: FactorContext):
+    return cross_sectional_rank(-_metric(context, "min_shrink_bull_frac_20"))
+
+
+@register_factor(
+    name="min_rsi_overbought_expand_20",
+    description="分钟超买放量占比因子：20日(RSI>70且放量分钟占比)均值截面排名（负向，追高放量排后）。",
+    category="intraday",
+    thesis="RSI>70 且量能扩张同时发生的分钟占比——情绪过热叠加放量=追高/拉高出货"
+           "特征(高位放量换手)。与 min_j_overbought_frac_20(KDJ 超买,无量能维度)"
+           "区分:本因子把「超买」与「放量」联合,是诱多识别的指标侧信号。"
+           "方向与既有超买类一致(neg)。",
+    dependencies=("indicator_1min",),
+)
+def factor_min_rsi_overbought_expand_20(context: FactorContext):
+    return cross_sectional_rank(-_metric(context, "min_rsi_overbought_expand_20"))

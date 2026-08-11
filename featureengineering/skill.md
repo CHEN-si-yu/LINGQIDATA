@@ -715,4 +715,184 @@ open_volume_share / vwap_am_pm_gap_factor / open_30_range_share / am_close_posit
 
 规范落点：白名单 → §1.1；PIT 契约 → §1.3；开发前检查 → §6；数据源状态 → §7。
 
+### 8.16 2026-08-08 新开发 40 个因子(第四轮,策略素材挖掘,五类全覆盖)
+
+基于 99 个聚宽策略 + 券商研报(净换手率/龙虎榜替代/RSRS 量能加权)挖掘开发,
+全部通过真实数据冒烟测试(2024 上半年窗口,NaN < 20%、截面有区分度、日频变动)。
+
+| 模块 | 类 | 数量 | 因子 |
+|---|---|---|---|
+| `strategy_daily.py`(新) | 1 | 26 | psy_12、up_down_count_ratio_20、cmo_20、ppo_signal_12_26_9、bias_signal_29_19、kama_position_20、rsrs_volume_right_deviation、rsrs_beta_momentum_5、fib_retracement_proximity、atr_position_250、chandelier_position、gap_intraday_corr_20、high_open_low_close_frac_20、limit_board_streak_mean_60、limit_up_vol_shrink_60、limit_streak_volume_ratio、listing_age_heat、net_turnover_rate_20、lhb_proxy_score_60、margin_buyer_avg_cost_premium、margin_chip_cost_gap、margin_proxy_ttm、mf_tier_net_spread_20、mf_big_order_net_kurt_20、big_order_net_accel_10、elg_net_60d_to_mv |
+| `intraday.py`/`intraday_extra.py`(改) | 3 | 4 | intraday_high_time、min_limit_touch_frac_20、min_bar_gap_freq_20、min_vwap_dev_std |
+| `indicator_minute.py`/`indicator_minute_extra.py`(改) | 4 | 5 | min_macd_hist_area_20、min_j_overbought_frac_20、min_boll_width_std_20、min_ma_alignment_frac_20、min_rsi_extreme_frac_20 |
+| `coupling_daily_extra3.py`(新) | 5 | 5 | coupling_bigflow_margin_buy_20、coupling_winner_bigflow_20、coupling_margin_chip_cost_20、coupling_net_turnover_momentum_20、coupling_lhb_reversal_20 |
+
+#### 数据单位实证(2026-08-08,与既有注释不一致处以此为准)
+
+| 字段 | 实证结果 | 说明 |
+|---|---|---|
+| daily.vol | **股** | close×vol ≈ amount(中位比 0.9999),skill.md §8.11 的「手」注记有误 |
+| history_1min.vol | **手** | amount/(close×vol) ≈ 100 |
+| main_fund_flow 各档 vol | **手** | 四档买卖量合计/日 vol ≈ 2(买卖各计一次) |
+| main_fund_flow 各档 amount | **万元** | (买+卖)8 档金额合计/daily.amount ≈ 2e-4 |
+| finance.free_share / circ_mv | 股 / 元 | 平安银行 2019 free_share≈76 亿股、circ_mv≈1578 亿元 |
+
+**注意**:库内既有 intraday vwap = amount/vol(vol 手),实为 100× 价格(实测 vwap_dev≈−0.99 近常量);
+本批次 min_vwap_dev_std 用 amount/(vol×100) 真 VWAP 口径,未复刻该缺陷。
+
+#### 开发要点与坑(本批实测)
+
+1. **pandas 3.0 + numpy 2:ufunc 作用于 Series 返回 ndarray**——`np.maximum.reduce`/
+   `np.minimum.reduce`/`np.abs` 结果必须 `pd.Series(..., index=...)` 包回,
+   否则 `cross_sectional_rank` 内部 `.replace()` 报 AttributeError(3 处)。
+2. **运算符优先级**:`sealed & ~sealed.astype(bool).groupby(...)` 中 `~` 绑定整条
+   链(属性访问优先于一元运算符),须先 `prev = ...shift(1).fillna(False)` 再 `& ~prev`。
+3. **Index.groupby 无 level 参数**:`DatetimeIndex.groupby(level=...)` 报错,先转
+   `pd.Series(dates, index=...)` 再 groupby。
+4. **稀疏事件窗口 min_periods**:涨停类事件 min_periods 必须 1(60 日内 ≥1 个事件即
+   估),10 会导致 NaN 67% 不合格;无事件股票 fillna(0/1.0) 中性填充(limit_board_
+   streak_mean_60 NaN 67%→0%、limit_up_vol_shrink_60 99.5%→0%)。
+5. **250/400 日长窗因子的 NaN 假象**:冒烟窗口(800 日 lookback 截断历史)前 ~20%
+   日期全 NaN,限定 2023+ 日期均为 0.00%——真实全量构建(2019 起)无此问题。
+6. **margin 配价**:margin 面板已 shift(1),加权成本必须用 close 逐股 shift(1)
+   (T-1 收盘)配对,否则 1 日错配(margin_buyer_avg_cost_premium/margin_chip_cost_gap)。
+7. **margin 耦合 reindex**:含 margin 输入的三因子耦合以 margin 因子索引 reindex
+   其余因子防并集(coupling_margin_chip_cost_20,8.13 先例)。
+8. **Class 5 构建顺序**:coupling_daily_extra3.py 依赖本批次 Class 1 新因子 .fea,
+   先 `--only-class 1` 再构建。
+
+#### 注册表状态
+
+- 修改后注册因子:**733**(691 + 42:Class 1 404 + Class 2 38 + Class 3 94 + Class 4 84 + Class 5 113)
+
 *最后更新:2026-08-08*
+*最后更新:2026-08-08*
+
+### 8.17 2026-08-08 全量因子自动体检(第5轮,1 删)
+
+对全部 726 个 `.fea` 做多核并行体检(56 进程),检查标准:
+1. **NaN 占比 > 20%**(2022-01-01 之后、全市场所有股票)
+2. **截面方差为零**(2022+ 日期中 ≥98% 的截面 std==0)
+3. **日频变化率为零**(全区间无任何取值变化)
+4. **非连续数据**(2022+ 去重值 ≤ 2,哑变量/常数)
+另附复核指标:日变化率、有限值逐日不变占比(staleFrac,NaN 打断)、最长连续同值天数。
+
+#### 不合格因子(1 个)
+
+| 因子 | NaN 率 | 来源文件 | 原因 |
+|---|---|---|---|
+| `gap_fill_5d` | 83.4% | `price_deep.py` | 5 日缺口回补事件过于稀疏,大部分股票大部分日期无有效值 |
+
+#### 边界审查保留(未达阈值)
+
+- **NaN 10-20%**:`margin_proxy_ttm`(18.3%)、`pe_ttm_change_20d`(17.4%)、`short_interest_volatility_20d`(14.9%)——均 < 20%,方差与日频变动正常,保留(与 §8.14 边界审查结论一致)。
+- **稀疏事件因子**:`one_word_limit_down_freq_20`(staleFrac 54.6%)、`consecutive_limit_down`(49.6%)、`big_gap_reversal_5`(31.6%)、`limit_down_event_5`(30.2%)等——无事件日计数自然不变,但日频变动 506-1112/1113 日、去重值 55+、std0 日期占比最高 47%,符合 §2.2/2.3,保留(§8.14 先例)。
+- **低频股本结构因子**:`float_mv_ratio`(staleFrac 36.2%)、`circ_mv_to_total_mv`/`float_share_ratio`(31.9%)——股本结构本身变动缓慢,去重值 1.2 万+,非病态,保留。
+- 所有因子最长"连续同值"伪影(1113 日)均来自 2022+ 无数据的稀疏列,非真实停滞;真实 staleFrac 最高 54.6%(稀疏事件类)。
+
+#### 修改文件清单
+
+| 操作 | 文件 |
+|---|---|
+| 删减 | `factors/price_deep.py`(移除 `gap_fill_5d` 注册块) |
+| 删除 | `data/factors/gap_fill_5d.fea` |
+| 删除 | `data/manifests/gap_fill_5d.json` + `gap_fill_5d.done` |
+
+#### 注册表状态
+
+- 修改后注册因子:**732**(733 − 1)
+- .fea 数据文件:726 → **725**;无孤儿 .fea、无注册缺失(除 5 个 label 与 2 个未构建 Class 2 因子)
+
+*最后更新:2026-08-08*
+
+### 8.18 2026-08-09 新开发 20 个因子(第五轮,Class 5 时间维度耦合 + 新基因多因子耦合)
+
+在 8.13/8.16 基础上升级 Class 5:**时间维度耦合**(跨期自共振/领先-滞后/因子时间
+加速度,全部滞后 k ∈ {5,10,20,60} ≤ 60 天,shift 样本期外 NaN 按规范保留)
++ 前四类**从未入耦合的基因**(Class 2 筹码支撑/成本峰、Class 3 尾盘量/聪明钱、
+Class 4 分钟均线排列)。全部经真实数据冒烟测试与全量构建。
+
+| 模式 | 数量 | 因子 |
+|---|---|---|
+| 跨期自共振 X_t×X_t-k | 2 | coupling_flow_persistence_20(融资净流入20日持续)、coupling_margin_buy_persist_10(买入意愿10日持续) |
+| 领先-滞后 X_t-k×Y_t | 4 | coupling_moneyflow_lead_momentum_10(资金领先10日)、coupling_volume_lead_momentum_5(量领先5日)、coupling_smartmoney_lead_momentum_10(聪明钱领先10日)、coupling_margin_lead_trend_60(杠杆领先60日=滞后上限) |
+| 因子时间加速度 X_t−X_t-k | 3 | coupling_momentum_drift_20(动量加速)、coupling_fundflow_accel_10(资金流加速)、coupling_chip_cost_accel_20(筹码成本加速) |
+| 多因子耦合(新基因) | 11 | coupling_chip_support_reversal_5、coupling_chip_trend_confirm_20、coupling_intraday_tail_momentum_20、coupling_min_align_momentum_20、coupling_lowrisk_momentum_60、coupling_quality_trend_60、coupling_stableflow_momentum_20、coupling_flowaccel_breakout_60、coupling_margin_buy_trend_20、coupling_limitup_momentum_20、coupling_volterm_momentum_60 |
+
+#### 开发要点与坑(本批实测)
+
+1. **时间耦合滞后上限**:全批滞后 ∈ {5,10,20,60} 天,60 天为规范上限
+   (coupling_margin_lead_trend_60 恰好压线);shift(k) 每股前 k 个交易日
+   自然 NaN,不填充,2022+ 评估窗口无影响(数据 2019 起)。
+2. **margin 耦合 reindex**:margin_buy_pressure / margin_net_flow_ratio 输入
+   的耦合以 margin 因子索引 reindex 其余因子防并集(8.13 先例);纯单基因
+   时间耦合(margin 自身 shift)无并集风险,不需 reindex。
+3. **避免与既有因子重复**:设计时核对 coupling_indicator_cross.py(coupling_
+   indicator_consensus_value 已覆盖 共识×估值,本批不再开发 consensus_value)、
+   coupling_extended.py(因子自身 20 日动量已覆盖 value/quality/liquidity,
+   本批时间加速度扩展到 momentum/mf/chip 基因)。
+4. **冒烟实测**:margin 类 NaN ≈ 17%(85% 覆盖×两时点),其余 < 10%;
+   单因子构建 2-3s,全批零依赖(全部输入 .fea 已在 8.16 批次前构建)。
+
+#### 注册表状态
+
+- 修改后注册因子:**752**(732 + 20)
+- .fea 数据文件:725 → **745**
+
+*最后更新:2026-08-09*
+
+---
+
+### 8.19 2026-08-11 新开发 23 个因子(第六轮,分钟级量价四象限 + 筹码峰集中 + 量价筹码耦合)
+
+在既有量价因子(全部为日频口径:up_day_volume_ratio_20 / turnover_ret_corr_20 /
+volume_price_divergence_score 等)基础上,开发**分钟级(时分)量价耦合体系**:
+放量/缩量 × 上涨/下跌 四象限、诱多/诱空、吸筹/洗筹的多角度刻画。
+代码已完成并通过注册验证;**本轮未执行全量构建**,构建与评估由项目侧后续执行。
+
+| 模块 | 类 | 数量 | 因子 |
+|---|---|---|---|
+| `intraday.py`+`intraday_extra.py`(改) | 3 | 11 | vp_expand_up_share、vp_expand_down_share、vp_shrink_up_share、vp_shrink_down_share、vp_consistency_score、vp_consistency_20、up_minute_vol_share、minute_ret_vol_corr、vp_expand_ret_gap、vp_expand_price_pos、vp_expand_down_am_share |
+| `indicator_minute.py`+`indicator_minute_extra.py`(改) | 4 | 3 | min_expand_bull_frac_20、min_shrink_bull_frac_20、min_rsi_overbought_expand_20 |
+| `chip_deep.py`+`chip_deep_extra.py`(改) | 2 | 3 | chip_win_peak_frac、chip_loss_peak_frac、chip_win_peak_growth |
+| `coupling_vp_chips.py`(新) | 5 | 6 | coupling_vp_chip_consistency_20、coupling_vp_expand_up_mom_20、coupling_vp_shrink_down_rev_5、coupling_vp_lowpos_accumulate_20、coupling_vp_retvol_mom_20、coupling_vp_amfade_rev_20 |
+
+#### 核心设计:放量基准与四象限
+
+- **放量/缩量基准** = 分钟量 vs **过去20日同时段(同一 minute)均量**
+  (`groupby("minute").rolling(20).mean().shift(1)`,shift 避免当日自引用),
+  时段基准校正日内量能 U 型曲线(早尾盘天然放量不误判),仅依赖 history_1min 自身。
+- **分钟涨跌** = `ret_1min`(close/前分钟close−1,库内既有口径,首分钟 NaN 不计)。
+- **四象限量占比**:放量上涨=资金真实做多(pos);缩量下跌=抛压轻/洗盘(pos);
+  缩量上涨=无量反弹/诱多嫌疑(neg);放量下跌=恐慌抛售(neg)。
+- **信号映射**:诱多 → vp_shrink_up_share + vp_expand_ret_gap(放量不推价=对倒)
+  + min_shrink_bull_frac_20(指标侧无量上涨)+ min_rsi_overbought_expand_20(超买放量追高);
+  诱空 → vp_expand_down_am_share(早盘恐慌释放)+ coupling_vp_amfade_rev_20;
+  吸筹 → vp_expand_price_pos(低位放量)+ chip_win_peak_frac(获利筹码集中)+
+  coupling_vp_lowpos_accumulate_20(低位放量×筹码集中×主力净流入三因子);
+  洗筹 → vp_shrink_down_share + coupling_vp_shrink_down_rev_5(缩量回调×超跌)。
+
+#### 开发要点与坑(本批)
+
+1. **Class 4 无量源**:indicator_1min 无原始 vol 列,量能状态用 mavol5/mavol10
+   关系代理(放量=mavol5>mavol10),分母限定"两量均线均非 NaN"的有效分钟,
+   避免指标未就绪分钟拉低占比。
+2. **Class 3 指标全部向量化**:四象限量占比用 `df["vol"].where(mask).groupby(gdate).sum()`
+   (SeriesGroupBy.where 不存在,用 df 级 where);分钟量价相关用
+   协方差/方差积开方全向量化(避免逐日 apply corr)。
+3. **类路由与构建顺序**:Class 5 新文件依赖 Class 3(vp_*)与 Class 2
+   (chip_win_peak_frac)新 .fea,构建须先 `--only-class 3,2,4` 再 `--only-class 5`。
+   Class 5 全部输入为"高=好"编码,无需 (1.0−X) 翻回,无 margin 输入
+   (无 reindex 需求)。
+4. **方向契约**:负向因子(vp_expand_down_share / vp_shrink_up_share /
+   vp_expand_price_pos / chip_loss_peak_frac 等)已在 spec 中取负,耦合时直接相乘。
+5. **NaN 控制**:四象限无稀疏条件(任意有涨跌分钟即有效,2022+ 前 20 日基准
+   NaN 属正常滚动窗);Class 2 新指标全股票有 close 即有值。
+
+#### 注册表状态
+
+- 修改后注册因子:**773**(含 5 个 label;非 label 768;本轮 +23,代码层验证
+  全部注册成功、spec 无孤儿)
+- 本轮未构建 .fea(构建由项目侧后续执行)
+
+*最后更新:2026-08-11*

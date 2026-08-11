@@ -2,9 +2,10 @@
 """
 incremental.py — Daily incremental data updater for lingqiData.
 
-Before running any updates, probes the cyq_chips and cyq_perf canary
-endpoints to verify the server has published today's data.  If either
-is missing, the script waits (polling every 5 min, up to 2 hours) so
+Before running any updates, probes all canary API endpoints (stock/daily,
+stock/daily_adj, stock/finance, margin_detail, fund flow, cyq_chips,
+cyq_perf) to verify the server has published the target day's data.  If
+any is missing, the script waits (polling every 5 min, up to 4 hours) so
 that a partial update doesn't have to be re-run.
 
 Reads existing parquet files, determines the last available date for each

@@ -646,6 +646,105 @@ def _intraday_all_metrics(
     am_range = (results["am_high"] - results["am_low"]).replace(0, np.nan)
     results["am_hl_position"] = (results["am_close"] - results["am_low"]) / am_range
 
+    # ── 2026-08-08: 策略挖掘——价格时点/封板质量/分钟跳空/VWAP贴合 ─────────
+    # 日内最高价出现时点(归一化 [0,1]):尾盘创新高=多方掌控,早盘冲高=弱势。
+    # 向量化:逐日 apply argmax(每股票 ~1840 次调用,与既有 quantile transform 同量级)
+    results["intraday_high_time"] = df.groupby("trade_date")["high"].apply(
+        lambda s: float(np.argmax(s.to_numpy())) / max(len(s) - 1, 1)
+    )
+    # 分钟级触板密度:high 相对 pre_close 涨幅 ≥ 9.8% 的分钟占比(封板维持时长)。
+    # 与日频 _LIMIT_UP 口径一致(pre_close 为除权调整前收,同日比较无假触板);
+    # 时间在板上的分钟越多=封单越牢固。
+    if pre_close is not None:
+        limit_ref = pre_close.reindex(daily_open.index) * 1.098
+        df["limit_ref"] = df["trade_date"].map(limit_ref)
+        touch_frac = df["high"].ge(df["limit_ref"]).groupby(df["trade_date"]).mean()
+    else:
+        touch_frac = pd.Series(np.nan, index=daily_open.index)
+    results["min_limit_touch_frac_20"] = touch_frac.rolling(20, min_periods=10).mean()
+    # 1分钟跳空频率:|open_t/close_{t−1} − 1| > 0.2% 的分钟占比(连续竞价断档)。
+    # 高频率=流动性薄/大单砸单,低频率=盘口连续。首根分钟 prev 为 NaN 不计入。
+    prev_close_min = df.groupby("trade_date")["close"].shift(1)
+    min_gap = (safe_divide(df["open"], prev_close_min) - 1.0).abs()
+    gap_freq = (min_gap > 0.002).groupby(df["trade_date"]).mean()
+    results["min_bar_gap_freq_20"] = gap_freq.rolling(20, min_periods=10).mean()
+    # 分钟价对当日 VWAP(元)偏离的标准差:贴合=机构单边控盘,摆动=多空拉锯。
+    # 单位修正:1min vol 为手(实证 amount/(close×vol)≈100),×100 转股后
+    # amount(元)/vol(股)=真 VWAP(区别于库内既有 amount/vol 的 100× 口径缺陷)。
+    vwap_yuan = daily_amount / (daily_vol * 100.0).replace(0, np.nan)
+    vwap_day = df["trade_date"].map(vwap_yuan)
+    vwap_dev = safe_divide(df["close"], vwap_day) - 1.0
+    results["min_vwap_dev_std"] = (
+        vwap_dev.groupby(df["trade_date"]).std().rolling(20, min_periods=10).mean()
+    )
+
+    # ── 2026-08-11: 分钟级量价四象限 (放量/缩量 × 上涨/下跌) ─────────────
+    # 放量基准 = 过去20日同时段(同一 minute)均量,rolling+shift(1) 避免当日
+    # 自引用,时段基准校正日内量能 U 型曲线(早尾盘天然放量不误判)。
+    # 分钟涨跌 = ret_1min(close/前分钟close−1,定义于上,首分钟 NaN 不计)。
+    # 四象限量占比刻画"涨跌是否伴随量能配合"的日内微观结构:
+    #   放量上涨=资金真实做多;缩量下跌=抛压轻(洗盘);
+    #   缩量上涨=无量反弹(诱多嫌疑);放量下跌=恐慌抛售(诱空/出货)。
+    # 全部仅依赖 history_1min 自身,滚动基准无未来函数。
+    vol_base = df.groupby("minute")["vol"].transform(
+        lambda s: s.rolling(20, min_periods=10).mean().shift(1)
+    )
+    up_min = df["ret_1min"] > 0
+    dn_min = df["ret_1min"] < 0
+    exp_min = df["vol"] > vol_base
+    shr_min = ~exp_min
+    gdate = df["trade_date"]
+    up_exp_vol = df["vol"].where(up_min & exp_min).groupby(gdate).sum()
+    up_shr_vol = df["vol"].where(up_min & shr_min).groupby(gdate).sum()
+    dn_exp_vol = df["vol"].where(dn_min & exp_min).groupby(gdate).sum()
+    dn_shr_vol = df["vol"].where(dn_min & shr_min).groupby(gdate).sum()
+    up_vol = df["vol"].where(up_min).groupby(gdate).sum()
+    results["vp_expand_up_share"] = safe_divide(up_exp_vol, daily_vol)
+    results["vp_expand_down_share"] = safe_divide(dn_exp_vol, daily_vol)
+    results["vp_shrink_up_share"] = safe_divide(up_shr_vol, daily_vol)
+    results["vp_shrink_down_share"] = safe_divide(dn_shr_vol, daily_vol)
+    results["up_minute_vol_share"] = safe_divide(up_vol, daily_vol)
+    # 四象限一致性: (放量涨+缩量跌) − (缩量涨+放量跌),归一到 [−1,1]。
+    # 高=涨有量跌无量(量价健康),低=涨无量跌有量(背离/出货特征)。
+    results["vp_consistency_score"] = safe_divide(
+        up_exp_vol + dn_shr_vol - up_shr_vol - dn_exp_vol, daily_vol
+    )
+    results["vp_consistency_20"] = (
+        results["vp_consistency_score"].rolling(20, min_periods=10).mean()
+    )
+    # 分钟收益×分钟量 日内 pearson 相关(全向量化:协方差/双方差积开方)。
+    # 正相关=量价同步的微观基础;≈0/负=量能方向与价格脱节(对倒或背离)。
+    r_1m = df["ret_1min"]
+    v_1m = df["vol"]
+    r_mu = r_1m.groupby(gdate).transform("mean")
+    v_mu = v_1m.groupby(gdate).transform("mean")
+    cov_rv = ((r_1m - r_mu) * (v_1m - v_mu)).groupby(gdate).sum()
+    var_r = ((r_1m - r_mu) ** 2).groupby(gdate).sum()
+    var_v = ((v_1m - v_mu) ** 2).groupby(gdate).sum()
+    results["minute_ret_vol_corr"] = safe_divide(
+        cov_rv, np.sqrt((var_r * var_v).clip(lower=0))
+    )
+    # 放量分钟均收益 − 缩量分钟均收益: 放量是否推得动价格。
+    # 放量涨不动(≈0/负)=对倒出货;放量能推动=增量资金真实进场。
+    exp_ret = df["ret_1min"].where(exp_min).groupby(gdate).mean()
+    shr_ret = df["ret_1min"].where(shr_min).groupby(gdate).mean()
+    results["vp_expand_ret_gap"] = exp_ret - shr_ret
+    # 放量分钟的量加权日内位置(0=当日最低,1=当日最高):
+    # 低位放量=吸筹承接,高位放量=出货/追高。spec 方向 neg(低位放量排前)。
+    day_hi = df.groupby(gdate)["high"].transform("max")
+    day_lo = df.groupby(gdate)["low"].transform("min")
+    day_pos = safe_divide(df["close"] - day_lo, day_hi - day_lo)
+    exp_w = df["vol"].where(exp_min)
+    results["vp_expand_price_pos"] = safe_divide(
+        (day_pos * exp_w).groupby(gdate).sum(),
+        exp_w.groupby(gdate).sum(),
+    )
+    # 放量下跌的早盘(09:30-11:30)占比: 早盘恐慌集中释放=洗筹(午后修复概率
+    # 大,spec 方向 pos);尾盘放量下跌=出货延续/次日低开风险。
+    am_mask = (df["minute"] >= 570) & (df["minute"] <= 690)
+    dn_exp_am = df["vol"].where(dn_min & exp_min & am_mask).groupby(gdate).sum()
+    results["vp_expand_down_am_share"] = safe_divide(dn_exp_am, dn_exp_vol)
+
     return pd.DataFrame(results, index=daily_open.index)
 
 
@@ -770,6 +869,23 @@ INTRADAY_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "vwap_am_pm_gap_factor":    ("vwap_am_pm_gap",         "pos"),
     "open_30_range_share":      ("open_30_range_pct",      "neg"),
     "am_close_position":        ("am_hl_position",         "pos"),
+    # ── 2026-08-08: 策略挖掘——价格时点/封板质量/分钟跳空/VWAP贴合 (4) ────
+    "intraday_high_time":       ("intraday_high_time",       "pos"),
+    "min_limit_touch_frac_20":  ("min_limit_touch_frac_20",  "pos"),
+    "min_bar_gap_freq_20":      ("min_bar_gap_freq_20",      "neg"),
+    "min_vwap_dev_std":         ("min_vwap_dev_std",         "neg"),
+    # ── 2026-08-11: 分钟级量价四象限 (放量/缩量×上涨/下跌) ───────────────
+    "vp_expand_up_share":       ("vp_expand_up_share",       "pos"),
+    "vp_expand_down_share":     ("vp_expand_down_share",     "neg"),
+    "vp_shrink_up_share":       ("vp_shrink_up_share",       "neg"),
+    "vp_shrink_down_share":     ("vp_shrink_down_share",     "pos"),
+    "vp_consistency_score":     ("vp_consistency_score",     "pos"),
+    "vp_consistency_20":        ("vp_consistency_20",        "pos"),
+    "up_minute_vol_share":      ("up_minute_vol_share",      "pos"),
+    "minute_ret_vol_corr":      ("minute_ret_vol_corr",      "pos"),
+    "vp_expand_ret_gap":        ("vp_expand_ret_gap",        "pos"),
+    "vp_expand_price_pos":      ("vp_expand_price_pos",      "neg"),
+    "vp_expand_down_am_share":  ("vp_expand_down_am_share",  "pos"),
 }
 
 #: All metric columns produced by ``_intraday_all_metrics`` that map to factors.

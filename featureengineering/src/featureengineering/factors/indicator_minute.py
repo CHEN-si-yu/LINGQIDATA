@@ -623,6 +623,73 @@ def _indicator_all_metrics(stock_df: pd.DataFrame) -> pd.DataFrame:
     # J 值5日变化(KDJ 动能加速)
     results["j_close_5d_gap"] = results["j_close"] - results["j_close"].shift(5)
 
+    # ── 2026-08-08: 策略挖掘——分钟级动能/情绪/结构 (5) ──────────────────
+    # MACD 柱日内净面积(Σmacd/当日收盘价):红柱-绿柱的积分=日内动能净值。
+    # 用 close_proxy(当日最后 ma5≈收盘价)归一,消除高价股/低价股量纲差异。
+    macd_area = df["macd"].groupby(df["trade_date"]).sum()
+    results["min_macd_hist_area_20"] = safe_divide(
+        macd_area, close_proxy
+    ).rolling(20, min_periods=10).mean()
+    # 分钟 KDJ 超买占比:J>100 的分钟比例(盘中反复冲顶=情绪票)。
+    # 与日线 kdj_overbought_frac 区分:本因子为分钟粒度,度量超买的持续时长。
+    results["min_j_overbought_frac_20"] = (
+        df["j"].gt(100).groupby(df["trade_date"]).mean()
+        .rolling(20, min_periods=10).mean()
+    )
+    # 分钟 BOLL 带宽日内波动:std((upper−lower)/mid) 的20日均值。
+    # 带宽反复挤压-扩张=变盘酝酿;平稳=趋势节奏稳定。
+    boll_width_min = safe_divide(
+        df["boll_upper"] - df["boll_lower"], df["boll_mid"]
+    )
+    results["min_boll_width_std_20"] = (
+        boll_width_min.groupby(df["trade_date"]).std()
+        .rolling(20, min_periods=10).mean()
+    )
+    # 分钟均线多头排列占比:ma5>ma10>ma20>ma30 的分钟比例(日内趋势稳固度)。
+    # 与日频 ma_alignment_score 区分:本因子为分钟粒度,尾盘才翻多与全天多头分离。
+    ma_align = (
+        (df["ma5"] > df["ma10"]) & (df["ma10"] > df["ma20"])
+        & (df["ma20"] > df["ma30"])
+    )
+    results["min_ma_alignment_frac_20"] = (
+        ma_align.groupby(df["trade_date"]).mean()
+        .rolling(20, min_periods=10).mean()
+    )
+    # 分钟 RSI 极值占比:RSI>80 或 <20 的分钟比例(情绪烈度,不分多空方向)。
+    rsi_extreme = df["rsi"].gt(80) | df["rsi"].lt(20)
+    results["min_rsi_extreme_frac_20"] = (
+        rsi_extreme.groupby(df["trade_date"]).mean()
+        .rolling(20, min_periods=10).mean()
+    )
+
+    # ── 2026-08-11: 分钟量能×技术状态 (mavol 代理量能,3) ────────────────
+    # indicator_1min 无原始 vol 列,用 mavol5/mavol10 关系近似量能状态:
+    # 放量=mavol5>mavol10(短期量均线高于中期),缩量=mavol5<mavol10。
+    # 分母用"两量均线均非 NaN"的有效分钟,避免指标未就绪分钟拉低占比。
+    mavol_ok = df["mavol5"].notna() & df["mavol10"].notna()
+    vol_expand_min = (df["mavol5"] > df["mavol10"]) & mavol_ok
+    vol_shrink_min = (df["mavol5"] < df["mavol10"]) & mavol_ok
+    ma_bull_min = (df["ma5"] > df["ma10"]) & mavol_ok
+    rsi_overbought_min = df["rsi"].gt(70) & mavol_ok
+    valid_count = mavol_ok.groupby(df["trade_date"]).sum()
+    # 放量多头占比:量能扩张且价格均线多头排列的分钟占比——量价+趋势三线确认。
+    # 与 min_ma_alignment_frac_20(纯价格排列)区分:本因子叠加量能维度,
+    # 「多头但无量」的诱多形态(见 min_shrink_bull_frac_20)在此被排除。
+    results["min_expand_bull_frac_20"] = (
+        (vol_expand_min & ma_bull_min).groupby(df["trade_date"]).sum()
+        / valid_count.replace(0, np.nan)
+    ).rolling(20, min_periods=10).mean()
+    # 缩量多头占比:多头排列但量能收缩的分钟占比——无量上涨=诱多嫌疑(负向)。
+    results["min_shrink_bull_frac_20"] = (
+        (vol_shrink_min & ma_bull_min).groupby(df["trade_date"]).sum()
+        / valid_count.replace(0, np.nan)
+    ).rolling(20, min_periods=10).mean()
+    # RSI 超买且放量占比:情绪过热+量能扩张同时发生=追高/拉高出货特征(负向)。
+    results["min_rsi_overbought_expand_20"] = (
+        (rsi_overbought_min & vol_expand_min).groupby(df["trade_date"]).sum()
+        / valid_count.replace(0, np.nan)
+    ).rolling(20, min_periods=10).mean()
+
     # ═════════════════════════════════════════════════════════════════════
     # Return the full metrics DataFrame
     # ═════════════════════════════════════════════════════════════════════
@@ -735,6 +802,16 @@ INDICATOR_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "rsi_trend_ma5":             ("rsi_excess_ma5",       "pos"),
     "kdj_bull_frac_5d_change":   ("kdj_bull_frac_5d_chg", "pos"),
     "kdj_j_5d_acceleration":     ("j_close_5d_gap",       "pos"),
+    # ── 2026-08-08 新增:分钟级动能/情绪/结构(5) ────────────────────────
+    "min_macd_hist_area_20":     ("min_macd_hist_area_20", "pos"),
+    "min_j_overbought_frac_20":  ("min_j_overbought_frac_20", "neg"),
+    "min_boll_width_std_20":     ("min_boll_width_std_20", "neg"),
+    "min_ma_alignment_frac_20":  ("min_ma_alignment_frac_20", "pos"),
+    "min_rsi_extreme_frac_20":   ("min_rsi_extreme_frac_20", "neg"),
+    # ── 2026-08-11 新增:分钟量能×技术状态(3) ────────────────────────────
+    "min_expand_bull_frac_20":   ("min_expand_bull_frac_20", "pos"),
+    "min_shrink_bull_frac_20":   ("min_shrink_bull_frac_20", "neg"),
+    "min_rsi_overbought_expand_20": ("min_rsi_overbought_expand_20", "neg"),
 }
 
 #: All metric columns produced by ``_indicator_all_metrics`` that map to factors.

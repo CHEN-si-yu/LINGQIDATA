@@ -80,45 +80,6 @@ def factor_shadow_asymmetry(context: FactorContext):
 
 
 @register_factor(
-    name="gap_fill_5d",
-    description="5日前跳空缺口的未回补比例取负排名（0=已回补，负值=仍有缺口）。",
-    category="price",
-    thesis="A股市场'缺口必补'观点广为流传——5日前的跳空缺口若未被回补则仍存在吸引价格回归的拉力。当前价格越接近缺口起点（pre_close_5d_ago），缺口回补压力越大。",
-    dependencies=("daily.parquet",),
-)
-def factor_gap_fill_5d(context: FactorContext):
-    """Measure how much of the gap opened five sessions ago remains unfilled."""
-    daily = context.load("daily.parquet")
-    adj = _adjusted_close(daily)
-    scale = adj / daily["close"].replace(0, np.nan)
-    adj_high = daily["high"] * scale
-    adj_low = daily["low"] * scale
-    gap = safe_divide(daily["open"] - daily["pre_close"], daily["pre_close"])
-
-    event_gap = gap.groupby(level="Code").shift(5)
-    event_anchor = (daily["pre_close"] * scale).groupby(level="Code").shift(5)
-    high_since = adj_high.groupby(level="Code").transform(
-        lambda s: s.rolling(6, min_periods=6).max()
-    )
-    low_since = adj_low.groupby(level="Code").transform(
-        lambda s: s.rolling(6, min_periods=6).min()
-    )
-    up_remaining = safe_divide(low_since - event_anchor, event_anchor.abs()).clip(lower=0)
-    down_remaining = safe_divide(event_anchor - high_since, event_anchor.abs()).clip(lower=0)
-    remaining = pd.Series(
-        np.where(
-            event_gap > 0.01,
-            up_remaining,
-            np.where(event_gap < -0.01, down_remaining, np.nan),
-        ),
-        index=daily.index,
-        dtype=float,
-    )
-    unfilled_fraction = safe_divide(remaining, event_gap.abs())
-    return cross_sectional_rank(-unfilled_fraction)
-
-
-@register_factor(
     name="oi_divergence_intensity",
     description="隔夜日内背离强度因子，(close-open)-(open-pre_close)截面排名（正=日内强化跳空方向排前）。",
     category="price",

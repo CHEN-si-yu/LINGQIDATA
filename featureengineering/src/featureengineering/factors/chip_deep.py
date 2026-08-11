@@ -190,6 +190,21 @@ def _compute_single_date_metrics(sub_df: pd.DataFrame,
     if close_val is not None and not np.isnan(close_val):
         below_sum = percents[prices <= close_val].sum()
         result["chip_below_ratio"] = below_sum / total_pct
+        # ── 获利/套牢筹码的峰集中度 (2026-08-11) ──
+        # 现价下方(获利)筹码的最大单箱占比:高=获利筹码集中成峰(主力成本密集
+        # 锁筹,吸筹完成特征);低=获利筹码分散(浮筹)。上方(套牢)同理:
+        # 集中=单点压力位,分散=套牢盘零散。
+        below_pcts = percents[prices <= close_val]
+        if below_sum > 1e-12:
+            result["chip_win_peak_frac"] = below_pcts.max() / below_sum
+        else:
+            result["chip_win_peak_frac"] = np.nan
+        above_pcts = percents[prices > close_val]
+        above_sum = above_pcts.sum()
+        if above_sum > 1e-12:
+            result["chip_loss_peak_frac"] = above_pcts.max() / above_sum
+        else:
+            result["chip_loss_peak_frac"] = np.nan
 
     return pd.Series(result)
 
@@ -291,6 +306,10 @@ CHIP_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "chip_semi_std_momentum":   ("chip_semi_std",        "momentum_rev"),
     "chip_width_ratio_momentum":("chip_width_ratio",     "momentum_rev"),
     "chip_percentile_20d":      ("chip_percentile",      "momentum_20d"),
+    # ── 2026-08-11: 获利/套牢筹码峰集中度 (3) ──
+    "chip_win_peak_frac":       ("chip_win_peak_frac",   "pos"),
+    "chip_loss_peak_frac":      ("chip_loss_peak_frac",  "neg"),
+    "chip_win_peak_growth":     ("chip_win_peak_frac",   "momentum"),
 }
 
 _CHIP_METRIC_COLS = {
@@ -318,6 +337,8 @@ _CHIP_METRIC_COLS = {
     "chip_upper_110",
     "chip_mode_median_gap",
     "chip_range_skew",
+    "chip_win_peak_frac",
+    "chip_loss_peak_frac",
 }
 
 

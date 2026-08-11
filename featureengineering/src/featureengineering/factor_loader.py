@@ -37,12 +37,16 @@ _NON_POINT_IN_TIME_SOURCES = {"stock_list.parquet"}
 logger = logging.getLogger(__name__)
 
 
-def _filter_non_continuous_factors() -> int:
+def _filter_non_continuous_factors(log: bool = True) -> int:
     """Remove non-continuous (non-daily-frequency) factors from the registry.
 
     Reads factor manifests from ``data/manifests/`` and classifies each
     factor as continuous or non-continuous based on whether all of its
     upstream data sources deliver new information every trading day.
+
+    *log* is False in spawn workers: the filter must still run there
+    (each worker has its own registry copy), but the summary should only
+    be announced once, from the main process.
 
     Returns the number of factors removed.
     """
@@ -133,7 +137,7 @@ def _filter_non_continuous_factors() -> int:
                     changed = True
 
     unresolved = set(factors) - daily - non_daily
-    if unresolved:
+    if unresolved and log:
         logger.warning(
             "%d factors could not be classified: %s",
             len(unresolved), sorted(unresolved)[:10],
@@ -146,7 +150,7 @@ def _filter_non_continuous_factors() -> int:
             del FACTOR_REGISTRY[name]
             removed += 1
 
-    if removed:
+    if removed and log:
         logger.info(
             "Filtered %d non-continuous factors from registry (%d remaining)",
             removed, len(FACTOR_REGISTRY),
@@ -155,8 +159,11 @@ def _filter_non_continuous_factors() -> int:
     return removed
 
 
-def _filter_non_point_in_time_factors() -> int:
-    """Remove factors that use current snapshots as historical attributes."""
+def _filter_non_point_in_time_factors(log: bool = True) -> int:
+    """Remove factors that use current snapshots as historical attributes.
+
+    *log* is False in spawn workers — see :func:`_filter_non_continuous_factors`.
+    """
     from .registry import FACTOR_REGISTRY
 
     removed_names = [
@@ -165,12 +172,23 @@ def _filter_non_point_in_time_factors() -> int:
     ]
     for name in removed_names:
         del FACTOR_REGISTRY[name]
-    if removed_names:
+    if removed_names and log:
         logger.warning(
             "Disabled %d non-point-in-time factors: %s",
             len(removed_names), ", ".join(sorted(removed_names)),
         )
     return len(removed_names)
+
+
+def _is_spawn_worker() -> bool:
+    """True when running inside a multiprocessing worker (spawn or fork).
+
+    Spawn workers re-import this module with a fresh ``_LOADED`` flag and
+    re-run the registry filters.  They must filter (correctness), but the
+    announcement should come from the main process exactly once.
+    """
+    import multiprocessing as _mp
+    return _mp.parent_process() is not None
 
 
 def ensure_builtin_factors_loaded() -> None:
@@ -199,7 +217,11 @@ def ensure_builtin_factors_loaded() -> None:
             )
 
     # ── Post-load: enforce point-in-time and continuity contracts ─────
-    _filter_non_point_in_time_factors()
-    _filter_non_continuous_factors()
+    # Run in every process (spawn workers have their own registry copy),
+    # but only announce from the main process to avoid the same warning
+    # repeating once per worker.
+    _announce = not _is_spawn_worker()
+    _filter_non_point_in_time_factors(log=_announce)
+    _filter_non_continuous_factors(log=_announce)
 
     _LOADED = True
