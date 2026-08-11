@@ -896,3 +896,42 @@ volume_price_divergence_score 等)基础上,开发**分钟级(时分)量价耦�
 - 本轮未构建 .fea(构建由项目侧后续执行)
 
 *最后更新:2026-08-11*
+
+### 8.20 2026-08-11 因子筛选口径定型(768→616,θ=0.95)与生成链路重构
+
+#### 全量冗余分析结论(2026-08-11 分析脚本,与 factor_select 同口径)
+- 768 因子(2022+ 每 3 日抽样,min_overlap=500)相关矩阵:median |r|=0.057;
+  |r|≥0.999 完全重复对 119 对(log_/sqrt_ 变换复刻、ext_* 命名变体等,掩码一致);
+  >0.95 对 285 对。
+- 贪婪剔除(排序键=-quality,nan_ratio,name):0.98→644,0.95→616,0.92→582,0.9→561。
+- 定 θ=0.95:与 2026-08-10 生产口径一致,可移除全部 119 对精确重复且保留 80%
+  信号;0.92/0.90 仅多剔除 34/55 个中低度冗余因子,信号覆盖损失更大。
+- IC 概览(vs label_ret_1d,4 horizon):median |IC| 0.016,69% 因子 ≥0.01,
+  16% ≥0.03,1 个 ≥0.05(amihud_parkinson_ratio)。结论:信息量中等、强因子稀缺,
+  IC 仅作组内取舍排序,不设硬阈值。
+
+#### 已知近似(既定口径,勿改动)
+- 相关矩阵方差项用对角元素 diag(xx)(因子自身全掩码平方和)除以两两重叠样本数:
+  两因子 NaN 掩码不一致时 |corr| 被低估。精确重复因子(掩码一致)不受影响。
+  与 2026-08-10 生产口径、2026-08-11 分析脚本完全一致,改动破坏历史可比性。
+- 上述分析中 616 为低估偏置下的计数;掩码差异大的因子对实际冗余可能更高。
+
+#### 生成链路重构(Model/)
+- factor_select.py 已删除,功能并入 prepared_data.py(第 185 行起"因子选择模块",
+  含 _corr_matrix/_rank_ic/_factor_ics_aligned/_greedy/_pick_threshold/select_factors)。
+- IC 择优的 label 源固定指向 featureengineering/data/targets(上游源,index-only
+  格式,reset_index 后处理),避免 --full 重跑时 labels 先删导致 IC 退化覆盖率排序。
+- 阈值自适应 SELECT_MIN_KEEP=500/SELECT_MAX_KEEP=620:0.98→644 超上限自动落 0.95。
+- 运行:trainingdata 清空后 --full 重跑,产出 fac_all.fea(768 因子列)、
+  fac_select.fea(616 因子列,θ=0.95)、fac_select_meta.json(kept/dropped/ic 明细)、
+  label_ret_{1,3,5,10}d.fea、trade_amt.fea,2026-08-11 12:06 完成,全链路 115.3s
+  内选择完成。
+
+#### 特殊观察(本轮)
+- one_word_limit_down_freq_20 通过全部质量门槛(std0 日占比 96.1% < 98%),但
+  1071/1112 日截面取值完全相同(罕见事件频率,几乎全 0.5),rank-IC 不可测→quality=NaN
+  →IC 排序自动置底;不与任何因子冗余,保留于 fac_all 与 fac_select。
+- 22/23 个新因子在 θ=0.95 保留;min_expand_bull_frac_20(0.984)与
+  min_shrink_bull_frac_20(0.978)相对 min_ma_alignment_frac_20 重复、
+  minute_ret_vol_corr(0.949)相对 volume_weighted_ret 重复,共 1 个新因子被剔除。
+- 44 个旧保留因子被新因子替换(旧保留集合在 0.95 下未入选)。
