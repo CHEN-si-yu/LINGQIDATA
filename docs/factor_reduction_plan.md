@@ -1,0 +1,826 @@
+# LingqiData 因子减法计划（2026-08-11，θ=0.50 + 依赖闭合）
+
+> 依据 `factor_research_spec.md` 执行因子库减法：768 → 261 个核心因子。
+> 本文件是**建议清单**：保留/删除清单与每个剔除因子的顶替关系，供重构时参考。
+
+## 总览
+
+- 保留：**261** 个（θ=0.50 贪婪 + 依赖闭包，内部 |corr| ≤ 0.50，依赖完整）
+- 删除：**507** 个
+- 排序键：quality（0.5·mean_abs_ic + 0.5·mean_ic_abs，与 production 同口径）
+- 分析数据：`/home/claude/factor_analysis/`（corr_matrix.npy / ic_results.csv / kept_final.json / dropped_final.json）
+
+## 类别分布
+
+| 类别 | 保留 | 删除 | 总数 |
+|---|---:|---:|---:|
+| price | 67 | 138 | 205 |
+| intraday | 68 | 135 | 203 |
+| coupling | 30 | 95 | 125 |
+| fund_flow | 35 | 57 | 92 |
+| risk | 20 | 42 | 62 |
+| valuation | 14 | 21 | 35 |
+| event | 16 | 6 | 22 |
+| timeseries | 8 | 12 | 20 |
+| enhanced | 2 | 0 | 2 |
+| neutral | 1 | 1 | 2 |
+
+## spec §1.3 种子基因去向
+
+| 种子基因 | 去留 | 说明 |
+|---|---|---|
+| `amihud_parkinson_ratio` | ❌ 剔除 | 被 `amihud_intraday` 顶替（r=0.783） |
+| `margin_buy_momentum_5d` | ❌ 剔除 | 被 `margin_velocity` 顶替（r=0.900） |
+| `margin_velocity` | ✅ 保留 | — |
+| `idio_vol_60` | ❌ 剔除 | 被 `amplitude_20` 顶替（r=0.813） |
+| `amplitude_20` | ✅ 保留 | — |
+| `turnover_orthogonal_to_mv` | ❌ 剔除 | 被 `turnover_20` 顶替（r=0.924） |
+| `smart_money_share` | ✅ 保留 | — |
+| `min_boll_width_std_20` | ❌ 剔除 | 被 `amplitude_20` 顶替（r=0.935） |
+| `limit_up_fade_10` | ✅ 保留 | — |
+| `lowvol_trend_efficiency_combo_20` | ✅ 保留 | — |
+
+## ⚠️ 重构注意事项（必读）
+
+1. **被保留因子依赖的 primitive 必须保留**。以下被剔除因子仍被保留因子依赖，**不得删除**，否则重建失败：
+
+
+2. 依赖闭包已把 primitive（如 momentum_20、bp、turnover_20、rv_5min 等）自动纳入保留集。
+3. 删除时请**先删 .fea 与 manifests，再删注册脚本中的因子函数**；或直接以本清单保留集为准重构。
+4. 重建后运行 `python Model/prepared_data.py --full` 重新生成 fac_all/fac_select（配置已改为目标 200~260）。
+
+## 保留清单（261 个）
+
+- `accumulation_distribution_20`（price，q=0.0584）
+- `adx_14`（price，q=0.0432）
+- `am_pm_macd_ratio`（intraday，q=0.0210）
+- `am_pm_return_ratio`（intraday，q=0.0322）
+- `am_pm_rsi_ratio`（intraday，q=0.0493）
+- `am_pm_vol_ratio`（intraday，q=0.0454）
+- `amihud_asymmetry_20`（risk，q=0.0452）
+- `amihud_daily_20`（price，q=0.0839）
+- `amihud_intraday`（intraday，q=0.1013）
+- `amihud_trend_20_60`（risk，q=0.0674）
+- `amount_surge_count_20`（price，q=0.0710）
+- `amplitude_20`（price，q=0.1247）
+- `beta_60`（risk，q=0.1011）
+- `bias_signal_29_19`（price，q=0.0691）
+- `big_gap_reversal_5`（event，q=0.0226）
+- `boll_band_deviation`（intraday，q=0.0266）
+- `boll_width_5d_change`（intraday，q=0.0263）
+- `boll_width_change`（intraday，q=0.0411）
+- `bp`（valuation，q=0.1003）
+- `bp_size_neutral`（neutral，q=0.0985）
+- `chip_above_below_ratio`（coupling，q=0.0327）
+- `chip_bimodality`（price，q=0.0306）
+- `chip_concentration_change_5d`（price，q=0.0405）
+- `chip_concentration_streak`（price，q=0.0486）
+- `chip_cost_convergence_20d`（price，q=0.0464）
+- `chip_cost_kurtosis_20d`（price，q=0.0317）
+- `chip_cr3_factor`（price，q=0.0620）
+- `chip_entropy_convergence`（price，q=0.0411）
+- `chip_gini_factor`（price，q=0.0482）
+- `chip_median_momentum`（price，q=0.0615）
+- `chip_mode_mean_convergence`（price，q=0.0200）
+- `chip_momentum_resonance_20`（coupling，q=0.0627）
+- `chip_peak_distance`（price，q=0.0526）
+- `chip_price_resonance_20`（coupling，q=0.0489）
+- `chip_skew_momentum`（price，q=0.0375）
+- `chip_width_ratio_momentum`（price，q=0.0597）
+- `chip_win_peak_frac`（price，q=0.0700）
+- `circ_mv_share_change_20d`（valuation，q=0.0107）
+- `circ_mv_to_total_mv`（valuation，q=0.0164）
+- `consecutive_limit_down`（event，q=0.0466）
+- `consecutive_limit_up`（event，q=0.0468）
+- `cost_displacement_extreme`（price，q=0.0346）
+- `cost_distribution_width`（price，q=0.0494）
+- `cost_skew_momentum_5d`（price，q=0.0180）
+- `cost_skew_ratio`（price，q=0.0484）
+- `coupling_bigflow_margin_buy_20`（coupling，q=0.0373）
+- `coupling_chip_cost_accel_20`（coupling，q=0.0433）
+- `coupling_flow_persistence_20`（coupling，q=0.0223）
+- `coupling_fundflow_accel_10`（coupling，q=0.0480）
+- `coupling_intraday_tail_momentum_20`（coupling，q=0.0497）
+- `coupling_macd_chip_divergence`（coupling，q=0.0450）
+- `coupling_margin_buy_persist_10`（coupling，q=0.0295）
+- `coupling_margin_chip_cost_20`（coupling，q=0.0709）
+- `coupling_margin_lead_trend_60`（coupling，q=0.0635）
+- `coupling_net_turnover_momentum_20`（coupling，q=0.0561）
+- `coupling_rsi_moneyflow_resonance`（coupling，q=0.0361）
+- `coupling_rsi_turnover_divergence`（coupling，q=0.0656）
+- `coupling_stableflow_momentum_20`（coupling，q=0.0553）
+- `coupling_vp_amfade_rev_20`（coupling，q=0.0581）
+- `coupling_vp_retvol_mom_20`（coupling，q=0.0685）
+- `current_up_streak`（price，q=0.0553）
+- `current_vol_shrink_streak`（price，q=0.0283）
+- `deep_value_reversal_combo_60`（coupling，q=0.0817）
+- `distance_from_ma_120`（price，q=0.0689）
+- `doji_frequency_20`（price，q=0.0211）
+- `downside_frequency_60`（risk，q=0.0602）
+- `downside_upside_vol_60`（risk，q=0.0593）
+- `dpo_20`（price，q=0.0630）
+- `drawdown_120`（timeseries，q=0.0831）
+- `drawdown_60`（timeseries，q=0.0815）
+- `dv_composite`（valuation，q=0.0814）
+- `dv_stability_4q`（valuation，q=0.0415）
+- `elg_net_60d_to_mv`（fund_flow，q=0.0350）
+- `eom_14`（price，q=0.0720）
+- `ext_mf_large_order_avg_price`（fund_flow，q=0.0307）
+- `ext_mf_small_order_amount_ratio`（fund_flow，q=0.0626）
+- `ext_mf_small_order_avg_price`（fund_flow，q=0.0393）
+- `extreme_gain_freq_20`（risk，q=0.0499）
+- `factor_consistency_ratio`（coupling，q=0.0341）
+- `factor_consistency_score`（coupling，q=0.0314）
+- `factor_mean_reversion_20`（coupling，q=0.0232）
+- `factor_momentum_decay`（coupling，q=0.0192）
+- `factor_profile_shift_deep`（coupling，q=0.0439）
+- `factor_volatility_regime_shift`（coupling，q=0.0354）
+- `fear_index_20`（risk，q=0.0350）
+- `fib_retracement_proximity`（price，q=0.0352）
+- `float_mv_ratio`（valuation，q=0.0509）
+- `free_float_expansion_20d`（valuation，q=0.0176）
+- `fund_flow_volatility_20`（fund_flow，q=0.0637）
+- `gap_event_decay_5`（event，q=0.0787）
+- `gap_fill_tendency_10d`（price，q=0.0595）
+- `gap_momentum_5d`（intraday，q=0.0411）
+- `gap_open_follow_ratio_20`（price，q=0.0282）
+- `gap_reversal_5d`（price，q=0.0331）
+- `gap_up_ratio_20d`（price，q=0.0376）
+- `gap_volume_interaction_20`（price，q=0.0290）
+- `hammer_ratio_20d`（price，q=0.0295）
+- `high_open_low_close_frac_20`（event，q=0.0557）
+- `higher_highs_20`（price，q=0.0600）
+- `indicator_consensus`（intraday，q=0.0398）
+- `inside_bar_count_20`（price，q=0.0214）
+- `intraday_high_time`（intraday，q=0.0488）
+- `intraday_momentum`（intraday，q=0.0586）
+- `intraday_reversal`（intraday，q=0.0429）
+- `kama_efficiency_20`（price，q=0.0414）
+- `kdj_bull_frac`（intraday，q=0.0288）
+- `kdj_cross_net`（intraday，q=0.0246）
+- `kdj_j_range`（intraday，q=0.0536）
+- `kdj_j_reversal_risk`（intraday，q=0.0198）
+- `kdj_overbought_frac`（intraday，q=0.0433）
+- `kdj_oversold_frac`（intraday，q=0.0491）
+- `large_trade_intensity`（intraday，q=0.0565）
+- `lhb_proxy_score_60`（event，q=0.0873）
+- `limit_alternation_20`（event，q=0.0490）
+- `limit_down_event_5`（event，q=0.0887）
+- `limit_down_rebound_10`（event，q=0.0323）
+- `limit_up_fade_10`（event，q=0.0565）
+- `limit_up_open_fail_freq_20`（event，q=0.0617）
+- `limit_up_vol_shrink_60`（event，q=0.0611）
+- `liquidity_discount_factor`（enhanced，q=0.0485）
+- `log_circ_mv`（valuation，q=0.0832）
+- `lower_shadow_ratio`（price，q=0.0411）
+- `lowvol_trend_efficiency_combo_20`（coupling，q=0.0766）
+- `lunch_break_effect`（intraday，q=0.0182）
+- `ma_alignment_score`（intraday，q=0.0540）
+- `ma_cross_count`（intraday，q=0.0396）
+- `ma_dispersion`（intraday，q=0.0481）
+- `ma_distance_5_60`（price，q=0.0979）
+- `macd_acceleration`（intraday，q=0.0297）
+- `macd_daily_consistency`（intraday，q=0.0308）
+- `macd_extreme_ratio`（intraday，q=0.0276）
+- `macd_kdj_alignment`（intraday，q=0.0138）
+- `macd_price_divergence`（intraday，q=0.0408）
+- `macd_signal_cross`（intraday，q=0.0199）
+- `macd_trend_strength`（intraday，q=0.0220）
+- `macd_zero_cross`（intraday，q=0.0539）
+- `margin_balance_20d`（fund_flow，q=0.0468）
+- `margin_balance_5d`（fund_flow，q=0.0343）
+- `margin_buy_pressure`（fund_flow，q=0.0260）
+- `margin_chip_cost_gap`（fund_flow，q=0.0515）
+- `margin_net_flow_ratio`（fund_flow，q=0.0242）
+- `margin_proxy_ttm`（valuation，q=0.0432）
+- `margin_repay_deceleration`（fund_flow，q=0.0375）
+- `margin_value_combo_20`（coupling，q=0.0707）
+- `margin_velocity`（fund_flow，q=0.0920）
+- `market_beta_change_20`（risk，q=0.0550）
+- `marubozu_ratio_10d`（price，q=0.0354）
+- `mavol_expansion`（intraday，q=0.0286）
+- `mavol_ratio_signal`（intraday，q=0.0274）
+- `mavol_ratio_trend`（intraday，q=0.0544）
+- `max_consecutive_loss_20`（risk，q=0.0424）
+- `medium_order_flow`（fund_flow，q=0.0225）
+- `mf_amount_vol_divergence`（fund_flow，q=0.0556）
+- `mf_amount_weighted_direction`（fund_flow，q=0.0181）
+- `mf_big_order_net_kurt_20`（fund_flow，q=0.0341）
+- `mf_big_order_stability_20d`（fund_flow，q=0.0317）
+- `mf_big_small_divergence`（fund_flow，q=0.0317）
+- `mf_flow_acceleration_ext`（fund_flow，q=0.0475）
+- `mf_flow_factor_momentum_20`（coupling，q=0.0475）
+- `mf_flow_reversal_20d`（fund_flow，q=0.0470）
+- `mf_flow_stability_20d`（fund_flow，q=0.0243）
+- `mf_large_vol_net_5d`（fund_flow，q=0.0342）
+- `mf_md_order_vol_ratio`（fund_flow，q=0.0360）
+- `mf_net_inflow_ratio`（fund_flow，q=0.0504）
+- `mf_net_vol_ratio_5d`（fund_flow，q=0.0506）
+- `mf_net_vol_trend_3d`（fund_flow，q=0.0472）
+- `mf_open_close_divergence_10d`（fund_flow，q=0.0256）
+- `mf_vol_amount_corr_20`（fund_flow，q=0.0671）
+- `mf_vol_amount_divergence`（fund_flow，q=0.0380）
+- `minute_ret_vol_corr`（intraday，q=0.0525）
+- `momentum_20`（timeseries，q=0.0874）
+- `momentum_60`（timeseries，q=0.0947）
+- `momentum_accel_20_60`（coupling，q=0.0617）
+- `momentum_accel_60_120`（timeseries，q=0.0608）
+- `multi_indicator_extreme`（intraday，q=0.0246）
+- `net_turnover_rate_20`（fund_flow，q=0.0097）
+- `new_high_frequency_60`（event，q=0.0775）
+- `new_low_60_event`（event，q=0.0652）
+- `oi_divergence_intensity`（price，q=0.0306）
+- `one_word_limit_down_freq_20`（event，q=nan）
+- `one_word_limit_up_freq_20`（event，q=0.0344）
+- `open_auction_ret`（intraday，q=0.0422）
+- `open_price_shock`（price，q=0.0554）
+- `order_size_ratio_change`（fund_flow，q=0.0261）
+- `outside_bar_count_20`（price，q=0.0398）
+- `overnight_return_share_20`（price，q=0.0432）
+- `overnight_skewness_20d`（price，q=0.0243）
+- `panic_selling_ratio_60`（risk，q=0.0354）
+- `parkinson_vol`（intraday，q=0.1008）
+- `pe_ttm_absolute`（valuation，q=0.0515）
+- `pe_ttm_change_20d`（valuation，q=0.0731）
+- `pm_macd_trend`（intraday，q=0.0417）
+- `price_impact_asymmetry`（intraday，q=0.0198）
+- `price_impact_intraday`（intraday，q=0.0580）
+- `price_to_52w_high`（timeseries，q=0.0785）
+- `price_vs_ma10_deviation`（intraday，q=0.0340）
+- `psy_12`（price，q=0.0543）
+- `range_vol_ratio_20`（risk，q=0.0468）
+- `ret_autocorr_1d_20`（price，q=0.0377）
+- `ret_kurt_20`（risk，q=0.0271）
+- `ret_kurt_intraday`（intraday，q=0.0644）
+- `ret_vol_lead_corr_20`（price，q=0.0355）
+- `retail_attention`（price，q=0.0233）
+- `return_asymmetry_intraday`（intraday，q=0.0580）
+- `rjump_5min`（intraday，q=0.0628）
+- `rs_250`（price，q=0.0815）
+- `rsi_14_excess`（intraday，q=0.0368）
+- `rsi_boll_combo`（intraday，q=0.0381）
+- `rsi_extreme_fraction`（intraday，q=0.0664）
+- `rsi_intraday_trend`（intraday，q=0.0507）
+- `rsi_trend_ma5`（intraday，q=0.0343）
+- `rsrs_beta_18`（price，q=0.0538）
+- `rsrs_beta_momentum_5`（price，q=0.0313）
+- `rv_5min`（intraday，q=0.0980）
+- `rv_daily`（intraday，q=0.0799）
+- `rv_term_structure_slope`（intraday，q=0.0454）
+- `sentiment_value_gap`（coupling，q=0.0239）
+- `shadow_upper_20`（price，q=0.0402）
+- `short_balance_ratio_change_20d`（fund_flow，q=0.0255）
+- `short_interest_volatility_20d`（fund_flow，q=0.0284）
+- `short_sell_volume_ratio`（fund_flow，q=0.0499）
+- `short_squeeze_risk`（fund_flow，q=0.0528）
+- `short_term_reversal_5`（timeseries，q=0.0740）
+- `smart_money_net_bias`（intraday，q=0.0439）
+- `smart_money_share`（intraday，q=0.1058）
+- `smart_money_vwap_ratio`（intraday，q=0.0412）
+- `tail_corr_60`（risk，q=0.0599）
+- `tail_volume_share`（intraday，q=0.0343）
+- `trix_signal_gap`（price，q=0.0623）
+- `turnover_20`（valuation，q=0.1165）
+- `turnover_f_delta_5`（valuation，q=0.0440）
+- `turnover_rv_interaction`（risk，q=0.0452）
+- `turnover_shock_20`（enhanced，q=0.0212）
+- `ulcer_index_20`（timeseries，q=0.0814）
+- `upper_shadow_ratio`（price，q=0.0389）
+- `vol_clustering_20`（risk，q=0.0292）
+- `vol_concentration`（intraday，q=0.0471）
+- `vol_cycle_position_120`（risk，q=0.0716）
+- `vol_decay_ratio_20`（risk，q=0.0451）
+- `vol_of_rv`（risk，q=0.0456）
+- `vol_of_vol_60`（risk，q=0.0732）
+- `volume_autocorr_20`（price，q=0.0466）
+- `volume_autocorr_5`（price，q=0.0300）
+- `volume_momentum_5`（price，q=0.0513）
+- `volume_peak_time`（intraday，q=0.0335）
+- `volume_price_confirmation`（intraday，q=0.0236）
+- `volume_price_divergence_score`（price，q=0.0505）
+- `volume_profile_skew`（intraday，q=0.0420）
+- `volume_ratio_extreme`（valuation，q=0.0289）
+- `volume_skew_5d`（price，q=0.0174）
+- `volume_tilt_20`（price，q=0.0643）
+- `volume_u_shape_score`（intraday，q=0.0334）
+- `vp_consistency_20`（intraday，q=0.0466）
+- `vp_expand_down_am_share`（intraday，q=0.0332）
+- `vp_expand_down_share`（intraday，q=0.0531）
+- `vp_expand_ret_gap`（intraday，q=0.0378）
+- `vwap_deviation`（intraday，q=0.0642）
+- `winner_rate`（price，q=0.0657）
+- `winner_rate_acceleration`（price，q=0.0520）
+- `zero_return_fraction_20`（price，q=0.0488）
+- `zscore_amihud_intraday`（risk，q=0.0847）
+
+## 删除清单（507 个，含顶替者）
+
+> 剔除原因均为与保留代表 |corr| > 0.50；r 为与顶替者的相关。
+
+- `log_amplitude_20`（risk，q=0.1247）→ `amplitude_20`（r=1.000）
+- `log_high_low_volatility_20`（risk，q=0.1245）→ `amplitude_20`（r=0.993）
+- `high_low_volatility_20`（price，q=0.1245）→ `amplitude_20`（r=0.993）
+- `min_vwap_dev_std`（intraday，q=0.1244）→ `amplitude_20`（r=0.969）
+- `atr_ratio_20`（risk，q=0.1237）→ `amplitude_20`（r=0.986）
+- `coupling_valuation_sentiment_divergence`（coupling，q=0.1228）→ `bp_size_neutral`（r=0.820）
+- `min_boll_width_std_20`（intraday，q=0.1227）→ `amplitude_20`（r=0.935）
+- `turnover_event_confirmation_20`（coupling，q=0.1215）→ `turnover_20`（r=0.895）
+- `cvar_95_120`（risk，q=0.1180）→ `amplitude_20`（r=0.682）
+- `turnover_anomaly_mean_20d`（price，q=0.1165）→ `turnover_20`（r=1.000）
+- `turnover_orthogonal_to_mv`（coupling，q=0.1159）→ `turnover_20`（r=0.924）
+- `big_range_day_freq_20`（price，q=0.1152）→ `amplitude_20`（r=0.912）
+- `listing_age_heat`（price，q=0.1135）→ `turnover_20`（r=0.891）
+- `turnover_20_size_neutral`（neutral，q=0.1134）→ `turnover_20`（r=0.901）
+- `turnover_f_20`（valuation，q=0.1129）→ `turnover_20`（r=0.882）
+- `idio_vol_60`（risk，q=0.1129）→ `amplitude_20`（r=0.813）
+- `sqrt_turnover_vol_20`（risk，q=0.1115）→ `turnover_20`（r=0.938）
+- `sqrt_turnover_std_20`（risk，q=0.1115）→ `turnover_20`（r=0.938）
+- `turnover_std_20`（price，q=0.1115）→ `turnover_20`（r=0.938）
+- `turnover_vol_20`（valuation，q=0.1115）→ `turnover_20`（r=0.938）
+- `amihud_parkinson_ratio`（risk，q=0.1094）→ `amihud_intraday`（r=0.783）
+- `high_low_amplitude_20`（price，q=0.1093）→ `amplitude_20`（r=0.825）
+- `turnover_f_raw`（valuation，q=0.1089）→ `turnover_20`（r=0.762）
+- `free_share_turnover_ratio`（valuation，q=0.1089）→ `turnover_20`（r=0.762）
+- `atr_20`（price，q=0.1088）→ `smart_money_share`（r=0.852）
+- `macd_bar_energy`（intraday，q=0.1077）→ `smart_money_share`（r=0.887）
+- `macd_daily_range`（intraday，q=0.1075）→ `smart_money_share`（r=0.873）
+- `var_95_20`（risk，q=0.1067）→ `amplitude_20`（r=0.771）
+- `extreme_move_event`（event，q=0.1061）→ `amplitude_20`（r=0.687）
+- `limit_up_event_5`（event，q=0.1054）→ `limit_up_vol_shrink_60`（r=0.670）
+- `overnight_gap_vol_20`（price，q=0.1041）→ `amplitude_20`（r=0.725）
+- `min_ma_alignment_frac_20`（intraday，q=0.1025）→ `smart_money_share`（r=0.851）
+- `price_distance_from_52w_low`（timeseries，q=0.1017）→ `rs_250`（r=0.743）
+- `factor_ic_ir_proxy_60`（coupling，q=0.1014）→ `bp`（r=0.822）
+- `factor_signal_to_noise_60`（coupling，q=0.1014）→ `bp`（r=0.822）
+- `rv_15min`（intraday，q=0.1013）→ `rv_5min`（r=0.933）
+- `log_rv_15min`（risk，q=0.1013）→ `rv_5min`（r=0.933）
+- `min_shrink_bull_frac_20`（intraday，q=0.1013）→ `smart_money_share`（r=0.837）
+- `log_rv_10min`（risk，q=0.1012）→ `rv_5min`（r=0.968）
+- `rv_10min`（intraday，q=0.1012）→ `rv_5min`（r=0.968）
+- `relative_spread`（intraday，q=0.1009）→ `parkinson_vol`（r=1.000）
+- `sqrt_relative_spread`（risk，q=0.1009）→ `parkinson_vol`（r=1.000）
+- `bollinger_squeeze`（price，q=0.1008）→ `amplitude_20`（r=0.736）
+- `bollinger_width_20`（price，q=0.1008）→ `amplitude_20`（r=0.736）
+- `hl_range_intraday`（intraday，q=0.1008）→ `parkinson_vol`（r=1.000）
+- `log_parkinson_vol`（risk，q=0.1008）→ `parkinson_vol`（r=1.000）
+- `log_hl_range_intraday`（risk，q=0.1008）→ `parkinson_vol`（r=1.000）
+- `intraday_high_low_volatility`（intraday，q=0.1006）→ `parkinson_vol`（r=0.993）
+- `log_intraday_high_low_volatility`（risk，q=0.1006）→ `parkinson_vol`（r=0.992）
+- `market_cap_concentration_20d`（valuation，q=0.0998）→ `amplitude_20`（r=0.727）
+- `gk_vol`（intraday，q=0.0997）→ `parkinson_vol`（r=0.948）
+- `log_gk_vol`（risk，q=0.0997）→ `parkinson_vol`（r=0.948）
+- `momentum_liquidity_resonance_20`（coupling，q=0.0997）→ `momentum_20`（r=0.756）
+- `log_rv_30min`（risk，q=0.0992）→ `parkinson_vol`（r=0.873）
+- `rv_30min`（intraday，q=0.0992）→ `parkinson_vol`（r=0.873）
+- `bias_60`（price，q=0.0988）→ `ma_distance_5_60`（r=0.961）
+- `rs_value_divergence_20`（coupling，q=0.0986）→ `bp`（r=0.729）
+- `realized_spread_5min`（intraday，q=0.0982）→ `rv_5min`（r=0.968）
+- `chip_weighted_cost_volatility_20d`（price，q=0.0982）→ `turnover_20`（r=0.704）
+- `log_rv_5min`（risk，q=0.0980）→ `rv_5min`（r=1.000）
+- `min_expand_bull_frac_20`（intraday，q=0.0979）→ `smart_money_share`（r=0.837）
+- `ret_std_intraday`（intraday，q=0.0977）→ `rv_5min`（r=0.999）
+- `log_ret_std_intraday`（risk，q=0.0977）→ `rv_5min`（r=0.999）
+- `volume_rv_ratio`（intraday，q=0.0976）→ `rv_5min`（r=0.956）
+- `sqrt_am_hl_range_intraday`（risk，q=0.0969）→ `parkinson_vol`（r=0.911）
+- `am_hl_range_intraday`（intraday，q=0.0969）→ `parkinson_vol`（r=0.911）
+- `intraday_max_drawdown`（intraday，q=0.0968）→ `parkinson_vol`（r=0.751）
+- `rv_rolling_5d_std`（intraday，q=0.0961）→ `amplitude_20`（r=0.601）
+- `log_rv_rolling_5d_std`（risk，q=0.0961）→ `amplitude_20`（r=0.601）
+- `margin_buy_momentum_5d`（fund_flow，q=0.0957）→ `margin_velocity`（r=0.900）
+- `sqrt_max_ret_intraday`（risk，q=0.0952）→ `rv_5min`（r=0.857）
+- `max_ret_intraday`（intraday，q=0.0952）→ `rv_5min`（r=0.857）
+- `ma_distance_20_60`（price，q=0.0952）→ `ma_distance_5_60`（r=0.870）
+- `ma_convergence_20_60`（price，q=0.0952）→ `ma_distance_5_60`（r=0.870）
+- `factor_drawdown_60_deep`（coupling，q=0.0949）→ `deep_value_reversal_combo_60`（r=0.599）
+- `factor_rolling_drawdown_60`（coupling，q=0.0949）→ `deep_value_reversal_combo_60`（r=0.599）
+- `rs_60`（price，q=0.0949）→ `momentum_60`（r=0.996）
+- `min_rsi_overbought_expand_20`（intraday，q=0.0946）→ `smart_money_share`（r=0.718）
+- `up_minutes_ratio`（intraday，q=0.0946）→ `smart_money_share`（r=0.828）
+- `bp_momentum_divergence_20`（coupling，q=0.0941）→ `bp`（r=0.713）
+- `log_rv_60min`（risk，q=0.0938）→ `parkinson_vol`（r=0.868）
+- `rv_60min`（intraday，q=0.0938）→ `parkinson_vol`（r=0.868）
+- `coupling_quality_trend_60`（coupling，q=0.0937）→ `momentum_60`（r=0.989）
+- `min_rsi_extreme_frac_20`（intraday，q=0.0937）→ `smart_money_share`（r=0.618）
+- `momentum_volume_resonance_20`（coupling，q=0.0930）→ `momentum_20`（r=0.732）
+- `rs_120`（price，q=0.0928）→ `momentum_accel_60_120`（r=0.645）
+- `rsv_5min`（intraday，q=0.0927）→ `rv_5min`（r=0.899）
+- `flash_crash_risk`（intraday，q=0.0919）→ `parkinson_vol`（r=0.689）
+- `sortino_ratio_60`（risk，q=0.0917）→ `momentum_60`（r=0.959）
+- `idio_vol_momentum_combo_20`（coupling，q=0.0909）→ `ulcer_index_20`（r=0.712）
+- `trix_12_20`（price，q=0.0909）→ `ma_distance_5_60`（r=0.804）
+- `momentum_rs_resonance_20`（coupling，q=0.0904）→ `momentum_20`（r=0.863）
+- `coupling_min_align_momentum_20`（coupling，q=0.0901）→ `momentum_20`（r=0.740）
+- `lowvol_quality_momentum_60`（coupling，q=0.0895）→ `parkinson_vol`（r=0.719）
+- `intraday_max_runup`（intraday，q=0.0894）→ `rv_5min`（r=0.755）
+- `quality_liquidity_combo_20`（coupling，q=0.0892）→ `rv_5min`（r=0.689）
+- `atr_position_250`（risk，q=0.0890）→ `vol_cycle_position_120`（r=0.600）
+- `limit_board_streak_mean_60`（event，q=0.0883）→ `limit_up_vol_shrink_60`（r=0.787）
+- `mavol_ratio_std`（intraday，q=0.0880）→ `smart_money_share`（r=0.752）
+- `coupling_value_quality_resonance`（coupling，q=0.0879）→ `bp`（r=0.844）
+- `volume_distribution_skew`（intraday，q=0.0878）→ `parkinson_vol`（r=0.849）
+- `rv_hourly_dispersion`（intraday，q=0.0878）→ `smart_money_share`（r=0.739）
+- `momentum_high_proximity_combo_20`（coupling，q=0.0878）→ `price_to_52w_high`（r=0.891）
+- `coupling_smartmoney_lead_momentum_10`（coupling，q=0.0877）→ `momentum_20`（r=0.702）
+- `rv_hourly_1`（intraday，q=0.0877）→ `rv_daily`（r=0.901）
+- `value_factor_zscore_252`（coupling，q=0.0875）→ `rs_250`（r=0.656）
+- `chip_cost_momentum_20d`（coupling，q=0.0874）→ `ma_distance_5_60`（r=0.761）
+- `avg_price_trend_20`（price，q=0.0872）→ `momentum_20`（r=0.991）
+- `min_limit_touch_frac_20`（intraday，q=0.0868）→ `limit_up_open_fail_freq_20`（r=0.624）
+- `market_regime_sensitivity_60`（risk，q=0.0858）→ `momentum_60`（r=0.891）
+- `coupling_chip_trend_confirm_20`（coupling，q=0.0857）→ `momentum_20`（r=0.860）
+- `defensive_momentum_combo_60`（coupling，q=0.0854）→ `ulcer_index_20`（r=0.791）
+- `pb_change_20d`（valuation，q=0.0854）→ `momentum_20`（r=0.942）
+- `bp_momentum_20`（valuation，q=0.0853）→ `momentum_20`（r=0.941）
+- `momentum_lowvol_combo_20`（coupling，q=0.0852）→ `parkinson_vol`（r=0.647）
+- `ret_autocorr_5min`（intraday，q=0.0848）→ `rsi_extreme_fraction`（r=0.698）
+- `factor_trend_strength_60`（coupling，q=0.0846）→ `ma_distance_5_60`（r=0.789）
+- `volume_price_liftoff_20`（coupling，q=0.0845）→ `momentum_20`（r=0.882）
+- `kdj_dead_cross_count`（intraday，q=0.0845）→ `smart_money_share`（r=0.679）
+- `coupling_smallcap_value_combo`（coupling，q=0.0844）→ `log_circ_mv`（r=0.696）
+- `pm_hl_range_intraday`（intraday，q=0.0843）→ `parkinson_vol`（r=0.662）
+- `rebound_from_low_20`（timeseries，q=0.0842）→ `momentum_20`（r=0.724）
+- `coupling_limitup_momentum_20`（coupling，q=0.0840）→ `momentum_20`（r=0.957）
+- `chip_winner_rate_stability_20d`（price，q=0.0839）→ `turnover_20`（r=0.662）
+- `log_total_mv`（valuation，q=0.0839）→ `log_circ_mv`（r=0.984）
+- `ret_autocorr_abs`（intraday，q=0.0838）→ `smart_money_share`（r=0.661）
+- `intra_trend`（intraday，q=0.0837）→ `smart_money_share`（r=0.715）
+- `kdj_cross_signal`（intraday，q=0.0836）→ `smart_money_share`（r=0.678）
+- `coupling_lowrisk_momentum_60`（coupling，q=0.0832）→ `downside_frequency_60`（r=0.860）
+- `bias_20`（price，q=0.0832）→ `momentum_20`（r=0.808）
+- `donchian_position_60`（price，q=0.0831）→ `ma_distance_5_60`（r=0.828）
+- `price_position_60`（price，q=0.0828）→ `ma_distance_5_60`（r=0.827）
+- `ts_price_self_rank_60`（timeseries，q=0.0828）→ `ma_distance_5_60`（r=0.827）
+- `bv_daily`（intraday，q=0.0827）→ `rv_daily`（r=0.976）
+- `residual_momentum_20`（price，q=0.0822）→ `momentum_20`（r=0.948）
+- `ps_ttm_momentum_20d`（valuation，q=0.0821）→ `momentum_20`（r=0.897）
+- `sp_ttm_momentum_20`（valuation，q=0.0819）→ `momentum_20`（r=0.896）
+- `breakout_60`（price，q=0.0818）→ `drawdown_60`（r=0.998）
+- `chip_peak_shift`（coupling，q=0.0817）→ `ma_distance_5_60`（r=0.707）
+- `drawdown_recovery_60`（risk，q=0.0815）→ `drawdown_60`（r=1.000）
+- `cmo_20`（timeseries，q=0.0813）→ `momentum_20`（r=0.942）
+- `ma_distance_5_20`（price，q=0.0810）→ `momentum_20`（r=0.817）
+- `roc_12`（price，q=0.0808）→ `momentum_20`（r=0.710）
+- `coupling_rsi_value_combo`（coupling，q=0.0807）→ `bp`（r=0.692）
+- `dv_yield_rank`（valuation，q=0.0806）→ `dv_composite`（r=0.968）
+- `coupling_quality_momentum_20d`（coupling，q=0.0805）→ `momentum_20`（r=0.897）
+- `coupling_boll_squeeze_value`（coupling，q=0.0804）→ `bp`（r=0.658）
+- `liftoff_pulse_combo_20`（coupling，q=0.0802）→ `drawdown_60`（r=0.799）
+- `vwap_momentum_5d`（intraday，q=0.0799）→ `momentum_20`（r=0.806）
+- `lowvol_momentum_rs_20`（coupling，q=0.0798）→ `drawdown_60`（r=0.813）
+- `up_minute_vol_share`（intraday，q=0.0797）→ `smart_money_share`（r=0.632）
+- `margin_buyer_avg_cost_premium`（fund_flow，q=0.0796）→ `coupling_margin_chip_cost_20`（r=0.685）
+- `force_index_13`（price，q=0.0793）→ `momentum_20`（r=0.639）
+- `rv_semi_up`（intraday，q=0.0792）→ `rv_daily`（r=0.973）
+- `coupling_chip_support_reversal_5`（coupling，q=0.0791）→ `short_term_reversal_5`（r=0.588）
+- `dp_ttm`（valuation，q=0.0788）→ `dv_composite`（r=0.967）
+- `dv_ttm_rank`（valuation，q=0.0788）→ `dv_composite`（r=0.967）
+- `winner_momentum_combo_20`（coupling，q=0.0787）→ `momentum_20`（r=0.886）
+- `zscore_turnover_f_20`（risk，q=0.0787）→ `zscore_amihud_intraday`（r=0.591）
+- `momentum_10`（timeseries，q=0.0787）→ `bias_signal_29_19`（r=0.739）
+- `kama_position_20`（timeseries，q=0.0787）→ `short_term_reversal_5`（r=0.745）
+- `zscore_turnover_20`（risk，q=0.0780）→ `zscore_amihud_intraday`（r=0.589）
+- `keltner_position_20`（price，q=0.0779）→ `momentum_20`（r=0.786）
+- `volume_breakout_confirm_20`（price，q=0.0778）→ `momentum_20`（r=0.685）
+- `multi_horizon_momentum_combo_20`（coupling，q=0.0778）→ `short_term_reversal_5`（r=0.816）
+- `event_momentum_divergence_20`（coupling，q=0.0777）→ `momentum_20`（r=0.646）
+- `coupling_value_momentum_20d`（coupling，q=0.0776）→ `momentum_20`（r=0.871）
+- `chip_weighted_cost_momentum_5d`（price，q=0.0775）→ `chip_median_momentum`（r=0.732）
+- `factor_multi_horizon_momentum`（coupling，q=0.0773）→ `momentum_20`（r=0.715）
+- `pb_turnover_regime`（valuation，q=0.0772）→ `bp`（r=0.936）
+- `gap_fill_5d_reversal`（price，q=0.0770）→ `gap_momentum_5d`（r=0.535）
+- `chip_p90_p10_factor`（price，q=0.0768）→ `smart_money_share`（r=0.688）
+- `chip_iqr_factor`（price，q=0.0763）→ `chip_cr3_factor`（r=0.688）
+- `fund_flow_alpha_combo_60`（coupling，q=0.0760）→ `momentum_60`（r=0.720）
+- `momentum_stability_20_60`（timeseries，q=0.0760）→ `momentum_accel_20_60`（r=0.869）
+- `downside_vol_ratio_20`（risk，q=0.0758）→ `momentum_20`（r=0.827）
+- `chip_weighted_mean_momentum`（price，q=0.0757）→ `chip_median_momentum`（r=0.766）
+- `rv_semi_down`（intraday，q=0.0757）→ `rv_daily`（r=0.955）
+- `factor_cycle_position`（coupling，q=0.0754）→ `rs_250`（r=0.657）
+- `value_reversal_combo_60`（coupling，q=0.0749）→ `deep_value_reversal_combo_60`（r=0.820）
+- `reversal_oversold_combo_5`（coupling，q=0.0748）→ `short_term_reversal_5`（r=0.925）
+- `bollinger_position_20`（price，q=0.0744）→ `short_term_reversal_5`（r=0.715）
+- `bollinger_position`（price，q=0.0744）→ `short_term_reversal_5`（r=0.715）
+- `reversal_turnover_resonance_5`（coupling，q=0.0744）→ `short_term_reversal_5`（r=0.706）
+- `bp_momentum_combo_20`（coupling，q=0.0743）→ `bp`（r=0.685）
+- `fundflow_value_interaction`（coupling，q=0.0743）→ `mf_net_inflow_ratio`（r=0.661）
+- `reversal_liquidity_combo_5`（coupling，q=0.0741）→ `log_circ_mv`（r=0.619）
+- `momentum_5`（timeseries，q=0.0740）→ `short_term_reversal_5`（r=1.000）
+- `bp_factor_momentum_20`（coupling，q=0.0738）→ `momentum_20`（r=0.853）
+- `ret_efficiency_20`（price，q=0.0737）→ `momentum_20`（r=0.796）
+- `new_high_60_event`（event，q=0.0734）→ `new_high_frequency_60`（r=0.774）
+- `corr_market_60`（risk，q=0.0733）→ `beta_60`（r=0.526）
+- `macd_bar_sign_change`（intraday，q=0.0727）→ `rsi_extreme_fraction`（r=0.618）
+- `chip_support_strength`（coupling，q=0.0726）→ `smart_money_share`（r=0.617）
+- `min_j_overbought_frac_20`（intraday，q=0.0722）→ `smart_money_share`（r=0.636）
+- `coupling_vp_expand_up_mom_20`（coupling，q=0.0720）→ `coupling_vp_retvol_mom_20`（r=0.787）
+- `donchian_breakout_20`（price，q=0.0719）→ `drawdown_60`（r=0.686）
+- `di_plus_minus_ratio_14`（price，q=0.0716）→ `momentum_20`（r=0.651）
+- `cci_20`（price，q=0.0712）→ `momentum_20`（r=0.703）
+- `price_position_20d`（price，q=0.0711）→ `momentum_20`（r=0.721）
+- `ppo_signal_12_26_9`（timeseries，q=0.0708）→ `bias_signal_29_19`（r=0.921）
+- `distance_from_ma_5`（price，q=0.0705）→ `short_term_reversal_5`（r=0.767）
+- `coupling_volume_lead_momentum_5`（coupling，q=0.0703）→ `momentum_20`（r=0.797）
+- `coupling_macd_value_resonance`（coupling，q=0.0703）→ `macd_trend_strength`（r=0.676）
+- `turnover_anomaly_20`（price，q=0.0703）→ `amount_surge_count_20`（r=0.674）
+- `close_position_vol_weighted_20`（price，q=0.0700）→ `amount_surge_count_20`（r=0.751）
+- `drawdown_duration_120`（risk，q=0.0700）→ `new_high_frequency_60`（r=0.618）
+- `zscore_realized_spread_5min`（risk，q=0.0699）→ `rv_5min`（r=0.748）
+- `donchian_position_20`（price，q=0.0699）→ `momentum_20`（r=0.754）
+- `lowvol_liftoff_combo_20`（coupling，q=0.0698）→ `momentum_20`（r=0.643）
+- `aroon_up_25`（price，q=0.0695）→ `momentum_20`（r=0.618）
+- `williams_r_14`（price，q=0.0695）→ `short_term_reversal_5`（r=0.730）
+- `coupling_lhb_reversal_20`（coupling，q=0.0692）→ `short_term_reversal_5`（r=0.913）
+- `value_liftoff_combo_20`（coupling，q=0.0685）→ `momentum_20`（r=0.729）
+- `zscore_volume_rv_ratio`（risk，q=0.0685）→ `rv_5min`（r=0.744）
+- `intraday_ret_momentum`（price，q=0.0684）→ `minute_ret_vol_corr`（r=0.711）
+- `intraday_ret`（price，q=0.0684）→ `minute_ret_vol_corr`（r=0.711）
+- `dv_momentum_combo_20`（coupling，q=0.0681）→ `momentum_20`（r=0.682）
+- `moneyflow_momentum_resonance_20`（coupling，q=0.0678）→ `coupling_vp_retvol_mom_20`（r=0.796）
+- `coupling_volterm_momentum_60`（coupling，q=0.0678）→ `momentum_60`（r=0.659）
+- `volume_surge_3d`（price，q=0.0676）→ `volume_momentum_5`（r=0.631）
+- `mfi_14`（price，q=0.0675）→ `momentum_20`（r=0.629）
+- `chip_winner_rate_ma5`（price，q=0.0672）→ `winner_rate`（r=0.877）
+- `margin_trend_combo_20`（coupling，q=0.0670）→ `coupling_margin_chip_cost_20`（r=0.670）
+- `coupling_moneyflow_lead_momentum_10`（coupling，q=0.0668）→ `momentum_20`（r=0.717）
+- `donchian_breakout_strength`（price，q=0.0667）→ `momentum_20`（r=0.693）
+- `chandelier_position`（price，q=0.0667）→ `momentum_20`（r=0.693）
+- `size_momentum_combo_20`（coupling，q=0.0666）→ `log_circ_mv`（r=0.655）
+- `stoch_slow_k`（price，q=0.0665）→ `short_term_reversal_5`（r=0.753）
+- `rsi_volatility`（intraday，q=0.0662）→ `rsi_extreme_fraction`（r=0.862）
+- `pos_rv_ratio`（intraday，q=0.0661）→ `minute_ret_vol_corr`（r=0.705）
+- `chip_deep_trap_ratio`（price，q=0.0661）→ `winner_rate`（r=0.625）
+- `ma5_slope`（intraday，q=0.0661）→ `minute_ret_vol_corr`（r=0.697）
+- `smart_capital_liftoff_20`（coupling，q=0.0658）→ `mf_net_vol_ratio_5d`（r=0.691）
+- `jump_ratio_intraday`（intraday，q=0.0658）→ `smart_money_share`（r=0.515）
+- `up_day_volume_ratio_20`（price，q=0.0658）→ `momentum_20`（r=0.693）
+- `winner_rate_reversal_signal`（price，q=0.0657）→ `winner_rate`（r=1.000）
+- `chip_concentration_zone`（coupling，q=0.0657）→ `winner_rate`（r=1.000）
+- `ma10_slope`（intraday，q=0.0656）→ `minute_ret_vol_corr`（r=0.691）
+- `boll_mid_slope`（intraday，q=0.0655）→ `current_up_streak`（r=0.689）
+- `ma20_slope`（intraday，q=0.0655）→ `current_up_streak`（r=0.689）
+- `overnight_intraday_divergence_daily`（price，q=0.0655）→ `intraday_momentum`（r=0.638）
+- `coupling_margin_buy_trend_20`（coupling，q=0.0655）→ `margin_buy_pressure`（r=0.675）
+- `ma30_slope`（intraday，q=0.0654）→ `current_up_streak`（r=0.687）
+- `total_leverage_ratio`（fund_flow，q=0.0653）→ `float_mv_ratio`（r=0.558）
+- `margin_balance_volatility_20d`（fund_flow，q=0.0652）→ `margin_velocity`（r=0.565）
+- `moneyflow_reversal_divergence_5`（coupling，q=0.0648）→ `mf_net_inflow_ratio`（r=0.795）
+- `mf_order_size_entropy`（fund_flow，q=0.0647）→ `ext_mf_small_order_amount_ratio`（r=0.900）
+- `chip_mean_distance`（price，q=0.0647）→ `chip_peak_distance`（r=0.718）
+- `coupling_vp_shrink_down_rev_5`（coupling，q=0.0646）→ `short_term_reversal_5`（r=0.786）
+- `smart_money_momentum_combo_20`（coupling，q=0.0645）→ `coupling_vp_retvol_mom_20`（r=0.734）
+- `rq_intraday`（intraday，q=0.0644）→ `ret_kurt_intraday`（r=1.000）
+- `sp_raw`（valuation，q=0.0644）→ `bp`（r=0.535）
+- `aroon_down_25`（price，q=0.0643）→ `momentum_20`（r=0.572）
+- `vwap_daily_deviation`（price，q=0.0642）→ `vwap_deviation`（r=0.993）
+- `rsi_oversold_frac`（intraday，q=0.0641）→ `rsi_extreme_fraction`（r=0.747）
+- `sp_ttm`（valuation，q=0.0638）→ `bp`（r=0.521）
+- `mf_flow_volatility_20d`（fund_flow，q=0.0637）→ `fund_flow_volatility_20`（r=1.000）
+- `mf_net_inflow_volatility_20d`（fund_flow，q=0.0637）→ `fund_flow_volatility_20`（r=1.000）
+- `ps_ttm_rank`（valuation，q=0.0637）→ `bp`（r=0.521）
+- `avg_cost_premium`（price，q=0.0636）→ `chip_peak_distance`（r=0.705）
+- `cost_displacement`（price，q=0.0636）→ `chip_peak_distance`（r=0.705）
+- `chip_dispersion`（price，q=0.0636）→ `price_impact_intraday`（r=0.573）
+- `obv_slope_20`（price，q=0.0635）→ `momentum_20`（r=0.705）
+- `ext_mf_amount_concentration`（fund_flow，q=0.0635）→ `ext_mf_small_order_amount_ratio`（r=0.937）
+- `vwap_am_pm_gap_factor`（intraday，q=0.0633）→ `vwap_deviation`（r=0.850）
+- `mf_vol_tier_balance`（fund_flow，q=0.0631）→ `ext_mf_small_order_amount_ratio`（r=0.945）
+- `kdj_daily_j`（price，q=0.0629）→ `short_term_reversal_5`（r=0.791）
+- `mf_retail_dominance`（fund_flow，q=0.0626）→ `ext_mf_small_order_amount_ratio`（r=1.000）
+- `am_momentum_intraday`（intraday，q=0.0626）→ `intraday_momentum`（r=0.767）
+- `mf_vol_retail_ratio`（fund_flow，q=0.0626）→ `ext_mf_small_order_amount_ratio`（r=1.000）
+- `small_order_crowding`（fund_flow，q=0.0626）→ `ext_mf_small_order_amount_ratio`（r=1.000）
+- `mf_sm_order_vol_ratio`（fund_flow，q=0.0626）→ `ext_mf_small_order_amount_ratio`（r=1.000）
+- `chip_profit_loss_ratio`（price，q=0.0623）→ `winner_rate`（r=0.705）
+- `chip_median_distance`（price，q=0.0623）→ `chip_peak_distance`（r=0.830）
+- `chip_peak_purity`（price，q=0.0622）→ `chip_cr3_factor`（r=0.985）
+- `bigorder_momentum_resonance_20`（coupling，q=0.0619）→ `momentum_20`（r=0.691）
+- `gain_loss_asymmetry_60`（risk，q=0.0617）→ `downside_upside_vol_60`（r=0.683）
+- `chip_resistance_distance`（price，q=0.0615）→ `winner_rate`（r=0.673）
+- `time_since_52w_high`（timeseries，q=0.0615）→ `rs_250`（r=0.628）
+- `chip_skew_factor`（price，q=0.0614）→ `chip_gini_factor`（r=0.765）
+- `chip_cv_momentum`（price，q=0.0613）→ `chip_concentration_change_5d`（r=0.609）
+- `cost_support_strength`（price，q=0.0612）→ `chip_peak_distance`（r=0.817）
+- `chip_peak_ratio`（price，q=0.0611）→ `winner_rate`（r=0.794）
+- `macd_daily_hist_5d`（price，q=0.0610）→ `short_term_reversal_5`（r=0.704）
+- `chip_position`（price，q=0.0610）→ `winner_rate`（r=0.702）
+- `smallcap_liftoff_combo_60`（coupling，q=0.0608）→ `volume_momentum_5`（r=0.562）
+- `coupling_momentum_drift_20`（coupling，q=0.0608）→ `momentum_20`（r=0.711）
+- `chip_high_float_ratio`（price，q=0.0607）→ `chip_win_peak_frac`（r=0.671）
+- `order_concentration`（fund_flow，q=0.0607）→ `ext_mf_small_order_amount_ratio`（r=0.935）
+- `mf_order_concentration`（fund_flow，q=0.0607）→ `ext_mf_small_order_amount_ratio`（r=0.935）
+- `tail_risk_pct_60`（risk，q=0.0606）→ `tail_corr_60`（r=0.600）
+- `mf_big_order_vol_ratio`（fund_flow，q=0.0606）→ `ext_mf_small_order_amount_ratio`（r=0.935）
+- `mf_big_order_turnover_ratio`（fund_flow，q=0.0606）→ `ext_mf_small_order_amount_ratio`（r=0.935）
+- `mf_vol_concentration_large`（fund_flow，q=0.0606）→ `ext_mf_small_order_amount_ratio`（r=0.935）
+- `pm_reversal_signal`（intraday，q=0.0603）→ `intraday_high_time`（r=0.680）
+- `chip_entropy_signal`（price，q=0.0603）→ `chip_cr3_factor`（r=0.962）
+- `rsi_spread_6_14`（price，q=0.0602）→ `bias_signal_29_19`（r=0.765）
+- `volume_dry_up`（price，q=0.0600）→ `amount_surge_count_20`（r=0.570）
+- `vol_liquidity_resonance_20`（coupling，q=0.0596）→ `amihud_daily_20`（r=0.600）
+- `vp_shrink_down_share`（intraday，q=0.0596）→ `turnover_f_delta_5`（r=0.519）
+- `chip_cost_premium_change_20`（price，q=0.0591）→ `momentum_20`（r=0.618）
+- `chip_support_distance`（price，q=0.0590）→ `chip_peak_distance`（r=0.733）
+- `open_30_momentum`（intraday，q=0.0586）→ `intraday_momentum`（r=1.000）
+- `vol_regime_switch_20`（risk，q=0.0583）→ `vol_cycle_position_120`（r=0.652）
+- `am_large_order_ratio`（intraday，q=0.0583）→ `intraday_momentum`（r=0.780）
+- `rv_skew_intraday`（intraday，q=0.0581）→ `minute_ret_vol_corr`（r=0.619）
+- `vp_shrink_up_share`（intraday，q=0.0580）→ `turnover_f_delta_5`（r=0.522）
+- `mf_net_amount_intensity`（fund_flow，q=0.0575）→ `mf_net_inflow_ratio`（r=0.864）
+- `coupling_winner_bigflow_20`（coupling，q=0.0575）→ `mf_net_inflow_ratio`（r=0.776）
+- `pm_momentum_intraday`（intraday，q=0.0572）→ `vwap_deviation`（r=0.724）
+- `rsi_overbought_frac`（intraday，q=0.0571）→ `rsi_extreme_fraction`（r=0.651）
+- `mf_extra_large_sell_pressure`（fund_flow，q=0.0571）→ `ext_mf_small_order_amount_ratio`（r=0.697）
+- `close_position_intraday_20`（price，q=0.0569）→ `accumulation_distribution_20`（r=0.870）
+- `extreme_move_count`（intraday，q=0.0568）→ `ret_kurt_intraday`（r=0.706）
+- `up_down_count_ratio_20`（timeseries，q=0.0566）→ `psy_12`（r=0.732）
+- `shadow_lower_20`（price，q=0.0562）→ `hammer_ratio_20d`（r=0.510）
+- `close_to_high_ratio_20`（price，q=0.0561）→ `accumulation_distribution_20`（r=0.871）
+- `range_rv_ratio`（intraday，q=0.0558）→ `parkinson_vol`（r=0.635）
+- `volume_weighted_ret`（intraday，q=0.0556）→ `minute_ret_vol_corr`（r=0.949）
+- `chip_concentration_change_20d`（price，q=0.0556）→ `chip_cost_convergence_20d`（r=0.736）
+- `gap_abs_intraday`（intraday，q=0.0555）→ `open_price_shock`（r=0.990）
+- `close_position`（intraday，q=0.0555）→ `vwap_deviation`（r=0.812）
+- `vp_expand_up_share`（intraday，q=0.0554）→ `minute_ret_vol_corr`（r=0.606）
+- `margin_price_resonance_20`（coupling，q=0.0554）→ `margin_net_flow_ratio`（r=0.699）
+- `close_auction_pressure`（intraday，q=0.0554）→ `vwap_deviation`（r=0.806）
+- `close_position_ratio`（price，q=0.0554）→ `vwap_deviation`（r=0.806）
+- `td_setup_count`（price，q=0.0551）→ `short_term_reversal_5`（r=0.689）
+- `amount_ratio_20`（price，q=0.0547）→ `volume_momentum_5`（r=0.715）
+- `open_close_momentum_gap`（intraday，q=0.0546）→ `intraday_momentum`（r=0.944）
+- `loss_probability_20`（risk，q=0.0544）→ `psy_12`（r=0.653）
+- `am_macd_trend`（intraday，q=0.0544）→ `rsi_intraday_trend`（r=0.640）
+- `coupling_indicator_consensus_value`（coupling，q=0.0543）→ `bp`（r=0.644）
+- `momentum_volume_divergence_20`（coupling，q=0.0543）→ `volume_price_divergence_score`（r=0.637）
+- `coupling_liquidity_momentum_20d`（coupling，q=0.0541）→ `amount_surge_count_20`（r=0.735）
+- `am_rsi_trend`（intraday，q=0.0541）→ `intraday_momentum`（r=0.597）
+- `am_close_position`（intraday，q=0.0541）→ `am_pm_rsi_ratio`（r=0.536）
+- `chip_cv_factor`（price，q=0.0541）→ `cost_distribution_width`（r=0.641）
+- `winner_rate_change_20d`（price，q=0.0540）→ `bias_signal_29_19`（r=0.636）
+- `chip_percentile_20d`（price，q=0.0539）→ `bias_signal_29_19`（r=0.582）
+- `momentum_stability_combo_60`（coupling，q=0.0538）→ `momentum_20`（r=0.622）
+- `vp_expand_price_pos`（intraday，q=0.0536）→ `minute_ret_vol_corr`（r=0.600）
+- `rv_hourly_4`（intraday，q=0.0536）→ `rv_daily`（r=0.712）
+- `winner_rate_factor_momentum_20`（coupling，q=0.0533）→ `bias_signal_29_19`（r=0.626）
+- `chip_dispersion_momentum`（price，q=0.0533）→ `chip_entropy_convergence`（r=0.602）
+- `coupling_vp_lowpos_accumulate_20`（coupling，q=0.0531）→ `chip_win_peak_frac`（r=0.585）
+- `cumulative_ret_path`（intraday，q=0.0525）→ `price_impact_intraday`（r=0.586）
+- `volume_price_corr_20`（price，q=0.0521）→ `volume_tilt_20`（r=0.860）
+- `winner_rate_change_5d`（price，q=0.0520）→ `winner_rate_acceleration`（r=1.000）
+- `winner_rate_momentum_5d`（coupling，q=0.0520）→ `winner_rate_acceleration`（r=1.000）
+- `open_5min_momentum`（intraday，q=0.0516）→ `intraday_momentum`（r=0.664）
+- `coupling_flowaccel_breakout_60`（coupling，q=0.0516）→ `new_high_frequency_60`（r=0.512）
+- `am_pm_rv_ratio`（intraday，q=0.0515）→ `ret_kurt_intraday`（r=0.542）
+- `turnover_factor_momentum_20`（coupling，q=0.0513）→ `amount_surge_count_20`（r=0.701）
+- `winner_rs_combo_60`（coupling，q=0.0507）→ `momentum_accel_20_60`（r=0.515）
+- `three_black_crows`（event，q=0.0506）→ `current_up_streak`（r=0.669）
+- `mf_net_inflow_5d`（fund_flow，q=0.0506）→ `mf_net_vol_ratio_5d`（r=1.000）
+- `rsrs_volume_right_deviation`（price，q=0.0505）→ `rsrs_beta_18`（r=0.897）
+- `chip_below_momentum`（price，q=0.0505）→ `winner_rate_acceleration`（r=0.819）
+- `turnover_zscore_20`（price，q=0.0505）→ `turnover_f_delta_5`（r=0.679）
+- `open_volume_share`（intraday，q=0.0505）→ `vol_concentration`（r=0.834）
+- `ts_volume_zscore_20`（timeseries，q=0.0505）→ `turnover_f_delta_5`（r=0.679）
+- `mf_net_vol_intensity`（fund_flow，q=0.0505）→ `mf_net_inflow_ratio`（r=1.000）
+- `net_mf_amount_intensity`（fund_flow，q=0.0504）→ `mf_net_inflow_ratio`（r=1.000）
+- `rv_trend_5d`（intraday，q=0.0504）→ `volume_momentum_5`（r=0.767）
+- `volume_ratio_20`（price，q=0.0502）→ `volume_momentum_5`（r=0.703）
+- `volume_climax`（price，q=0.0502）→ `volume_momentum_5`（r=0.703）
+- `pe_pb_divergence`（valuation，q=0.0501）→ `bp`（r=0.601）
+- `current_down_streak`（price，q=0.0501）→ `current_up_streak`（r=0.747）
+- `rsrs_right_deviation`（price，q=0.0500）→ `rsrs_beta_18`（r=0.903）
+- `rjump_daily`（intraday，q=0.0498）→ `rv_daily`（r=0.543）
+- `rel_vol_first_hour`（intraday，q=0.0495）→ `am_pm_vol_ratio`（r=0.788）
+- `mf_cumulative_flow_20d`（fund_flow，q=0.0495）→ `mf_net_vol_ratio_5d`（r=0.569）
+- `chip_concentration`（price，q=0.0494）→ `cost_distribution_width`（r=1.000）
+- `chip_dispersion_width`（coupling，q=0.0494）→ `cost_distribution_width`（r=1.000）
+- `high_low_expansion`（price，q=0.0493）→ `parkinson_vol`（r=0.648）
+- `chip_winner_rate_acceleration`（price，q=0.0493）→ `winner_rate_acceleration`（r=0.750）
+- `ret_skew_60`（risk，q=0.0492）→ `downside_upside_vol_60`（r=0.947）
+- `mavol_stability`（intraday，q=0.0492）→ `large_trade_intensity`（r=0.825）
+- `chip_concentration_ma5`（price，q=0.0491）→ `cost_distribution_width`（r=0.987）
+- `coupling_vp_chip_consistency_20`（coupling，q=0.0491）→ `chip_win_peak_frac`（r=0.597）
+- `turnover_ret_corr_20`（price，q=0.0489）→ `volume_tilt_20`（r=0.878）
+- `margin_repay_shock`（fund_flow，q=0.0485）→ `margin_repay_deceleration`（r=0.672）
+- `vol_stability`（intraday，q=0.0484）→ `large_trade_intensity`（r=0.812）
+- `kdj_d_stability`（intraday，q=0.0484）→ `kdj_oversold_frac`（r=0.912）
+- `rsrs_zscore_18`（price，q=0.0483）→ `rsrs_beta_18`（r=0.940）
+- `chip_skewness_ratio`（coupling，q=0.0481）→ `cost_skew_ratio`（r=0.997）
+- `chip_cost_asymmetry`（price，q=0.0480）→ `cost_skew_ratio`（r=0.997）
+- `boll_width_20`（intraday，q=0.0480）→ `ma_dispersion`（r=0.576）
+- `boll_squeeze`（intraday，q=0.0480）→ `ma_dispersion`（r=0.576）
+- `min_bar_gap_freq_20`（intraday，q=0.0479）→ `rv_daily`（r=0.597）
+- `mf_flow_acceleration_5d`（fund_flow，q=0.0475）→ `mf_flow_acceleration_ext`（r=1.000）
+- `liquidity_shock_20`（price，q=0.0472）→ `amihud_trend_20_60`（r=0.665）
+- `turnover_f_divergence`（valuation，q=0.0470）→ `float_mv_ratio`（r=0.856）
+- `rsi_range`（intraday，q=0.0469）→ `rsi_extreme_fraction`（r=0.513）
+- `limit_streak_volume_ratio`（event，q=0.0467）→ `consecutive_limit_up`（r=1.000）
+- `chip_tail_risk`（price，q=0.0467）→ `chip_gini_factor`（r=0.942）
+- `ma_bull_bear_ratio`（intraday，q=0.0467）→ `ma_alignment_score`（r=0.911）
+- `mf_net_vol_ma_divergence`（fund_flow，q=0.0465）→ `mf_net_inflow_ratio`（r=0.850）
+- `chip_semi_std_momentum`（price，q=0.0462）→ `chip_entropy_convergence`（r=0.646）
+- `mf_net_inflow_trend_5d`（fund_flow，q=0.0461）→ `mf_net_vol_trend_3d`（r=0.604）
+- `net_mf_amount_momentum_5d`（fund_flow，q=0.0456）→ `mf_flow_acceleration_ext`（r=0.809）
+- `chip_range_normalized`（price，q=0.0455）→ `cost_distribution_width`（r=0.825）
+- `am_vol_share`（intraday，q=0.0454）→ `am_pm_vol_ratio`（r=1.000）
+- `max_vol_day_contribution_20`（price，q=0.0449）→ `amount_surge_count_20`（r=0.662）
+- `price_vs_ma60_deviation`（intraday，q=0.0446）→ `ma_dispersion`（r=0.859）
+- `ma_convergence`（intraday，q=0.0446）→ `ma_dispersion`（r=0.859）
+- `turnover_concentration_intraday`（intraday，q=0.0446）→ `volume_profile_skew`（r=0.927）
+- `mf_net_persistent_5d`（fund_flow，q=0.0446）→ `mf_net_vol_ratio_5d`（r=0.781）
+- `net_mf_flow_persistence`（fund_flow，q=0.0446）→ `mf_net_vol_ratio_5d`（r=0.781）
+- `margin_balance_ma_divergence`（fund_flow，q=0.0444）→ `margin_balance_20d`（r=0.808）
+- `obv_divergence_20`（price，q=0.0442）→ `amihud_asymmetry_20`（r=0.730）
+- `shadow_asymmetry`（price，q=0.0442）→ `upper_shadow_ratio`（r=0.713）
+- `rel_vol_midday`（intraday，q=0.0439）→ `vol_concentration`（r=0.543）
+- `factor_turnover_ratio_20`（coupling，q=0.0439）→ `factor_profile_shift_deep`（r=1.000）
+- `margin_leverage_change_20d`（fund_flow，q=0.0437）→ `margin_balance_20d`（r=0.616）
+- `rv_term_structure`（risk，q=0.0436）→ `rv_term_structure_slope`（r=0.893）
+- `ret_skew_20`（risk，q=0.0435）→ `volume_tilt_20`（r=0.582）
+- `value_event_combo_20`（coupling，q=0.0435）→ `liquidity_discount_factor`（r=0.679）
+- `rsrs_r2_18`（price，q=0.0434）→ `range_vol_ratio_20`（r=0.583）
+- `mf_flow_continuity`（fund_flow，q=0.0432）→ `mf_net_inflow_ratio`（r=0.760）
+- `cost_convergence_signal`（price，q=0.0431）→ `chip_cost_convergence_20d`（r=0.726）
+- `close_30_momentum`（intraday，q=0.0429）→ `intraday_reversal`（r=1.000）
+- `vp_consistency_score`（intraday，q=0.0428）→ `vp_expand_ret_gap`（r=0.765）
+- `overnight_gap`（price，q=0.0422）→ `open_auction_ret`（r=0.991）
+- `gap_ratio`（price，q=0.0422）→ `open_auction_ret`（r=0.992）
+- `overnight_gap_momentum`（price，q=0.0422）→ `open_auction_ret`（r=0.992）
+- `intraday_upper_shadow`（intraday，q=0.0420）→ `upper_shadow_ratio`（r=0.742）
+- `margin_leverage_trend_10d`（fund_flow，q=0.0413）→ `margin_balance_5d`（r=0.639）
+- `rel_vol_last_hour`（intraday，q=0.0412）→ `tail_volume_share`（r=0.826）
+- `vol_of_vol_intraday`（intraday，q=0.0411）→ `ret_kurt_intraday`（r=0.601）
+- `chip_loss_peak_frac`（price，q=0.0411）→ `chip_cr3_factor`（r=0.658）
+- `chip_win_peak_growth`（price，q=0.0410）→ `winner_rate_acceleration`（r=0.507）
+- `coupling_kdj_moneyflow_divergence`（coupling，q=0.0410）→ `mf_net_inflow_ratio`（r=0.737）
+- `margin_flow_asymmetry_10d`（fund_flow，q=0.0409）→ `margin_balance_5d`（r=0.620）
+- `chip_range_skew_factor`（price，q=0.0408）→ `cost_skew_ratio`（r=0.854）
+- `open_auction_intensity`（intraday，q=0.0403）→ `open_auction_ret`（r=0.964）
+- `kdj_j_volatility`（intraday，q=0.0402）→ `kdj_j_range`（r=0.635）
+- `volume_ratio`（valuation，q=0.0401）→ `turnover_f_delta_5`（r=0.770）
+- `microstructure_efficiency`（risk，q=0.0398）→ `rv_term_structure_slope`（r=0.564）
+- `pm_rsi_trend`（intraday，q=0.0398）→ `pm_macd_trend`（r=0.571）
+- `chip_gini_momentum`（price，q=0.0398）→ `chip_entropy_convergence`（r=0.908）
+- `min_macd_hist_area_20`（intraday，q=0.0389）→ `intraday_reversal`（r=0.502）
+- `volume_profile_kurt`（intraday，q=0.0386）→ `volume_profile_skew`（r=0.982）
+- `price_vs_ma30_deviation`（intraday，q=0.0385）→ `ma_dispersion`（r=0.714）
+- `chip_tail_risk_change`（price，q=0.0379）→ `chip_entropy_convergence`（r=0.703）
+- `am_pm_range_ratio`（intraday，q=0.0379）→ `am_pm_vol_ratio`（r=0.576）
+- `volume_ratio_momentum_5d`（fund_flow，q=0.0376）→ `turnover_f_delta_5`（r=0.754）
+- `path_efficiency`（intraday，q=0.0373）→ `upper_shadow_ratio`（r=0.681）
+- `intraday_trend_strength`（intraday，q=0.0373）→ `upper_shadow_ratio`（r=0.686）
+- `coupling_ma_chip_resonance`（coupling，q=0.0372）→ `chip_cr3_factor`（r=0.678）
+- `volume_ratio_zscore_20`（price，q=0.0372）→ `turnover_f_delta_5`（r=0.679）
+- `gap_ratio_20`（price，q=0.0371）→ `gap_volume_interaction_20`（r=0.881）
+- `chip_p90_p10_momentum`（price，q=0.0366）→ `chip_entropy_convergence`（r=0.563）
+- `chip_iqr_momentum_20d`（price，q=0.0362）→ `chip_cost_convergence_20d`（r=0.537）
+- `intraday_reversal_intensity`（intraday，q=0.0360）→ `upper_shadow_ratio`（r=0.696）
+- `ext_mf_medium_order_amount_ratio`（fund_flow，q=0.0359）→ `mf_md_order_vol_ratio`（r=1.000）
+- `chip_support_strength_20d`（price，q=0.0358）→ `cost_skew_ratio`（r=0.771）
+- `cost_distribution_skew`（price，q=0.0356）→ `cost_skew_ratio`（r=0.754）
+- `mf_big_small_convergence_20d`（fund_flow，q=0.0355）→ `mf_large_vol_net_5d`（r=0.944）
+- `trend_confirmation`（intraday，q=0.0354）→ `indicator_consensus`（r=0.602）
+- `intraday_lower_shadow`（intraday，q=0.0354）→ `lower_shadow_ratio`（r=0.800）
+- `chip_cr3_momentum`（price，q=0.0353）→ `chip_entropy_convergence`（r=0.835）
+- `chip_cost_skew`（price，q=0.0353）→ `cost_skew_ratio`（r=0.750）
+- `ma_rsi_divergence`（intraday，q=0.0351）→ `macd_price_divergence`（r=0.618）
+- `price_vs_ma20_deviation`（intraday，q=0.0351）→ `boll_band_deviation`（r=0.714）
+- `chip_mode_mean_gap`（price，q=0.0346）→ `chip_bimodality`（r=0.550）
+- `rsi_day_position`（intraday，q=0.0341）→ `rsi_14_excess`（r=0.966）
+- `macd_dif_slope`（intraday，q=0.0329）→ `intraday_reversal`（r=0.522）
+- `open_30_range_share`（intraday，q=0.0326）→ `rv_term_structure_slope`（r=0.578）
+- `chip_peak_growing`（price，q=0.0325）→ `chip_entropy_convergence`（r=0.699）
+- `ma_curvature`（intraday，q=0.0324）→ `macd_acceleration`（r=0.517）
+- `mf_small_order_ratio`（fund_flow，q=0.0319）→ `mf_big_small_divergence`（r=0.949）
+- `lg_sm_divergence`（fund_flow，q=0.0317）→ `mf_big_small_divergence`（r=1.000）
+- `mf_smart_dumb_divergence`（fund_flow，q=0.0315）→ `mf_big_small_divergence`（r=0.973）
+- `mf_elg_small_divergence`（fund_flow，q=0.0314）→ `mf_big_small_divergence`（r=0.946）
+- `factor_crowding_warning`（coupling，q=0.0314）→ `factor_consistency_score`（r=1.000）
+- `close_5min_momentum`（intraday，q=0.0309）→ `rsi_14_excess`（r=0.710）
+- `kdj_boll_combo`（intraday，q=0.0307）→ `indicator_consensus`（r=0.790）
+- `mf_large_order_avg_price`（fund_flow，q=0.0307）→ `ext_mf_large_order_avg_price`（r=1.000）
+- `j_day_position`（intraday，q=0.0299）→ `indicator_consensus`（r=0.750）
+- `ma5_ma10_gap`（intraday，q=0.0299）→ `indicator_consensus`（r=0.532）
+- `smart_money_concentration`（fund_flow，q=0.0298）→ `mf_big_small_divergence`（r=0.942）
+- `ext_mf_big_order_net_amount_ratio`（fund_flow，q=0.0298）→ `mf_big_small_divergence`（r=0.942）
+- `mf_big_order_ratio`（fund_flow，q=0.0298）→ `mf_big_small_divergence`（r=0.942）
+- `boll_position`（intraday，q=0.0297）→ `indicator_consensus`（r=0.583）
+- `mf_tier_net_spread_20`（fund_flow，q=0.0293）→ `mf_big_order_stability_20d`（r=0.572）
+- `kdj_j_value_close`（intraday，q=0.0291）→ `indicator_consensus`（r=0.750）
+- `large_order_timing_signal`（fund_flow，q=0.0290）→ `mf_big_small_divergence`（r=0.839）
+- `mavol5_slope`（intraday，q=0.0286）→ `mavol_expansion`（r=1.000）
+- `mf_large_order_net_5d`（fund_flow，q=0.0278）→ `mf_large_vol_net_5d`（r=0.762）
+- `gap_intraday_corr_20`（price，q=0.0278）→ `gap_open_follow_ratio_20`（r=0.527）
+- `big_vs_small_divergence_5d`（fund_flow，q=0.0277）→ `mf_big_small_divergence`（r=0.665）
+- `close_auction_impact`（intraday，q=0.0276）→ `rsi_14_excess`（r=0.654）
+- `big_order_net_accel_10`（fund_flow，q=0.0276）→ `mf_large_vol_net_5d`（r=0.535）
+- `order_size_concentration`（fund_flow，q=0.0269）→ `mf_big_small_divergence`（r=0.590）
+- `kdj_k_d_distance`（intraday，q=0.0259）→ `rsi_14_excess`（r=0.615）
+- `mf_elg_order_ratio`（fund_flow，q=0.0248）→ `mf_big_small_divergence`（r=0.592）
+- `super_large_order_intensity`（fund_flow，q=0.0248）→ `mf_big_small_divergence`（r=0.592）
+- `mf_avg_trade_price_momentum`（fund_flow，q=0.0233）→ `ext_mf_large_order_avg_price`（r=0.636）
+- `kdj_j_5d_acceleration`（intraday，q=0.0233）→ `indicator_consensus`（r=0.514）
+- `macd_rsi_combo`（intraday，q=0.0230）→ `rsi_boll_combo`（r=0.594）
+- `mf_mid_order_ratio`（fund_flow，q=0.0225）→ `medium_order_flow`（r=1.000）
+- `kdj_bull_frac_5d_change`（intraday，q=0.0219）→ `kdj_bull_frac`（r=0.670）
+- `fundflow_retail_inst_divergence`（coupling，q=0.0197）→ `medium_order_flow`（r=0.664）
+- `indicator_dispersion`（intraday，q=0.0179）→ `multi_indicator_extreme`（r=0.782）
+- `float_share_ratio`（valuation，q=0.0164）→ `circ_mv_to_total_mv`（r=1.000）

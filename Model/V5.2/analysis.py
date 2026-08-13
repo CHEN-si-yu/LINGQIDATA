@@ -1173,9 +1173,9 @@ for date in predicted_dates[-10:]:
 # ALL returns computed from actual price data (daily_adj), NOT from label
 # ============================================================
 
-N_LOOKBACK = 10  # <-- modify to adjust lookback window (trading days)
+WINDOW_START = end  # '20260630' —— 回测窗口起点(含当天)，终点为最新因子日期(至今)
 
-print(f"--- Recent {N_LOOKBACK}-Day Backtest ---")
+print(f"--- Backtest: {WINDOW_START} ~ 至今 ---")
 
 # Ensure model_score_extended is available
 try:
@@ -1187,10 +1187,11 @@ except NameError:
 # ── Setup ──
 close_map, open_map, prev_close_map, code_to_name = load_backtest_setup()
 
-# ── Select window ──
+# ── Select window: WINDOW_START(20260630) ~ 最新日期(至今) ──
 all_dates = sorted(model_score_extended.index)
-recent_dates = all_dates[-N_LOOKBACK:] if len(all_dates) >= N_LOOKBACK else all_dates
+recent_dates = [d for d in all_dates if d >= WINDOW_START]
 start_d, end_d = recent_dates[0], recent_dates[-1]
+N_LOOKBACK = len(recent_dates)  # 实际交易日数，仅供 summary 标题展示
 
 predicted_dates = [d for d in recent_dates if d not in set(model_score.index)]
 

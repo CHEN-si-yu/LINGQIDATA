@@ -39,8 +39,11 @@ Model/*/logs/
 Model/*/model_res/
 Model/*/model_test/
 Model/*/model_train/
+Model/*/model_pred/
+Model/*/crash_bak/
 *.pkl
 *.pth
+*.ckpt
 
 # Training data (generated)
 trainingdata/

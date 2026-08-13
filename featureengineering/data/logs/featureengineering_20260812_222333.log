@@ -1,0 +1,27 @@
+2026-08-12 22:23:33 [INFO   ] root: Log file  : /autodl-fs/data/lingqiData/featureengineering/data/logs/featureengineering_20260812_222333.log
+2026-08-12 22:23:33 [INFO   ] root: Python    : 3.12.3
+2026-08-12 22:23:33 [INFO   ] root: pandas    : 3.0.3
+2026-08-12 22:23:33 [INFO   ] root: numpy     : 2.3.2
+2026-08-12 22:23:35 [WARNING] featureengineering.factor_loader: Disabled 6 non-point-in-time factors: industry_relative_momentum_20, pb_industry_adjusted, ps_ttm_sector_neutral, sector_amount_momentum_5d, sector_amount_rank, sector_mv_rank
+2026-08-12 22:23:35 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:35 [WARNING] featureengineering.builder: max_workers=28 exceeds memory-safe recommendation (16) for the available memory ceiling — using 16
+2026-08-12 22:23:35 [INFO   ] featureengineering.builder: Effective end date: 20260812  |  395 factors to check
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:23:43 [DEBUG  ] featureengineering.factor_loader: No manifests found — skipping non-continuous filter
+2026-08-12 22:28:13 [INFO   ] featureengineering.builder: Build complete — 395 ok, 0 skip, 0 error | 4197 s wall | 632746 total rows
+2026-08-12 22:57:34 [INFO   ] featureengineering.builder: Effective end date: 20260812  |  147 factors to check
+2026-08-12 22:59:40 [INFO   ] featureengineering.builder: Build complete — 147 ok, 0 skip, 0 error | 616 s wall | 235494 total rows

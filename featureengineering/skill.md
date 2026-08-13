@@ -55,6 +55,7 @@
 收敛结果：全部因子（运行时注册表 − 5 标签 = 686，与 debug 切片 .fea 数量一致）的
 上游依赖已收敛于白名单 8 源（20 种文件组合，无第 9 类来源），两次对比中 686 个 .fea
 在 9 个重叠交易日**零变动**。**新因子引入白名单外的数据源 = 违约**，构建评审不通过。
+（当前数量以 §8.22 为准：768 有效因子 + 5 label + 6 禁用注册 = 779 注册表。）
 
 ---
 
@@ -935,3 +936,70 @@ volume_price_divergence_score 等)基础上,开发**分钟级(时分)量价耦�
   min_shrink_bull_frac_20(0.978)相对 min_ma_alignment_frac_20 重复、
   minute_ret_vol_corr(0.949)相对 volume_weighted_ret 重复,共 1 个新因子被剔除。
 - 44 个旧保留因子被新因子替换(旧保留集合在 0.95 下未入选)。
+
+### 8.21 2026-08-11 第二轮减法压缩(768→233,θ=0.50)与依赖闭合
+
+#### 决策
+- 依 factor_research_spec.md 执行因子库减法:目标不是保留 500~620,而是压缩到
+  ~200 个彼此相对独立的核心因子;用户指定"200 多个、尽量独立"(方案 2~3 之间)。
+- θ=0.50 贪婪(排序键=quality,与 production 同口径)+ 依赖闭包:
+  768 → 233(meta 口径),闭包后约 260 个;内部 |corr| ≤ 0.50 且保留因子依赖的
+  primitive 均在保留集内(依赖完整,重建不失败)。
+- 全量 768 直接 greedy 各档:0.55→271、0.50→233、0.45→200。选 0.50:
+  在"200+、尽量独立"下最平衡。
+- 10 个 spec 种子基因中 4 个保留(amplitude_20/margin_velocity/smart_money_share/
+  limit_up_fade_10 等),6 个被同机制更优代表顶替(amihud_parkinson_ratio→
+  amihud_intraday r=0.78、idio_vol_60→amplitude_20 r=0.81、min_boll_width_std_20→
+  amplitude_20 r=0.94、turnover_orthogonal_to_mv→turnover_20 r=0.92、
+  margin_buy_momentum_5d→margin_velocity r=0.90)——符合 spec 第五层"同机制保留
+  最优代表",但注意:被顶替者多为 spec §1.3 点名深挖的种子,后续 surprise/residual
+  化研究应基于保留代表或其 primitive,而非原被删因子。
+
+#### 代码变更
+- Model/prepared_data.py:SELECT_MIN_KEEP/SELECT_MAX_KEEP 500/620 → 200/260;
+  DEFAULT_THRESHOLDS 追加 0.75/0.70/0.65/0.60/0.55/0.50/0.45 档位。
+  选择模块本身仍只做相关性贪心(不做依赖闭包);依赖闭合在因子重构阶段由
+  docs/factor_reduction_plan.md 的注意事项保证。
+- trainingdata 已 --full 重建(2026-08-11 14:40):fac_all.fea(768 列)、
+  fac_select.fea(233 列,θ=0.50)、fac_select_meta.json(kept/dropped/ic 明细)、
+  label_ret_{1,3,5,10}d.fea、trade_amt.fea。选择耗时 85.0s。
+- 建议保留/删除清单(含每因子顶替关系)见 docs/factor_reduction_plan.md。
+
+#### 后续
+- 用户将自行重构因子库(删除 535 个冗余因子文件与注册函数);重构时须保留
+  保留集因子依赖的 primitive(依赖闭包已列出),或按 plan 文档清单删除。
+- 本轮仅修改脚本与选择口径,未物理删除任何因子文件。
+
+---
+
+### 8.22 2026-08-11 因子数量核查与"越多越好"实证结论（推翻 8.20/8.21 减法）
+
+基于 V5.4(768 因子) vs V5.6(233 因子)模型训练结果：**因子越多越好，冗余/高相关不构成删除理由**。§8.20(768→616, θ=0.95)与 §8.21(768→233, θ=0.50)的减法结论**全部作废**，不执行 docs/factor_reduction_plan.md 中的物理删除（535 个保留不动）。
+
+#### 注册表与特征集三方核对（零差异）
+
+| 口径 | 数量 | 说明 |
+|---|---|---|
+| 运行时注册表 | **779** | 768 有效 + 5 label + 6 禁用注册 |
+| `Model/V5.4/model_test/feature_map.fea` | **768** | 文本格式 `因子名=序号`，V5.4 训练特征集（含全部 Class 1-5） |
+| 磁盘 `data/factors/*.fea` | **768** | 与 feature_map 双向 0 缺失 0 多余 |
+
+- 5 个 label：`label_ret_1d/3d/5d/10d/20d`（category="target"，构建到 `data/targets/`，不进 data/factors）
+- 6 个禁用注册（依赖 stock_list.parquet 静态快照，构建时 `_filter_non_point_in_time_factors` 自动剔除、永不产出 .fea，保留代码供未来数据源再启用）：`industry_relative_momentum_20`、`pb_industry_adjusted`、`ps_ttm_sector_neutral`、`sector_amount_momentum_5d`、`sector_amount_rank`、`sector_mv_rank`
+
+#### 重建行为确认
+
+重新执行 `python build_factors.py`（Class 1→5 顺序构建）：**只产出这 768 个因子 .fea + 5 个 target**。
+增量逻辑按 manifest 跳过 up-to-date 因子；被删因子（不在注册表）不会重现；构建需 sudo（data/ 为 root:755），sudo 下用全路径 `/autodl-fs/data/miniconda3/bin/python`。
+
+#### 08-01 两次减法（12 变换 + 8 卖空）的核查结论
+
+- 这 20 个因子（及其前置依赖的 9 个基因子 volatility_20/5、max_ret_20、herding_intensity、lottery_stock_indicator、ret_range_20、up/down_volatility_20、idiosyncratic_vol_60）**均不在 V5.4 特征集中**——V5.4 训练时用的就是删除后的 768 个，两次减法对 V5.4 无影响。
+- git/GitHub（origin=CHEN-si-yu/LINGQIDATA，HEAD=7df1f85"基于CodeX建议修改前"）**不存在含这些因子的版本**：20 个在旧快照 bd04d20（整库回退会丢掉 08-01 后全部工作），9 个 log_/sqrt_/zscore_ 工厂变换因子从未入库。
+- **决定：不恢复**（恢复需改代码 + 重建，与"因子越多越好"无冲突，但维持 V5.4 已验证最优特征集）。
+
+#### 后续核对方法
+
+核对因子数量/一致性时，直接做三方 diff：`FACTOR_REGISTRY` 键集 vs `Model/V5.4/model_test/feature_map.fea` 解析集 vs `data/factors/` 文件名集。任何"因子缩减"类建议（如 CodeX 的 factor_reduction_plan）默认拒绝。
+
+*最后更新：2026-08-11*
