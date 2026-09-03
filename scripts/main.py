@@ -73,22 +73,6 @@ TASKS = [
     #     "start": "2019-01-01",
     #     "output": f"{DATA_DIR}/calendar.parquet",
     # },
-    # {
-    #     "name": "ths_sector_categories",
-    #     "fn": fetch_ths_sector_categories,
-    #     "output": f"{DATA_DIR}/ths_sector_categories.parquet",
-    # },
-    # {
-    #     "name": "ths_constituent_stocks",
-    #     "fn": fetch_ths_constituent_stocks,
-    #     "output": f"{DATA_DIR}/ths_constituent_stocks.parquet",
-    # },
-    # {
-    #     "name": "ths_daily",
-    #     "fn": fetch_ths_daily,
-    #     "start": "2019-01-01",
-    #     "output": f"{DATA_DIR}/ths_daily.parquet",
-    # },
     # ════════════════════ 有差异数据源: 全量重拉 (2026-08-01 一致性检查后启用) ════════════════════
     # 运行: python scripts/main.py --force [-w 8]   (全量覆盖本地, 2019-01-01 ~ 今天; 并发≤8)
     # refetch_recovery=True: --force 时仍复用已抓取的月度 checkpoint (断点续跑);

@@ -163,6 +163,17 @@ def _intraday_all_metrics(
     rj = rj.clip(lower=0)
     results["rj_5min"] = np.sqrt(rj)
 
+    # ── 1-minute return distribution (V8 fac_cand: day-first bar = open→close) ──
+    # 分钟收益按 build_cand_min.py 口径: 日内相邻分钟 close/close-1, 每日首根
+    # 分钟条 = 当日首分钟 open→close (含开盘竞价跳空后的第一个分钟)。
+    df["close_1min_ago"] = df["close"].shift(1)
+    day_first = df["trade_date"] != df["trade_date"].shift(1)
+    df["close_1min_ago"] = np.where(day_first, df["open"], df["close_1min_ago"])
+    df["ret_1min"] = df["close"] / df["close_1min_ago"].replace(0, np.nan) - 1.0
+    results["ret_1min_std"] = df.groupby("trade_date")["ret_1min"].std()
+    results["ret_1min_min"] = df.groupby("trade_date")["ret_1min"].min()
+    results["ret_1min_max"] = df.groupby("trade_date")["ret_1min"].max()
+
     # ── Amihud illiquidity (5-min)  (vectorized) ──────────────────────────
     df["amihud_term"] = df["ret_5min"].abs() / df["amount"].replace(0, np.nan)
     results["amihud_5min"] = df.groupby("trade_date")["amihud_term"].mean()
@@ -214,6 +225,8 @@ def _intraday_all_metrics(
         / results.get("close_30_open", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan)
         - 1.0
     )
+    # V8 fac_cand tail_ret_3d: 近3日尾盘收益累计 (last30_ret ≡ intra_rev_ret)
+    results["tail_ret_3d"] = results["intra_rev_ret"].rolling(3, min_periods=1).sum()
 
     # ── VWAP deviation ───────────────────────────────────────────────────
     results["vwap_dev"] = (daily_close - results["vwap"]) / results["vwap"].replace(0, np.nan)
@@ -441,6 +454,26 @@ def _intraday_all_metrics(
         results["close_auction_impact"] = c3g["close"].last() / c3g["open"].first().replace(0, np.nan) - 1.0
     else:
         results["close_auction_impact"] = pd.Series(np.nan, index=daily_open.index)
+
+    # ── V8 fac_cand: 收盘集合竞价量占比 (14:57-14:59, 不含 15:00 条) ───────
+    close_auc = df[df["minute"].between(897, 899)]
+    if not close_auc.empty:
+        results["close_auction_vol_share"] = (
+            close_auc.groupby("trade_date")["vol"].sum()
+            / daily_vol.replace(0, np.nan)
+        )
+    else:
+        results["close_auction_vol_share"] = pd.Series(np.nan, index=daily_open.index)
+    # 尾盘30分钟量占比 (14:30-14:59; 与既有 close_30_vol_share 的差异仅在
+    # 15:00 竞价条是否计入 — 无 15:00 条时二者等价)
+    last30 = df[df["minute"].between(870, 899)]
+    if not last30.empty:
+        results["last30_vol_share"] = (
+            last30.groupby("trade_date")["vol"].sum()
+            / daily_vol.replace(0, np.nan)
+        )
+    else:
+        results["last30_vol_share"] = pd.Series(np.nan, index=daily_open.index)
 
     # ── AM/PM return ratio ────────────────────────────────────────────────
     am_ret = results.get("am_close", pd.Series(np.nan, index=daily_open.index)) / results.get("am_open", pd.Series(np.nan, index=daily_open.index)).replace(0, np.nan) - 1.0
@@ -886,6 +919,19 @@ INTRADAY_FACTOR_SPEC: dict[str, tuple[str, str]] = {
     "vp_expand_ret_gap":        ("vp_expand_ret_gap",        "pos"),
     "vp_expand_price_pos":      ("vp_expand_price_pos",      "neg"),
     "vp_expand_down_am_share":  ("vp_expand_down_am_share",  "pos"),
+    # ── 2026-08-15: V8 fac_cand 分钟因子并入 (build_cand_min.py 9 个) ──────
+    # close_auction_ret / last30_ret / vwap_close_ratio 与既有
+    # close_auction_impact / intra_rev_ret / vwap_dev 逐值等价(或截面同秩),
+    # 复用其 metric 列,仅以 V8 因子名注册。
+    "min_ret_std":              ("ret_1min_std",       "neg"),
+    "min_ret_min":              ("ret_1min_min",       "pos"),
+    "min_ret_max":              ("ret_1min_max",       "neg"),
+    "vwap_close_ratio":         ("vwap_dev",           "neg"),
+    "close_auction_ret":        ("close_auction_impact", "neg"),
+    "close_auction_vol_share":  ("close_auction_vol_share", "neg"),
+    "last30_ret":               ("intra_rev_ret",      "neg"),
+    "last30_vol_share":         ("last30_vol_share",   "pos"),
+    "tail_ret_3d":              ("tail_ret_3d",        "neg"),
 }
 
 #: All metric columns produced by ``_intraday_all_metrics`` that map to factors.

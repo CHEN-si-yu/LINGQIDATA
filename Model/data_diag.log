@@ -1,0 +1,113 @@
+[1] 加载数据 ...
+   因子数=848, fac_all=(1554592, 850)
+   训练区间采样天数=453 (每3天)
+[2] 可疑因子名 (含 ret/return/label/target/fwd/fut/next/chg): 50 个
+    am_pm_return_ratio
+    close_auction_ret
+    coupling_vp_retvol_mom_20
+    cumulative_ret_path
+    fib_retracement_proximity
+    fundflow_retail_inst_divergence
+    ind_ret_ma_20d
+    ind_ret_ma_3d
+    ind_ret_ma_5d
+    ind_ret_ma_60d
+    intraday_ret
+    intraday_ret_momentum
+    last30_ret
+    log_mv_chg_20d
+    log_ret_std_intraday
+    margin_chg_abs_5d
+    margin_chg_rel_ind_5d
+    max_ret_intraday
+    mf_retail_dominance
+    mf_vol_retail_ratio
+    min_ret_max
+    min_ret_min
+    min_ret_std
+    minute_ret_vol_corr
+    open_auction_ret
+    overnight_return_share_20
+    ret_autocorr_1d_20
+    ret_autocorr_20d
+    ret_autocorr_5min
+    ret_autocorr_abs
+    ret_efficiency_20
+    ret_ind_rel_1d
+    ret_kurt_20
+    ret_kurt_5d
+    ret_kurt_intraday
+    ret_skew_20
+    ret_skew_5d
+    ret_skew_60
+    ret_std_intraday
+    ret_vol_lead_corr_20
+[3] 逐日截面 rankIC (1d 标签, 可交易池) ...
+   ... 0/453 (20200102)
+   ... 100/453 (20210331)
+   ... 200/453 (20220628)
+   ... 300/453 (20230915)
+   ... 400/453 (20241216)
+   有效天数: 1d=453, 5d=453
+
+[4] 1d rankIC 最强 20 个因子 (IR 排序):
+                             IC1_mean  IC1_std  IC1_IR  IC5_mean  IC5_IR
+close_auction_ret              0.0254   0.0171  1.4832   -0.0048 -0.1795
+close_5min_momentum            0.0315   0.0296  1.0629    0.0099  0.2907
+consecutive_limit_down         0.0852   0.0878  0.9709    0.0772  0.8597
+min_ret_max                    0.1036   0.1080  0.9594    0.0505  0.9964
+momentum_lowvol_combo_20       0.0898   0.0937  0.9584    0.0279  0.2457
+gk_vol                         0.1132   0.1240  0.9128    0.0399  0.5385
+sqrt_relative_spread           0.1095   0.1202  0.9114    0.0444  0.6383
+relative_spread                0.1095   0.1202  0.9114    0.0444  0.6383
+parkinson_vol                  0.1095   0.1201  0.9112    0.0444  0.6406
+hl_range_intraday              0.1095   0.1201  0.9112    0.0444  0.6406
+amihud_parkinson_ratio         0.1136   0.1264  0.8992    0.0660  0.8723
+rv_30min                       0.1139   0.1279  0.8907    0.0232  0.2380
+zscore_realized_spread_5min    0.0866   0.0975  0.8885    0.0677  1.3085
+rv_rolling_5d_std              0.1042   0.1177  0.8854    0.0728  1.1607
+rv_60min                       0.1017   0.1170  0.8694    0.0116  0.1105
+min_ret_min                    0.1010   0.1166  0.8666    0.0422  0.6751
+lowvol_quality_momentum_60     0.0890   0.1030  0.8635    0.0461  0.6223
+kdj_j_value_close              0.0261   0.0305  0.8536   -0.0042 -0.1705
+am_hl_range_intraday           0.1204   0.1424  0.8460    0.0548  1.0672
+sqrt_am_hl_range_intraday      0.1204   0.1424  0.8460    0.0548  1.0672
+
+    1d rankIC 最弱(负) 10 个因子:
+                               IC1_mean  IC1_std  IC1_IR  IC5_mean  IC5_IR
+smart_money_concentration           NaN      NaN     NaN       NaN     NaN
+smart_money_momentum_combo_20   -0.0528      NaN     NaN    0.0662     NaN
+smart_money_net_bias            -0.0415      NaN     NaN    0.0506     NaN
+smart_money_vwap_ratio           0.0023      NaN     NaN    0.0776     NaN
+super_large_order_intensity         NaN      NaN     NaN       NaN     NaN
+total_leverage_ratio                NaN      NaN     NaN       NaN     NaN
+vol_of_vol_intraday              0.1130      NaN     NaN    0.0436     NaN
+volume_rv_ratio                  0.0427      NaN     NaN   -0.0172     NaN
+vp_expand_down_am_share             NaN      NaN     NaN       NaN     NaN
+zscore_volume_rv_ratio           0.1888      NaN     NaN    0.0938     NaN
+
+    1d ICIR>0.05 的因子数: 347  | IC5_IR>0.05 的因子数: 282
+
+[5] 前40因子 IC 序列平均相关: nan (绝对值), 最大非对角 nan
+
+[6] 标签统计 (1d, 可交易池):
+    均值 0.0511%/d, 截面std均值 3.747%, |label|>=9.5% 占比 1.964%
+
+[7] top-20 因子按年 IC 均值 (1d):
+      close_auction_ret  close_5min_momentum  consecutive_limit_down  min_ret_max  momentum_lowvol_combo_20  gk_vol  sqrt_relative_spread  relative_spread  parkinson_vol  hl_range_intraday  amihud_parkinson_ratio  rv_30min  zscore_realized_spread_5min  rv_rolling_5d_std  rv_60min  min_ret_min  lowvol_quality_momentum_60  kdj_j_value_close  am_hl_range_intraday  sqrt_am_hl_range_intraday
+2020                NaN                  NaN                     NaN          NaN                       NaN     NaN                   NaN              NaN            NaN                NaN                     NaN       NaN                          NaN                NaN       NaN          NaN                         NaN                NaN                   NaN                        NaN
+2021                NaN                  NaN                  0.1066          NaN                       NaN     NaN                   NaN              NaN            NaN                NaN                     NaN       NaN                          NaN                NaN       NaN          NaN                         NaN                NaN                   NaN                        NaN
+2022                NaN                  NaN                 -0.0113          NaN                       NaN     NaN                   NaN              NaN            NaN                NaN                     NaN       NaN                          NaN                NaN       NaN          NaN                         NaN                NaN                   NaN                        NaN
+2023                NaN                  NaN                     NaN          NaN                       NaN     NaN                   NaN              NaN            NaN                NaN                     NaN       NaN                          NaN                NaN       NaN          NaN                         NaN                NaN                   NaN                        NaN
+2024                NaN                  NaN                  0.1603          NaN                       NaN     NaN                   NaN              NaN            NaN                NaN                     NaN       NaN                          NaN                NaN       NaN          NaN                         NaN                NaN                   NaN                        NaN
+2025             0.0254               0.0315                     NaN       0.1036                    0.0898  0.1132                0.1095           0.1095         0.1095             0.1095                  0.1136    0.1139                       0.0866             0.1042    0.1017        0.101                       0.089             0.0261                0.1204                     0.1204
+
+[8] 全部因子等权 IC: mean=0.0071 IR=0.156
+    前10因子等权 IC: mean=0.0879 IR=1.043
+    5d标签全因子等权 IC: mean=0.0024 IR=0.066
+
+[9] 因子 1d-IC 与 5d-IC 相关: 0.702
+
+[10] log(成交额) 与 label 秩相关: mean=-0.0108 IR=-0.073 (流动性因子强度)
+
+[DONE] 结果已存 Model/factor_ic_stats.csv

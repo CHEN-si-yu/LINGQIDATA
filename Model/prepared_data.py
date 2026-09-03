@@ -28,6 +28,7 @@ label_ret_5d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_5d
 label_ret_10d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_10d.fea"
 label_ret_20d_path = PROJECT_ROOT / "featureengineering/data/targets/label_ret_20d.fea"
 daily_adj_path = PROJECT_ROOT / "data/daily_adj.parquet"
+daily_path = PROJECT_ROOT / "data/daily.parquet"   # 未复权原始价（buyable_mask 用，禁止用 daily_adj 复权价算涨停价）
 calendar_path = PROJECT_ROOT / "data/calendar.parquet"
 
 # ============================================================
@@ -539,6 +540,62 @@ else:
     gc.collect()
 
 # ============================================================
+# 4. Generate buyable_mask (T+1 开盘可买入掩码) —— 全量重建
+# ============================================================
+# 语义（V6.2 定型，模型侧 label 剔除依据）：mask[T][code] 表示 T+1 交易日开盘是否可买入。
+#   True  — T+1 有 bar 且非一字涨停（开盘涨停但盘中打开、一字跌停均可买）
+#   False — T+1 一字涨停（open==high==low==close 且 close ≥ 涨停价，无法成交）
+#   None  — T+1 无 bar（停牌/退市/未上市/最后交易日；模型侧视为不可买，一并剔除）
+# 涨停价按板块：主板 10% / 创业板(30x)+科创板(68x) 20% / ST 5% / 北交所(4x,8x) 30%，
+# 用 T+1 的 pre_close 计算（与 T+1 收盘价同口径）。
+# 注（2026-08-14 实测）：存量 buyable_mask.fea 与"一字涨停"规则一致率 99.9999%
+# （3,321,572 格中仅 2 格差异）；ST 股票实测未排除（历史脚本的 ST 判定未生效），
+# 为保持 V6.2~V6.9 训练口径一致照抄，如需排除 ST 需重训模型。
+# 数据源：daily.parquet（未复权）；交易日历 calendar.parquet 取严格 T+1（跳停牌 → None）。
+# 输出：trainingdata/buyable_mask.fea（date 列 + Code 列，True/False/None）。
+print(f"\n{'─'*50}")
+print(f"Buyable mask generation (T+1 一字涨停不可买)")
+print(f"{'─'*50}")
+
+mask_daily = pd.read_parquet(daily_path,
+                             columns=["stock_code", "trade_date", "open", "high", "low",
+                                      "close", "pre_close", "stock_name"])
+mask_daily["Code"] = mask_daily["stock_code"].str.replace(r"\.(SZ|SH|BJ)$", "", regex=True)
+mask_daily["date"] = mask_daily["trade_date"].astype(str).str.replace("-", "", regex=False)
+# 严格 T+1：date → 下一交易日（calendar 只追加不修改）
+nxt_map = {d: n for d, n in zip(trading_calendar[:-1], trading_calendar[1:])}
+mask_daily["T1"] = mask_daily["date"].map(nxt_map)
+
+# T+1 bar 表：按 bar 自身日期标注（T1=bar 日），mask 行 date=T 通过 T1=next(T) 挂上 T+1 的 bar
+t1 = mask_daily[["date", "Code", "open", "high", "low", "close", "pre_close", "stock_name"]].rename(
+    columns={"date": "T1", "open": "T1_open", "high": "T1_high", "low": "T1_low",
+             "close": "T1_close", "pre_close": "T1_pre", "stock_name": "T1_name"})
+m = mask_daily[["date", "Code", "T1"]].merge(t1, on=["T1", "Code"], how="left")
+
+has_t1 = m["T1_open"].notna()
+t1_st = m["T1_name"].astype(str).str.contains("ST", na=False)
+is_cy = m["Code"].str.startswith(("30", "68"))
+is_bj = m["Code"].str.startswith(("4", "8"))
+lim_pct = np.where(t1_st, 0.05, np.where(is_cy, 0.20, np.where(is_bj, 0.30, 0.10)))
+t1_lim = (m["T1_pre"] * (1 + lim_pct)).round(2)
+# 一字涨停：四价相同 且 收盘 ≥ 涨停价（容忍浮点舍入）
+one_word_limit = (
+    (m["T1_open"] == m["T1_high"]) & (m["T1_open"] == m["T1_low"]) &
+    (m["T1_open"] == m["T1_close"]) & (m["T1_close"] >= t1_lim - 0.005)
+)
+
+m["mask"] = np.where(has_t1 & one_word_limit, False, np.where(has_t1, True, np.nan))
+buyable = m.pivot(index="date", columns="Code", values="mask").reset_index()
+buyable = buyable[buyable.iloc[:, 1:].notna().any(axis=1)]   # 去掉全 None 行（最后交易日无 T+1）
+buyable.to_feather(out_dir / "buyable_mask.fea")
+print(f"  Saved buyable_mask.fea {buyable.shape} ({len(buyable)} 个交易日)")
+print(f"  True={int((buyable.iloc[:,1:] == True).sum().sum())} "
+      f"False={int((buyable.iloc[:,1:] == False).sum().sum())} "
+      f"None={int(buyable.iloc[:,1:].isna().sum().sum())}")
+del mask_daily, t1, m, buyable
+gc.collect()
+
+# ============================================================
 # Summary
 # ============================================================
 print(f"\n{'='*60}")
@@ -549,4 +606,5 @@ print(f"  fac_sample.fea: {fac_sample_path}")
 for label_name in LABEL_TARGETS:
     print(f"  {label_name}.fea:     {out_dir / f'{label_name}.fea'}")
 print(f"  trade_amt.fea:     {trade_path}")
+print(f"  buyable_mask.fea:  {out_dir / 'buyable_mask.fea'}")
 print(f"\nAll done.")

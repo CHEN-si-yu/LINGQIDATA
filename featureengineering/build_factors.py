@@ -32,19 +32,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit(main())
 
-    # stages = [
-    #     ["--only-class", "1", "--jobs", "28", "--quality-check-days", "5"],
-    #     ["--only-class", "2", "--jobs", "50"],
-    #     ["--only-class", "3", "--jobs", "50"],
-    #     ["--only-class", "4", "--jobs", "50"],
-    #     ["--only-class", "5"],
-    # ]
-
     stages = [
-        ["--only-class", "1", "--jobs", "14", "--quality-check-days", "5"],
-        ["--only-class", "2", "--jobs", "25"],
-        ["--only-class", "3", "--jobs", "25"],
-        ["--only-class", "4", "--jobs", "25"],
+        ["--only-class", "1", "--jobs", "28", "--quality-check-days", "5"],
+        ["--only-class", "2", "--jobs", "50"],
+        ["--only-class", "3", "--jobs", "50"],
+        ["--only-class", "4", "--jobs", "50"],
         ["--only-class", "5"],
     ]
 
