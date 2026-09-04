@@ -68,24 +68,18 @@ RIDGE_INIT_FILE = 'ridge_init.csv'   # 相对版本目录; 存在则用于 1d �
 # 相对 V9 新增: lin_3d 头 (RANK_W3) + 顶部分支 5d 辅助目标 (TOP5D_WEIGHT)
 STYLE_CONS = {
     'RANK_W1': 4.0, 'RANK_W3': 2.0, 'RANK_W5': 2.0,
-    'TOPRET_WEIGHT': 0.3, 'TOP_AUX_WEIGHT': 0.15,
-    'TOPRET_TAU_FRAC': 0.08, 'LISTNET_WEIGHT': 0.1,
+    'TOPRET_1D': 0.3, 'TOPRET_3D': 0.15,   # 联合顶部双头: 1d 主导
+    'LISTNET_1D': 0.1, 'LISTNET_3D': 0.05,
+    'TAU_FRAC_1D': 0.08, 'TAU_FRAC_3D': 0.08,
     'LISTNET_TAU_FRAC': 0.15, 'LISTNET_K': 20,
-    'TOP_HORIZON': 3, 'TOP_BRANCH_DIMS': (128, 64),
 }
 STYLE_AGGR = {
     'RANK_W1': 0.5, 'RANK_W3': 0.25, 'RANK_W5': 0.25,
-    'TOPRET_WEIGHT': 2.0, 'TOP_AUX_WEIGHT': 1.0,
-    'TOPRET_TAU_FRAC': 0.03, 'LISTNET_WEIGHT': 0.6,
+    'TOPRET_1D': 1.0, 'TOPRET_3D': 2.0,   # 3d 主导
+    'LISTNET_1D': 0.3, 'LISTNET_3D': 0.6,
+    'TAU_FRAC_1D': 0.05, 'TAU_FRAC_3D': 0.03,
     'LISTNET_TAU_FRAC': 0.10, 'LISTNET_K': 10,
-    'TOP_HORIZON': 3, 'TOP_BRANCH_DIMS': (128, 64),
 }
-STYLE_BIGTOP3D = {**STYLE_AGGR, 'TOP_BRANCH_DIMS': (256, 128, 64)}
-STYLE_ULTRA3D = {**STYLE_AGGR, 'TOPRET_WEIGHT': 3.0, 'TOPRET_TAU_FRAC': 0.02,
-                 'LISTNET_K': 5}
-STYLE_TOP5D = {**STYLE_AGGR, 'TOP_HORIZON': 5, 'RANK_W5': 0.5}
-VARIANTS = {'cons': STYLE_CONS, 'aggr': STYLE_AGGR,
-            'bigtop3d': STYLE_BIGTOP3D, 'top5d': STYLE_TOP5D}
 
 
 def parse_args():
@@ -103,7 +97,7 @@ def parse_args():
 args = parse_args()
 
 PROJECT_ROOT = "/autodl-fs/data/lingqiData/"
-root_path = PROJECT_ROOT + 'Model/V11d'
+root_path = PROJECT_ROOT + 'Model/V15'
 fac_path = PROJECT_ROOT + 'trainingdata/'
 fac_name = args.data
 label_path = PROJECT_ROOT + 'trainingdata'
@@ -324,24 +318,22 @@ def _znorm(v):
 class PredictModel(nn.Module):
     """V11a: lin_1d/lin_3d/lin_5d 线性排序头 (ridge 热启动) + 独立小 MLP 顶部选择分支。
     forward 返回 (混合分, lin_1d, lin_5d, lin_3d, top)。"""
-    def __init__(self, input_dim=None, init_lin1=None, init_bias=None,
-                 top_dims=(128, 64)):
+    def __init__(self, input_dim=None, init_lin1=None, init_bias=None):
         super(PredictModel, self).__init__()
         if input_dim is None:
             input_dim = params.factor_num
         self.lin_1d = nn.Linear(input_dim, 1, bias=True)
         self.lin_3d = nn.Linear(input_dim, 1, bias=True)
         self.lin_5d = nn.Linear(input_dim, 1, bias=True)
-        layers = []
-        prev = input_dim
-        for i, d in enumerate(top_dims):
-            layers.append(nn.Linear(prev, d))
-            layers.append(nn.GELU())
-            if i == 0:
-                layers.append(nn.Dropout(0.3))
-            prev = d
-        layers.append(nn.Linear(prev, 1))
-        self.top_branch = nn.Sequential(*layers)
+        self.top_trunk = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.GELU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
+            nn.GELU(),
+        )
+        self.top_1d = nn.Linear(64, 1)
+        self.top_3d = nn.Linear(64, 1)
         if init_lin1 is not None:
             with torch.no_grad():
                 self.lin_1d.weight.copy_(init_lin1.view(1, -1))
@@ -366,9 +358,11 @@ class PredictModel(nn.Module):
         r1 = self.lin_1d(x)
         r3 = self.lin_3d(x)
         r5 = self.lin_5d(x)
-        top = self.top_branch(x)
-        mixed = _znorm(r1) + _znorm(top)
-        return mixed, r1, r5, r3, top
+        t = self.top_trunk(x)
+        top1d = self.top_1d(t)
+        top3d = self.top_3d(t)
+        mixed = _znorm(r1) + _znorm(top1d)
+        return mixed, r1, r5, r3, top1d, top3d
 
 
 def load_ridge_init(factor_list):
@@ -397,11 +391,10 @@ class DLLitModule(LightningModule):
         super().__init__()
         self.args = args
         self.style = style
-        self.cfg = VARIANTS[style]
+        self.cfg = STYLE_CONS if style == 'cons' else STYLE_AGGR
         init_w, init_b = load_ridge_init(params.factor_list)
-        self.model = PredictModel(init_lin1=init_w, init_bias=init_b,
-                                  top_dims=self.cfg['TOP_BRANCH_DIMS'])
-        print(f'[V11d] style={style} cfg={self.cfg}')
+        self.model = PredictModel(init_lin1=init_w, init_bias=init_b)
+        print(f'[V15] style={style} cfg={self.cfg}')
         print(self.model)
         self.validation_step_outputs = []
 
@@ -421,46 +414,39 @@ class DLLitModule(LightningModule):
             if m.sum() < MIN_DAY_STOCKS:
                 continue
             x = tsdatas[i]
-            mixed, r1, r5, r3, top = self.model(x)
+            mixed, r1, r5, r3, top1d, top3d = self.model(x)
             r1m, r5m = r1.squeeze(1)[m], r5.squeeze(1)[m]
             r3m = r3.squeeze(1)[m]
-            topm = top.squeeze(1)[m]
+            top1dm = top1d.squeeze(1)[m]
+            top3dm = top3d.squeeze(1)[m]
             mixedm = mixed.squeeze(1)[m]
             if not (torch.isfinite(r1m).all() and torch.isfinite(r5m).all()
-                    and torch.isfinite(r3m).all() and torch.isfinite(topm).all()):
+                    and torch.isfinite(r3m).all() and torch.isfinite(top1dm).all()
+                    and torch.isfinite(top3dm).all()):
                 continue
 
             lr1, ic1, rk1 = rank_loss(r1m, y1rg[m], cfg['RANK_W1'])
             lr3, ic3, rk3 = rank_loss(r3m, y3rg[m], cfg['RANK_W3'])
             lr5, ic5, rk5 = rank_loss(r5m, y5rg[m], cfg['RANK_W5'])
-            if cfg.get('TOP_HORIZON', 3) == 5:
-                ltop, ret, ln = top_loss(topm, y5rg[m], y5w[m],
-                                         cfg['TOPRET_WEIGHT'], cfg['TOPRET_TAU_FRAC'],
-                                         cfg['LISTNET_WEIGHT'], cfg['LISTNET_TAU_FRAC'],
-                                         cfg['LISTNET_K'])
-            else:
-                ltop, ret, ln = top_loss(topm, y3rg[m], y3w[m],
-                                         cfg['TOPRET_WEIGHT'], cfg['TOPRET_TAU_FRAC'],
-                                         cfg['LISTNET_WEIGHT'], cfg['LISTNET_TAU_FRAC'],
-                                         cfg['LISTNET_K'])
-            # 顶部分支辅助目标: 1d 软 Top 收益 (保持 1d 敏感度)
-            ltop5 = 0.0
-            if cfg['TOP_AUX_WEIGHT'] > 0:
-                ret5 = _soft_top_ret(topm, y1rg[m], cfg['TOPRET_TAU_FRAC'])
-                ltop5 = -cfg['TOP_AUX_WEIGHT'] * ret5
-            else:
-                ret5 = torch.zeros_like(ret)
+            ltop1d, ret1d, ln1d = top_loss(top1dm, y1rg[m], y1w[m],
+                                       cfg['TOPRET_1D'], cfg['TAU_FRAC_1D'],
+                                       cfg['LISTNET_1D'], cfg['LISTNET_TAU_FRAC'],
+                                       cfg['LISTNET_K'])
+            ltop3d, ret3d, ln3d = top_loss(top3dm, y3rg[m], y3w[m],
+                                       cfg['TOPRET_3D'], cfg['TAU_FRAC_3D'],
+                                       cfg['LISTNET_3D'], cfg['LISTNET_TAU_FRAC'],
+                                       cfg['LISTNET_K'])
 
             rdrop = 0.0
             if RDROP_WEIGHT > 0:
-                mixed2, _, _, _, _ = self.model(x)
+                mixed2, _, _, _, _, _ = self.model(x)
                 rdrop = nn.functional.mse_loss(mixedm, mixed2.squeeze(1)[m])
 
-            day_loss = (lr1 + lr3 + lr5 + ltop + ltop5 + RDROP_WEIGHT * rdrop) \
+            day_loss = (lr1 + lr3 + lr5 + ltop1d + ltop3d + RDROP_WEIGHT * rdrop) \
                 * _time_weight(dates[i])
             if torch.isfinite(day_loss):
                 losses.append(day_loss)
-                comps.append([ic1, rk1, ic3, rk3, ic5, rk5, ret, ret5, ln, rdrop])
+                comps.append([ic1, rk1, ic3, rk3, ic5, rk5, ret1d, ret3d, ln3d, rdrop])
         if not losses:
             return None
         loss = torch.stack(losses).mean()
@@ -473,8 +459,8 @@ class DLLitModule(LightningModule):
             self.log('tr_rk3', c[3], on_step=True)
             self.log('tr_ic5', c[4], on_step=True)
             self.log('tr_rk5', c[5], on_step=True)
-            self.log('tr_ret', c[6], on_step=True)
-            self.log('tr_ret5', c[7], on_step=True)
+            self.log('tr_ret1d', c[6], on_step=True)
+            self.log('tr_ret3d', c[7], on_step=True)
             self.log('tr_listnet', c[8], on_step=True)
             self.log('tr_rdrop', c[9], on_step=True)
         return loss
@@ -486,7 +472,7 @@ class DLLitModule(LightningModule):
             tsdata = tsdatas[i]
             y = y1w_list[i]
             y_raw = y1raw_list[i]
-            mixed, _, _, _, _ = self.model(tsdata)
+            mixed, _, _, _, _, _ = self.model(tsdata)
             pred = mixed.squeeze(1)
             m = torch.isfinite(y)
             if m.sum() >= MIN_DAY_STOCKS:
@@ -524,7 +510,7 @@ class DLLitModule(LightningModule):
         lin_params = [p for n, p in self.model.named_parameters()
                       if n.startswith('lin_')]
         top_params = [p for n, p in self.model.named_parameters()
-                      if n.startswith('top_branch')]
+                      if n.startswith('top_')]
         opt = torch.optim.AdamW([
             {'params': lin_params, 'weight_decay': WEIGHT_DECAY},
             {'params': top_params, 'weight_decay': WEIGHT_DECAY_TOP},
@@ -605,7 +591,7 @@ def train(args, season='2026q3', fold=1, state='train'):
     except Exception as e:
         print(e)
 
-    print(f"[V11d] 加载因子数据: {fac_path}/{fac_name}.fea")
+    print(f"[V15] 加载因子数据: {fac_path}/{fac_name}.fea")
     params.all_data = pd.read_feather(rf'{fac_path}/{fac_name}.fea')
     date_list = sorted(set(params.all_data['date'].unique()) & set(params.ret_data.index))
     params.all_data = params.all_data.set_index('date').sort_index()
@@ -620,15 +606,14 @@ def train(args, season='2026q3', fold=1, state='train'):
 
     # V11a 多目标: fold1-4 保守, fold5-8 激进 (同 4 折划分, 2 seeds × 2 风格)
     split_fold = (fold - 1) % N_FOLDS + 1
-    style = {1: 'cons', 2: 'cons', 3: 'aggr', 4: 'aggr',
-             5: 'bigtop3d', 6: 'bigtop3d', 7: 'top5d', 8: 'top5d'}[fold]
+    style = 'cons' if fold <= 4 else 'aggr'
     train_dates, valid_dates, test_dates = get_date_splits(date_list, fold=split_fold)
     print('=' * 70)
-    print('  V11c: fold1-4 保守 + fold5-8 激进; 顶部分支主目标 = 3d (对齐 norep+hold3 策略)')
-    print('  相对 V11a 改动: 顶部分支 3d 主目标 + 1d 辅助; lin_1d/3d/5d 排序头保留')
+    print('  V15: fold1-4 保守 + fold5-8 激进; 顶部双头联合 (1d+3d) 共享躯干')
+    print('  联合双头: top1d/top3d 共享 128→64 躯干; lin_1d/3d/5d 排序头保留')
     print('  共用 848 因子 + 同一 ridge 热启动; 集成 = 8 个 z-score 求和')
     print('  打分 = z(lin_1d) + z(top) [+ w5*z(lin_5d) + w3*z(lin_3d), analysis 可调]')
-    print(f'  本 fold 变体: {style}  划分 {split_fold}/{N_FOLDS}  cfg={VARIANTS[style]}')
+    print(f'  本 fold 风格: {style}  cfg={STYLE_CONS if style == "cons" else STYLE_AGGR}')
     print('  训练: AdamW(lin wd=1e-3, top wd=3e-3) + warmup+cosine, 时间衰减 hl=600d')
     print('=' * 70)
     print('  数据划分:')

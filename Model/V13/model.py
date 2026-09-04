@@ -64,16 +64,16 @@ WARMUP_EPOCHS = 2
 EARLY_STOP_PATIENCE = 10
 RIDGE_INIT_FILE = 'ridge_init.csv'   # 相对版本目录; 存在则用于 1d 线性头初始化
 
-# V11 多目标: fold1-4 保守 (IC 主导), fold5-8 激进 (顶部主导)
+# V11a 多目标: fold1-4 保守 (IC 主导), fold5-8 激进 (顶部主导)
 # 相对 V9 新增: lin_3d 头 (RANK_W3) + 顶部分支 5d 辅助目标 (TOP5D_WEIGHT)
 STYLE_CONS = {
     'RANK_W1': 4.0,        # 1d 线性排序头权重
-    'RANK_W3': 2.0,        # 3d 线性排序头权重 (新增)
+    'RANK_W3': 2.0,        # 3d 线性排序头权重
     'RANK_W5': 2.0,        # 5d 线性排序头权重
-    'TOPRET_WEIGHT': 0.3,  # 软 Top 收益项权重 (1d)
-    'TOP5D_WEIGHT': 0.15,  # 顶部分支 5d 软 Top 收益辅助 (新增)
+    'TOPRET_WEIGHT': 0.3,  # 顶部分支软 Top 收益主目标 (3d 标签)
+    'TOP_AUX_WEIGHT': 0.15,# 顶部分支 1d 软 Top 收益辅助
     'TOPRET_TAU_FRAC': 0.08,
-    'LISTNET_WEIGHT': 0.1,
+    'LISTNET_WEIGHT': 0.1, # ListNet 主目标 (3d)
     'LISTNET_TAU_FRAC': 0.15,
     'LISTNET_K': 20,
 }
@@ -82,7 +82,7 @@ STYLE_AGGR = {
     'RANK_W3': 0.25,
     'RANK_W5': 0.25,
     'TOPRET_WEIGHT': 2.0,
-    'TOP5D_WEIGHT': 1.0,
+    'TOP_AUX_WEIGHT': 1.0,
     'TOPRET_TAU_FRAC': 0.03,   # 更锐 → 权重集中在前 ~2~3%
     'LISTNET_WEIGHT': 0.6,
     'LISTNET_TAU_FRAC': 0.10,
@@ -105,7 +105,7 @@ def parse_args():
 args = parse_args()
 
 PROJECT_ROOT = "/autodl-fs/data/lingqiData/"
-root_path = PROJECT_ROOT + 'Model/V11'
+root_path = PROJECT_ROOT + 'Model/V13'
 fac_path = PROJECT_ROOT + 'trainingdata/'
 fac_name = args.data
 label_path = PROJECT_ROOT + 'trainingdata'
@@ -324,7 +324,7 @@ def _znorm(v):
 
 
 class PredictModel(nn.Module):
-    """V11: lin_1d/lin_3d/lin_5d 线性排序头 (ridge 热启动) + 独立小 MLP 顶部选择分支。
+    """V11a: lin_1d/lin_3d/lin_5d 线性排序头 (ridge 热启动) + 独立小 MLP 顶部选择分支。
     forward 返回 (混合分, lin_1d, lin_5d, lin_3d, top)。"""
     def __init__(self, input_dim=None, init_lin1=None, init_bias=None):
         super(PredictModel, self).__init__()
@@ -399,7 +399,7 @@ class DLLitModule(LightningModule):
         self.cfg = STYLE_CONS if style == 'cons' else STYLE_AGGR
         init_w, init_b = load_ridge_init(params.factor_list)
         self.model = PredictModel(init_lin1=init_w, init_bias=init_b)
-        print(f'[V11] style={style} cfg={self.cfg}')
+        print(f'[V13] style={style} cfg={self.cfg}')
         print(self.model)
         self.validation_step_outputs = []
 
@@ -431,15 +431,15 @@ class DLLitModule(LightningModule):
             lr1, ic1, rk1 = rank_loss(r1m, y1rg[m], cfg['RANK_W1'])
             lr3, ic3, rk3 = rank_loss(r3m, y3rg[m], cfg['RANK_W3'])
             lr5, ic5, rk5 = rank_loss(r5m, y5rg[m], cfg['RANK_W5'])
-            ltop, ret, ln = top_loss(topm, y1rg[m], y1w[m],
+            ltop, ret, ln = top_loss(topm, y3rg[m], y3w[m],
                                      cfg['TOPRET_WEIGHT'], cfg['TOPRET_TAU_FRAC'],
                                      cfg['LISTNET_WEIGHT'], cfg['LISTNET_TAU_FRAC'],
                                      cfg['LISTNET_K'])
-            # 顶部分支多目标辅助: 5d 软 Top 收益 (稳定 1d 顶部选择)
+            # 顶部分支辅助目标: 1d 软 Top 收益 (保持 1d 敏感度)
             ltop5 = 0.0
-            if cfg['TOP5D_WEIGHT'] > 0:
-                ret5 = _soft_top_ret(topm, y5rg[m], cfg['TOPRET_TAU_FRAC'])
-                ltop5 = -cfg['TOP5D_WEIGHT'] * ret5
+            if cfg['TOP_AUX_WEIGHT'] > 0:
+                ret5 = _soft_top_ret(topm, y1rg[m], cfg['TOPRET_TAU_FRAC'])
+                ltop5 = -cfg['TOP_AUX_WEIGHT'] * ret5
             else:
                 ret5 = torch.zeros_like(ret)
 
@@ -597,7 +597,7 @@ def train(args, season='2026q3', fold=1, state='train'):
     except Exception as e:
         print(e)
 
-    print(f"[V11] 加载因子数据: {fac_path}/{fac_name}.fea")
+    print(f"[V13] 加载因子数据: {fac_path}/{fac_name}.fea")
     params.all_data = pd.read_feather(rf'{fac_path}/{fac_name}.fea')
     date_list = sorted(set(params.all_data['date'].unique()) & set(params.ret_data.index))
     params.all_data = params.all_data.set_index('date').sort_index()
@@ -610,13 +610,13 @@ def train(args, season='2026q3', fold=1, state='train'):
         for idx, factor_name in enumerate(params.factor_list):
             file.write(rf'{factor_name}={idx}\n')
 
-    # V11 多目标: fold1-4 保守, fold5-8 激进 (同 4 折划分, 2 seeds × 2 风格)
+    # V11a 多目标: fold1-4 保守, fold5-8 激进 (同 4 折划分, 2 seeds × 2 风格)
     split_fold = (fold - 1) % N_FOLDS + 1
     style = 'cons' if fold <= 4 else 'aggr'
     train_dates, valid_dates, test_dates = get_date_splits(date_list, fold=split_fold)
     print('=' * 70)
-    print('  V11 多目标: fold1-4 保守 (IC 主导) + fold5-8 激进 (顶部主导)')
-    print('  相对 V9 新增: lin_3d 头 (3d 标签) + 顶部分支 5d 软Top辅助目标')
+    print('  V13: fold1-4 保守 + fold5-8 激进; 顶部分支主目标 = 3d (对齐 norep+hold3 策略)')
+    print('  相对 V11a 改动: 顶部分支 3d 主目标 + 1d 辅助; lin_1d/3d/5d 排序头保留')
     print('  共用 848 因子 + 同一 ridge 热启动; 集成 = 8 个 z-score 求和')
     print('  打分 = z(lin_1d) + z(top) [+ w5*z(lin_5d) + w3*z(lin_3d), analysis 可调]')
     print(f'  本 fold 风格: {style}  cfg={STYLE_CONS if style == "cons" else STYLE_AGGR}')

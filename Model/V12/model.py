@@ -64,7 +64,7 @@ WARMUP_EPOCHS = 2
 EARLY_STOP_PATIENCE = 10
 RIDGE_INIT_FILE = 'ridge_init.csv'   # 相对版本目录; 存在则用于 1d 线性头初始化
 
-# V11b 顶部分支强化实验: 4 变体 × 2 折 = 8 模型 (V9 精确损失结构, 无 3d/5d 辅助)
+# V12 顶部分支强化实验: 4 变体 × 2 折 = 8 模型 (V9 精确损失结构, 无 3d/5d 辅助)
 #   v1 cons : V9 保守 (IC 主导), 标准顶部分支 (128,64)
 #   v2 aggr : V9 激进 (顶部主导), 标准顶部分支
 #   v3 bigtop: V9 激进 + 扩容顶部分支 (256,128,64)
@@ -111,7 +111,7 @@ def parse_args():
 args = parse_args()
 
 PROJECT_ROOT = "/autodl-fs/data/lingqiData/"
-root_path = PROJECT_ROOT + 'Model/V11b'
+root_path = PROJECT_ROOT + 'Model/V12'
 fac_path = PROJECT_ROOT + 'trainingdata/'
 fac_name = args.data
 label_path = PROJECT_ROOT + 'trainingdata'
@@ -322,7 +322,7 @@ def _znorm(v):
 
 
 class PredictModel(nn.Module):
-    """V11b: lin_1d / lin_5d 线性排序头 (ridge 热启动) + 独立 MLP 顶部分支 (容量可配)。
+    """V12: lin_1d / lin_5d 线性排序头 (ridge 热启动) + 独立 MLP 顶部分支 (容量可配)。
     forward 返回 (混合分, lin_1d, lin_5d, top)。"""
     def __init__(self, input_dim=None, init_lin1=None, init_bias=None,
                  top_dims=(128, 64)):
@@ -397,7 +397,7 @@ class DLLitModule(LightningModule):
         init_w, init_b = load_ridge_init(params.factor_list)
         self.model = PredictModel(init_lin1=init_w, init_bias=init_b,
                                   top_dims=self.cfg['TOP_BRANCH_DIMS'])
-        print(f'[V11b] style={style} cfg={self.cfg}')
+        print(f'[V12] style={style} cfg={self.cfg}')
         print(self.model)
         self.validation_step_outputs = []
 
@@ -580,7 +580,7 @@ def train(args, season='2026q3', fold=1, state='train'):
     except Exception as e:
         print(e)
 
-    print(f"[V11b] 加载因子数据: {fac_path}/{fac_name}.fea")
+    print(f"[V12] 加载因子数据: {fac_path}/{fac_name}.fea")
     params.all_data = pd.read_feather(rf'{fac_path}/{fac_name}.fea')
     date_list = sorted(set(params.all_data['date'].unique()) & set(params.ret_data.index))
     params.all_data = params.all_data.set_index('date').sort_index()
@@ -599,7 +599,7 @@ def train(args, season='2026q3', fold=1, state='train'):
              5: 'bigtop', 6: 'bigtop', 7: 'ultra', 8: 'ultra'}[fold]
     train_dates, valid_dates, test_dates = get_date_splits(date_list, fold=split_fold)
     print('=' * 70)
-    print('  V11b: 顶部分支强化 — 4 变体 × 2 折 (cons/aggr/bigtop/ultra)')
+    print('  V12: 顶部分支强化 — 4 变体 × 2 折 (cons/aggr/bigtop/ultra)')
     print('  共用 848 因子 + 同一 ridge 热启动; 集成 = 8 个 z-score 求和 (analysis 原逻辑)')
     print('  线性排序头 + 独立小 MLP 顶部分支; 打分 = z(lin_1d) + z(top); 特征秩高斯化')
     print(f'  本 fold 变体: {style}  划分 {split_fold}/{N_FOLDS}  cfg={VARIANTS[style]}')

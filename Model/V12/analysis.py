@@ -93,11 +93,11 @@ MIN_AMOUNT = None           # 买入日成交额下限（元, 5000万以下流�
 MULTI_TOPN = [5, 10, 20]    # 额外的 Top-N 等权档位
 BAND_FRACS = [0.01, 0.05, 0.10]  # Top 分数带等权: 前 1% / 5% / 10%
 
-# V11b 头部混合权重: 集成打分 = Σ_folds z( W1*zr1 + W5*zr5 + W3*zr3 + WT*ztop ) (官方外部-z 定义)
+# V12 头部混合权重: 集成打分 = Σ_folds z( W1*zr1 + W5*zr5 + W3*zr3 + WT*ztop ) (官方外部-z 定义)
 # 由 mix_grid_outer (V9 各头网格) 选定: W5=0.25 提 IC/IR, WT=1.5 提 Top1 与 hold 策略
 MIX_W1 = 1.0
 MIX_W5 = 0.25  # V9 头部网格经验值 (w5 提 IR)
-MIX_W3 = 0.0   # V11b 无 lin_3d 头
+MIX_W3 = 0.0   # V12 无 lin_3d 头
 MIX_WTOP = 1.5
 SAVE_HEADS = True   # 额外落盘各头逐折 z 矩阵 (离线 mix 网格用)
 
@@ -196,7 +196,7 @@ def discover_folds(model_dir):
 
 
 def predict_heads(model, date, all_data, factor_list, device):
-    """V11b: 返回各头打分 dict {mixed, r1, r5, r3, top} (当日截面, 未 zscore)。"""
+    """V12: 返回各头打分 dict {mixed, r1, r5, r3, top} (当日截面, 未 zscore)。"""
     data = all_data.loc[date].copy()
     data_X, code_value = normed_data(data, factor_list)
     data_X = data_X.to(device)

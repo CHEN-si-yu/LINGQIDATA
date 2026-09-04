@@ -93,12 +93,13 @@ MIN_AMOUNT = None           # 买入日成交额下限（元, 5000万以下流�
 MULTI_TOPN = [5, 10, 20]    # 额外的 Top-N 等权档位
 BAND_FRACS = [0.01, 0.05, 0.10]  # Top 分数带等权: 前 1% / 5% / 10%
 
-# V11 头部混合权重: 集成打分 = Σ_folds z( W1*zr1 + W5*zr5 + W3*zr3 + WT*ztop ) (官方外部-z 定义)
+# V15 头部混合权重: 集成打分 = Σ_folds z( W1*zr1 + W5*zr5 + W3*zr3 + WT*ztop ) (官方外部-z 定义)
 # 由 mix_grid_outer (V9 各头网格) 选定: W5=0.25 提 IC/IR, WT=1.5 提 Top1 与 hold 策略
 MIX_W1 = 1.0
-MIX_W5 = 0.25
+MIX_W5 = 0.0
 MIX_W3 = 0.25
-MIX_WTOP = 1.5
+MIX_WTOP1D = 1.0   # 联合顶部 1d 头
+MIX_WTOP3D = 2.0   # 联合顶部 3d 头 (ens 经验: 3d 顶部重权)
 SAVE_HEADS = True   # 额外落盘各头逐折 z 矩阵 (离线 mix 网格用)
 
 fac_full_path = fac_path + fac_name + '.fea'      # 训练因子数据 fac_sample.fea
@@ -196,7 +197,7 @@ def discover_folds(model_dir):
 
 
 def predict_heads(model, date, all_data, factor_list, device):
-    """V11: 返回各头打分 dict {mixed, r1, r5, r3, top} (当日截面, 未 zscore)。"""
+    """V15: 返回各头打分 dict {mixed, r1, r5, r3, top} (当日截面, 未 zscore)。"""
     data = all_data.loc[date].copy()
     data_X, code_value = normed_data(data, factor_list)
     data_X = data_X.to(device)
@@ -204,16 +205,20 @@ def predict_heads(model, date, all_data, factor_list, device):
         output = model(data_X)
     if isinstance(output, tuple):
         mixed, r1, r5 = output[0], output[1], output[2]
-        if len(output) == 5:
-            r3, top = output[3], output[4]
+        if len(output) == 6:        # V15: (mixed, r1, r5, r3, top1d, top3d)
+            r3, top1d, top3d = output[3], output[4], output[5]
+            top = None
+        elif len(output) == 5:
+            r3, top, top1d, top3d = output[3], output[4], None, None
         elif len(output) == 4:      # V9 旧结构: (mixed, r1, r5, top)
-            r3, top = None, output[3]
+            r3, top, top1d, top3d = None, output[3], None, None
         else:
-            r3, top = None, None
+            r3, top, top1d, top3d = None, None, None, None
     else:
-        mixed, r1, r5, r3, top = output, None, None, None, None
+        mixed, r1, r5, r3, top, top1d, top3d = output, None, None, None, None, None, None
     heads = {'mixed': mixed}
-    for name, t in [('r1', r1), ('r5', r5), ('r3', r3), ('top', top)]:
+    for name, t in [('r1', r1), ('r5', r5), ('r3', r3), ('top', top),
+                    ('top1d', top1d), ('top3d', top3d)]:
         if t is not None:
             heads[name] = t
     out = {}
@@ -937,8 +942,9 @@ for fold_dir in folds:
 # ── Step 6: 推演: 各 Fold 模型分别预测各头; 官方外部-z 集成 ──
 # 每折: fold_score = z( W1*zr1 + W5*zr5 + W3*zr3 + WT*ztop ); 集成 = Σ_fold fold_score
 # 各头逐折 z 矩阵额外落盘 (heads/{h}_f{f}.fea) → 离线 mix 网格无需重推
-MIX = {'r1': MIX_W1, 'r5': MIX_W5, 'r3': MIX_W3, 'top': MIX_WTOP}
-head_names = ['r1', 'r5', 'r3', 'top']
+MIX = {'r1': MIX_W1, 'r5': MIX_W5, 'r3': MIX_W3,
+       'top1d': MIX_WTOP1D, 'top3d': MIX_WTOP3D}
+head_names = ['r1', 'r5', 'r3', 'top1d', 'top3d']
 head_fold_saved = {h: {fi + 1: [] for fi in range(len(models))} for h in head_names}
 new_scores = []
 for date in dates:
