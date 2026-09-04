@@ -1,5 +1,10 @@
 # 模型迭代总结报告 (V2 → V10)
 
+> **注意 (2026-09-04)**: 本文档为 V2→V10 阶段的历史总结 (其中"V9 最优"已被后续版本超越)。
+> 全历程 (V2→V19) 最终研究结论以 **Model/FINAL_REPORT.md** 为唯一权威
+> (冠军: ens_w2 + hold5s8-收盘卖, Test +365.2%); 训练流程与经验见 **Model/TRAINING_PLAYBOOK.md**。
+> 本文保留仅为历史参考。
+
 评价口径: Test 集合 20250901 ~ 20260901 (241 个交易日, 严格样本外, 与训练/验证无重叠)
 指标: RankIC (可交易池逐日 Spearman 均值) / RankICIR (均值÷标准差) / top_return (逐日 Top1 可交易股 1d label 均值×100) / Top1 累计回测 (open→open 实际价格)
 

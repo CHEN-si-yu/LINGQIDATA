@@ -1,0 +1,34 @@
+[meta] valid 期因子 68 天加载完成
+[meta] a fold1: epoch=2-val_rankic=0.0987.ckpt
+[meta] a fold1 各头落盘 (68 天)
+[meta] a fold2: epoch=1-val_rankic=0.0661.ckpt
+[meta] a fold2 各头落盘 (68 天)
+[meta] a fold3: epoch=0-val_rankic=0.0688.ckpt
+[meta] a fold3 各头落盘 (68 天)
+[meta] a fold4: epoch=0-val_rankic=0.0740.ckpt
+[meta] a fold4 各头落盘 (68 天)
+[meta] a fold5: epoch=0-val_rankic=0.1168.ckpt
+[meta] a fold5 各头落盘 (68 天)
+[meta] a fold6: epoch=0-val_rankic=0.0562.ckpt
+[meta] a fold6 各头落盘 (68 天)
+[meta] a fold7: epoch=3-val_rankic=0.0397.ckpt
+[meta] a fold7 各头落盘 (68 天)
+[meta] a fold8: epoch=0-val_rankic=0.0567.ckpt
+[meta] a fold8 各头落盘 (68 天)
+[meta] c fold1: epoch=0-val_rankic=0.1195.ckpt
+[meta] c fold1 各头落盘 (68 天)
+[meta] c fold2: epoch=17-val_rankic=0.0831.ckpt
+[meta] c fold2 各头落盘 (68 天)
+[meta] c fold3: epoch=10-val_rankic=0.0576.ckpt
+[meta] c fold3 各头落盘 (68 天)
+[meta] c fold4: epoch=0-val_rankic=0.0707.ckpt
+[meta] c fold4 各头落盘 (68 天)
+[meta] c fold5: epoch=20-val_rankic=0.1094.ckpt
+[meta] c fold5 各头落盘 (68 天)
+[meta] c fold6: epoch=0-val_rankic=0.0874.ckpt
+[meta] c fold6 各头落盘 (68 天)
+[meta] c fold7: epoch=1-val_rankic=0.0352.ckpt
+[meta] c fold7 各头落盘 (68 天)
+[meta] c fold8: epoch=0-val_rankic=0.0684.ckpt
+[meta] c fold8 各头落盘 (68 天)
+[meta] V19 元特征推演完成

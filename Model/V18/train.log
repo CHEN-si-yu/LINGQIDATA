@@ -1,0 +1,47 @@
+[V18] 848 factors
+[V18] 统计日期 ...
+[V18] 1618 个日期
+[V18] 读入 fac_all (float32) ...
+[V18] 1556516 rows 已读入
+[V18] 预处理 250/1618 天
+[V18] 预处理 500/1618 天
+[V18] 预处理 750/1618 天
+[V18] 预处理 1000/1618 天
+[V18] 预处理 1250/1618 天
+[V18] 预处理 1500/1618 天
+[V18] 特征矩阵 (1556516, 848) (5.3GB)
+[V18] 标签 150/1618 天
+[V18] 标签 300/1618 天
+[V18] 标签 450/1618 天
+[V18] 标签 600/1618 天
+[V18] 标签 750/1618 天
+[V18] 标签 900/1618 天
+[V18] 标签 1050/1618 天
+[V18] 标签 1200/1618 天
+[V18] 标签 1350/1618 天
+[V18] 标签 1500/1618 天
+[V18] 标签 1618/1618 天
+[V18] 标签处理完成
+[V18] 有效行 0/1556516
+[V18] fold1 已存在, 跳过 (resume)
+[V18] fold2 已存在, 跳过 (resume)
+[V18] fold3: train 0 / valid 0
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/Model/V18/train_gbdt.py", line 218, in <module>
+    main()
+  File "/autodl-fs/data/lingqiData/Model/V18/train_gbdt.py", line 190, in main
+    model.fit(X_all[tr_m], label_rg[tr_m], sample_weight=tw[tr_m],
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/lightgbm/sklearn.py", line 1398, in fit
+    super().fit(
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/lightgbm/sklearn.py", line 949, in fit
+    _X, _y = _LGBMValidateData(
+             ^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/sklearn/utils/validation.py", line 3055, in validate_data
+    X, y = check_X_y(X, y, **check_params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/sklearn/utils/validation.py", line 1327, in check_X_y
+    X = check_array(
+        ^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/site-packages/sklearn/utils/validation.py", line 1110, in check_array
+    raise ValueError(
+ValueError: Found array with 0 sample(s) (shape=(0, 848)) while a minimum of 2 is required by LGBMRegressor.
