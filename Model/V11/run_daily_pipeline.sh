@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# run_daily_pipeline.sh — 冠军系统每日流水线 (ens_w2 + hold5s8)
+# run_daily_pipeline.sh — 冠军系统每日流水线 (ens_w2 + hold5s8-收盘卖)
 # 1. V11 / V13 各自增量推演 (重推最新 10 个交易日)
 # 2. 构建 ens_w2 打分 = z(mixA) + 2·z(v11c_top)
-# 3. daily_runner 输出次日决策 (Top1 持有5天 + -8%收盘止损)
+# 3. daily_runner/paper_trader 输出决策并滚动记录纸面交易 (Top1 持有5天 + -8%收盘止损)
 set -e
 cd "$(dirname "$0")"
 
@@ -51,5 +51,6 @@ print(f'ens_w2 更新完成: {ens.shape[0]} 天 × {ens.shape[1]} 股票, '
       f'最新日期 {ens.index.max()}')
 EOF
 
-echo "=== [3/3] 每日决策 ==="
+echo "=== [3/3] 每日决策 + 纸面交易追踪 ==="
 python3 daily_runner.py model_pred/2026q3/score_ens_w2.fea
+python3 paper_trader.py model_pred/2026q3/score_ens_w2.fea
