@@ -1,57 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run.py — V20 启动入口: 刷新增量推演 → 组装冠军打分 → 落盘打分缓存
+run.py — V20 训练入口 (每折一个进程; train.sh 会以全局 fold 1..16 分 4 批调用)
 
 用法:
-  python run.py                # 若因子数据有新交易日 → 自动刷新 V11/V13 推演, 再组装打分
-  python run.py --update       # 强制重跑 V11/V13 增量推演后组装 (即使 heads 未落后)
-  python run.py --no-refresh   # 跳过推演检查, 直接用现有 heads 组装
+  python run.py <fold>                          # 训练全局折 1..16 (族/风格/划分自动映射)
+  python run.py <fold> --epochs 3 --data fac_sample   # 小样本冒烟验证
+  python run.py --fold 3 --season 2026q3
 
-输出: model_pred/score_ens_w2.fea (全窗口打分缓存) + 控制台摘要。
-日常出榜请直接运行 analysis.py (本入口只负责"刷新+组装")。
+全局折 → (族, 族内折) 映射 (见 model.fold_spec):
+  fold 1..8  = 族 a (V11 多目标: 顶分支 1d 主)  , k=1..8 (k≤4 保守 / k>4 激进)
+  fold 9..16 = 族 c (V13 顶部3d: 顶分支 3d 主)  , k=1..8 (k≤4 保守 / k>4 激进)
+训练产物: model_train/{season}/fold{全局折}/...  (checkpoint = 最优 val_rankic)
 """
-import argparse
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-import model  # noqa: E402
+from model import parse_args, train, fold_spec, TOTAL_FOLDS  # noqa: E402
 
-
-def main():
-    ap = argparse.ArgumentParser(description='V20 启动: 刷新推演 + 组装冠军打分')
-    ap.add_argument('--update', action='store_true',
-                    help='强制重跑 V11/V13 增量推演 (即使 heads 已最新)')
-    ap.add_argument('--no-refresh', action='store_true',
-                    help='跳过推演检查, 直接用现有 heads 组装')
-    args = ap.parse_args()
-
-    if not args.no_refresh:
-        refreshed, msg = model.ensure_heads_fresh(force=args.update,
-                                                  log_dir=os.path.join(HERE, 'logs'))
-        print(f'[V20] {msg}')
-    else:
-        print('[V20] 跳过推演检查 (--no-refresh)')
-
-    score = model.score_ens_w2()
-    out_dir = os.path.join(HERE, 'model_pred')
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, 'score_ens_w2.fea')
-    score.reset_index().to_feather(out_path)
-
-    print(f'[V20] 组装完成: {score.shape[0]} 天 × {score.shape[1]} 股票, '
-          f'{score.index.min()} ~ {score.index.max()}')
-    print(f'[V20] 打分缓存已落盘: {out_path}')
-    latest = score.index.max()
-    top1 = score.loc[latest].sort_values(ascending=False).index[0]
-    names = model.load_name_map()
-    print(f'[V20] 最新因子日 {latest}: Top1 = {top1} {names.get(top1, "?")} '
-          f'(打分 {score.loc[latest, top1]:+.4f})')
-    print('[V20] 完成。查看最终排行榜/策略指令请运行: python3 analysis.py')
+SEASON = '2026q3'
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    fold = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 1
+    for i, arg in enumerate(sys.argv):
+        if arg == '--season' and i + 1 < len(sys.argv):
+            SEASON = sys.argv[i + 1]
+        if arg == '--fold' and i + 1 < len(sys.argv):
+            fold = int(sys.argv[i + 1])
+
+    fam, k = fold_spec(fold)
+    print(f'[V20] run.py 启动: 全局 fold {fold}/{TOTAL_FOLDS} → '
+          f'族 {fam} ({"V11 多目标: 1d主" if fam == "a" else "V13 顶部3d: 3d主"}), '
+          f'族内折 k={k}, season={SEASON}', flush=True)
+    train(args, season=SEASON, fold=fold, state='train')
