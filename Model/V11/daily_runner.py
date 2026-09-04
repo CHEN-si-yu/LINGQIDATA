@@ -58,9 +58,10 @@ def main():
         if top1 == holding:
             print('  → 决策: 继续持有 (持仓仍是 Top1, 卖出日顺延)')
         elif held_days is not None and held_days < MIN_HOLD_DAYS:
-            print(f'  → 决策: 继续持有 (不足 {MIN_HOLD_DAYS} 天, 明日开盘不操作)')
+            print(f'  → 决策: 继续持有 (不足 {MIN_HOLD_DAYS} 天, 不操作)')
         else:
-            print(f'  → 决策: 次日开盘卖出 {holding}, 买入 {top1}')
+            print(f'  → 决策: 当日收盘卖出 {holding} (冠军协议 hold5s8-收盘卖); '
+                  f'次日开盘买入 {top1}')
             state = {'code': top1, 'buy_dt': _next_td(last, 1, tds), 'since': last}
     else:
         print('  → 决策: 空仓 → 次日开盘买入 Top1')
