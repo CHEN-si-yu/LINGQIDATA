@@ -14,7 +14,7 @@
 |---|---|
 | `model.py` | 模型架构/损失/数据划分/训练函数的**唯一权威定义** (被其余文件 import) |
 | `run.py` | **训练入口 (每折一进程)**: fold N → (变体/风格/划分/种子) 自动映射 |
-| `train.sh` | **训练调度**: 该单元全部折数**分批启动** (铁律: 每批 ≤4 折并发) |
+| `train.sh` | **训练调度**: 该单元全部折数**分批启动** (每批并发数 = §2 内存规则: 120GB → 6 折) |
 | `analysis.py` | **推演/回测/最终结果入口**: 对**本单元自训**的 checkpoint 全窗口推演 → 打分 → 排行榜/策略指令/回测 |
 
 辅件: `ridge_init.csv` (热启动, 复制自上一版) + 产物目录 `model_train / model_test /
@@ -70,7 +70,10 @@ model_pred / model_pic` (均 gitignore, 不入库)。
 
 - **运行时 cgroup 内存上限 (曾 90GB, 现 120GB), 超限会被系统 KILL — 无警告**。
   `cat /sys/fs/cgroup/memory.max` 确认当前上限; `memory.current` 看用量。
-- **GPU 训练同一时刻最多 4 折并发** (train.sh 两波 × 4 的模式), 绝不 8 折并发。
+- **多折集成训练并发上限按 cgroup 内存换算: 并发折数 = max(1, int(memory.max_GB / 20))**。
+  当前 120GB → **允许 6 折并发** (用户 2026-09-04 新规); 90GB → 4, 64GB → 3。
+  每折峰值预算 ≈20GB (含 4 个 DataLoader workers); 批次划分例: 16 折 → 6/6/4,
+  8 折 → 6/2。绝不超预算并发 (超限会被系统 KILL — 无警告)。
 - **不同时跑两个重内存任务** (如全表 feather 预处理 + 抓取/因子构建并行) — 曾因此 OOM。
 - 重内存 Python 脚本: float32 化、逐日/分批处理、预分配 numpy 矩阵、避免 groupby 全表
   临时副本 (pandas groupby rank/transform 会产生数倍于源数据的临时对象)。
@@ -97,7 +100,7 @@ model_pred / model_pic` (均 gitignore, 不入库)。
 
 ## 5. 训练→评估流水线
 
-1. `bash train.sh` (nohup 两波×4折; 日志 logs/foldN.log)
+1. `bash train.sh` (nohup 按 §2 内存并发规则分批, 120GB→6 折/批; 日志 logs/foldN.log)
 2. 重启训练前**必须清理** `model_train/<season>/*/version_*`、`logs/*`、
    `model_pred/<season>` (否则 analysis 会 glob 到旧 checkpoint 错位)
 3. `python3 analysis.py` (GPU 推演 245 天 × 8 模型 ~20min, 落盘 all_zscore_score.fea +

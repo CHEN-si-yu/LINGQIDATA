@@ -15,7 +15,8 @@ V20 model.py — 冠军系统独立可训练单元 (16 折 = 双族配方, 从�
 损失 = -(IC+RankIC) + 软Top收益(主/辅) + ListNet + R-Drop + 时间衰减(hl=600d) + AdamW(warmup+cosine)。
 
 文件使命 (版本四文件之一): 模型架构 / 损失 / 数据划分 / 训练函数, 被 run.py 调用;
-训练调度 = train.sh (16 折分 4 批 × 4 并发); 推演/回测/出结果 = analysis.py。
+训练调度 = train.sh (分批并发数按 TRAINING_PLAYBOOK §2 内存规则: 120GB→6 折/批);
+推演/回测/出结果 = analysis.py。
 """
 import os
 import random
@@ -70,7 +71,7 @@ MIN_DAY_STOCKS = 50
 TOP_RET_FRAC = 0.1
 
 # ============================================================
-# V20 双族折体系: 全局 fold 1..16 (train.sh 分 4 批 × 4 折启动)
+# V20 双族折体系: 全局 fold 1..16 (train.sh 按 §2 内存规则分批启动: 120GB→6 折/批)
 # ============================================================
 N_FOLD_PER_FAMILY = 8              # 每族折数 (族内: 4 折划分 × 2 风格)
 TOTAL_FOLDS = N_FOLD_PER_FAMILY * 2  # 16 折 (族 a = fold 1..8, 族 c = fold 9..16)

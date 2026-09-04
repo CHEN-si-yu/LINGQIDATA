@@ -31,7 +31,7 @@
 |---|---|---|
 | `model.py` | 架构/损失/数据划分/训练函数 + 装配工具 (唯一权威定义) | 被其余文件 import; `python3 model.py` = 健康检查 |
 | `run.py` | **训练入口 (每折一进程)**: 全局 fold 1..16 → (族,风格,划分) 自动映射 | `python run.py 1` … `python run.py 16` |
-| `train.sh` | **训练调度**: 16 折分 **4 批 × 每批 4 折并发** (GPU 铁律) | `bash train.sh` / `bash train.sh --clean` |
+| `train.sh` | **训练调度**: 16 折全量分批启动 — 每批并发数按 **TRAINING_PLAYBOOK §2 内存规则** (120GB → 6 折/批, 即 6/6/4 三批) | `bash train.sh` / `bash train.sh --clean` |
 | `analysis.py` | **推演+回测+最终结果**: 对自训 16 checkpoint 全窗口推演各头 → 组装 ens_w2 → 排行榜/策略指令/冠军回测 | `python3 analysis.py [--backtest]` |
 
 ## 三、标准流程
@@ -39,7 +39,7 @@
 ```bash
 cd /autodl-fs/data/lingqiData/Model/V20
 
-# 1) 训练 (16 折, 4 批 × 4 并发, 单 GPU; 每折约 1.5~2.5h → 全程 6~10h+)
+# 1) 训练 (16 折, 按 §2 内存规则分批: 120GB→每批 6 折 = 6/6/4 三批; 每折约 1.5~2.5h → 全程 6~10h+)
 bash train.sh                 # 已有训练产物会拒绝; 重训: bash train.sh --clean
 
 # 2) 全窗口推演 + 出榜 (首次约 245 交易日 × 16 模型, GPU 30~40 分钟; 之后增量数分钟)
@@ -53,8 +53,9 @@ python3 analysis.py --days 3  # 最近 3 个因子日排行榜
 
 ## 四、关键纪律 (与 TRAINING_PLAYBOOK 一致)
 
-- 16 折 **分 4 批, 每批最多 4 折并发** (train.sh 已内置); 勿 8 折并发。
+- 16 折**分批并发数 = 按 TRAINING_PLAYBOOK §2 换算**: 120GB 内存 → 每批 6 折 (6/6/4 三批); 90GB→4/批。绝不超过内存预算并发。
 - 重训前必须清理旧产物 (`bash train.sh --clean`), 否则 checkpoint 混淆 (train.sh 默认拒绝)。
+- **已知事项**: 首个复现轮 (2026-09-04 22:10 启动) 所用 train.sh 为初版 (4 折/批×4 批); 该轮结束后 train.sh 将按新规调整为 6/6/4 三批 (训练运行中不改动脚本)。
 - 训练 wrapper 不带 timeout (SIGTERM 传染 DataLoader workers)。
 - 换 checkpoint/重训后 `analysis.py --update` (重推最近 10 日自愈)。
 - 结构已收敛 (FINAL_REPORT): 16 折配方是冠军全局最优, 勿再叠加第三组件/种子/平滑。

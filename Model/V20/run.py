@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run.py — V20 训练入口 (每折一个进程; train.sh 会以全局 fold 1..16 分 4 批调用)
+run.py — V20 训练入口 (每折一个进程; train.sh 会以全局 fold 1..16 按 §2 内存规则分批调用, 120GB→6 折/批)
 
 用法:
   python run.py <fold>                          # 训练全局折 1..16 (族/风格/划分自动映射)
