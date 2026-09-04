@@ -51,6 +51,11 @@ python3 analysis.py --days 3  # 最近 3 个因子日排行榜
 产物: `model_train/2026q3/fold{1..16}` (checkpoint) → `analysis.py` 产出
 `model_pred/2026q3/heads_{a,c}/{r1,r3,r5,top}_f{1..8}.fea` 与 `score_ens_w2.fea`。
 
+**报告样式 (V9 对齐)**: `analysis.py` 输出 `model_pic/output.md` + `model_pic/figure_01.png`
+(同 V9: IC 评估 → 最近10日排行榜块 → 冠军协议 Trade Log 含复利累加收益/待定持仓行
+(增量随交易日更新) → Summary/分半 → Top1 策略指令; 图 = 累计净收益+逐笔收益 1×2 图)。
+历史输出目录需文件属主 (root) 运行以更新; 非属主可用 `V20_MD_DIR=<可写目录> python3 analysis.py`。
+
 ## 四、关键纪律 (与 TRAINING_PLAYBOOK 一致)
 
 - 16 折**分批并发数 = 按 TRAINING_PLAYBOOK §2 换算**: 120GB 内存 → 每批 6 折 (6/6/4 三批); 90GB→4/批。绝不超过内存预算并发。

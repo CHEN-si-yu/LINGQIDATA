@@ -815,7 +815,10 @@ def _close_sell_backtest_module():
 
 
 def champion_backtest(score=None, split=True, verbose=True):
-    """冠军协议回测 (hold5 + stop8% + 收盘卖 + 含成本) 及可选 H1/H2 分半。"""
+    """冠军协议回测 (hold5 + stop8% + 收盘卖 + 含成本) 及可选 H1/H2 分半。
+
+    返回 out, 含: full/h1/h2 (summarize 指标), ic, n_trades, trades (成交明细
+    DataFrame), daily (逐笔日收益序列) 与 name_map (日志/出图用)。"""
     if score is None:
         score = score_ens_w2()
     mod = _close_sell_backtest_module()
@@ -831,16 +834,18 @@ def champion_backtest(score=None, split=True, verbose=True):
             kw['window_start'] = ws
         if we:
             kw['window_end'] = we
-        m, tr, _ = rb(score, open_map, close_map, prev_close_map, name_map,
-                      amount_map=amount_map, tds=tds, **F, **kw)
-        return m, tr
+        m, tr, dr = rb(score, open_map, close_map, prev_close_map, name_map,
+                       amount_map=amount_map, tds=tds, **F, **kw)
+        return m, tr, dr
 
-    full, trades = one()
+    full, trades, daily = one()
     ic = mod['eval_ic'](score)
-    out = {'full': summ(full), 'ic': ic, 'n_trades': len(trades)}
+    out = {'full': summ(full), 'ic': ic, 'n_trades': len(trades),
+           'trades': trades, 'daily': daily, 'name_map': name_map,
+           'tds': tds, 'F': F}
     if split:
-        h1, _ = one(ws=TEST_START, we='20260227')
-        h2, _ = one(ws='20260302', we=TEST_END)
+        h1, _, _ = one(ws=TEST_START, we='20260227')
+        h2, _, _ = one(ws='20260302', we=TEST_END)
         out['h1'], out['h2'] = summ(h1), summ(h2)
     if verbose:
         s = out['full']
