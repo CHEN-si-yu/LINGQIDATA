@@ -1,7 +1,7 @@
 # 训练流程与经验手册 (V2→V18 全历程沉淀, 2026-09-04)
 
-> 用途: 后续任何新版本的训练/评估/实盘启动, 先读本手册。配套: FINAL_REPORT.md (研究结论),
-> ITERATIONS.md (逐版迭代日志), Model/V11/README_V11.md (实盘协议)。
+> 用途: 后续任何新版本的训练/评估/实盘启动, 先读本手册。配套: FINAL_REPORT.md
+> (研究结论 + 全历程履历附录A), Model/V11/README_V11.md (实盘协议)。
 > 最后修订: 2026-09-04 — V18 卡住 (0样本bug) 后按用户指示停止新方向探索, 结论封存;
 > V18/V19 目录保留, 重启清单见 §7b 与坑 11/12。
 
@@ -60,7 +60,7 @@
 3. `python3 analysis.py` (GPU 推演 245 天 × 8 模型 ~20min, 落盘 all_zscore_score.fea +
    各头逐折矩阵 heads/{h}_f{f}.fea + model_pic/output.md)
 4. 策略层: `python3 strat_backtest.py <score.fea> [--battery]` / mix_grid2.py 网格
-5. 更新 ITERATIONS.md → git commit
+5. 更新 FINAL_REPORT.md (履历附录A/结论) → git commit
 
 ## 6. 评估口径 (三维, 缺一不可)
 
