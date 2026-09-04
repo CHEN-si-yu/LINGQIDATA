@@ -232,7 +232,6 @@ Price data: 8833662 rows, dates 20190102 ~ 20260902
   10   002865    钧达股份        +   8.7931
 --- Backtest: 20250901 ~ 20260901 (Test 集合) ---
 Window : 20250901 ~ 20260901  (243 trading days)
-[Figure saved] ./model_pic/figure_01.png
 
 ====================================================================================================
   Trade Log — Top 1 | 243 days | hold 1d | Returns from daily_adj open prices
