@@ -300,6 +300,21 @@ def _df_to_scores(df):
     return dict(scores=scores, ranked=ranked, top1=top1, dates=sorted(scores.keys()))
 
 
+_WS = {}   # 权重搜索共享状态 (fork 子进程继承)
+
+
+def _ws_run(args):
+    name, df = args
+    sc = _df_to_scores(df)
+    m, tr, eq = _WS['eng'].run_backtest(sc, _WS['proto'], _WS['mkt'],
+                                        _WS['tds'], _WS['tdi'])
+    if m is None:
+        return None
+    return dict(name=name, cum_net=m['cum_net'], sharpe=m['sharpe'],
+                maxdd=m['maxdd'], h1=m['h1_cum'], h2=m['h2_cum'],
+                win=m['win_rate'], n=m['n_trades'], hold=m['avg_hold'])
+
+
 def weight_search(verbose=True):
     """家族权重 × 跨族权重网格 → h20tr20_t2 回测; 落盘 weight_search.csv。"""
     import importlib.util
@@ -313,6 +328,7 @@ def weight_search(verbose=True):
     mkt = eng.load_market()
     tds, tdi = eng.load_calendar()
     F = dict(top_n=PROTO_TOPN, hold=PROTO_HOLD, trail_pct=PROTO_TRAIL)
+    _WS.update(eng=eng, proto=F, mkt=mkt, tds=tds, tdi=tdi)
 
     # 家族内权重网格 (rtrail 权重固定 1, z 缩放不变性)
     combos = {}
@@ -329,19 +345,9 @@ def weight_search(verbose=True):
     n_fam = len(combos)
     print(f'[search] 家族组合 {n_fam} 个 (A {n_fam//2} + C {n_fam//2})', flush=True)
 
-    def run_one(args):
-        name, df, proto = args
-        sc = _df_to_scores(df)
-        m, tr, eq = eng.run_backtest(sc, proto, mkt, tds, tdi)
-        if m is None:
-            return None
-        return dict(name=name, cum_net=m['cum_net'], sharpe=m['sharpe'],
-                    maxdd=m['maxdd'], h1=m['h1_cum'], h2=m['h2_cum'],
-                    win=m['win_rate'], n=m['n_trades'], hold=m['avg_hold'])
-
     pool = mp.Pool(20)
     rows = [r for r in pool.imap_unordered(
-        run_one, [(n, c[1], F) for n, c in combos.items()], chunksize=2) if r]
+        _ws_run, [(n, c[1]) for n, c in combos.items()], chunksize=2) if r]
     pool.close(); pool.join()
     fam_res = pd.DataFrame(rows)
     # 每族取前 N 名做跨族集成
@@ -359,10 +365,10 @@ def weight_search(verbose=True):
             da, dc = combos[na][1], combos[nc][1]
             for wc in (0.5, 1.0, 1.5, 2.0, 3.0):
                 ens = zn(da).add(wc * zn(dc), fill_value=0.0)
-                ens_tasks.append((f"{na}+{wc}x{nc}", ens, F))
+                ens_tasks.append((f"{na}+{wc}x{nc}", ens))
     print(f'[search] 跨族集成 {len(ens_tasks)} 组合', flush=True)
     pool = mp.Pool(20)
-    ens_rows = [r for r in pool.imap_unordered(run_one, ens_tasks, chunksize=2) if r]
+    ens_rows = [r for r in pool.imap_unordered(_ws_run, ens_tasks, chunksize=2) if r]
     pool.close(); pool.join()
     ens_res = pd.DataFrame(ens_rows)
     all_res = pd.concat([fam_res.assign(kind='fam'), ens_res.assign(kind='ens')],
