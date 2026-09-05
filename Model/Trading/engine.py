@@ -57,7 +57,8 @@ DEFAULT_CFG = dict(top_n=1, hold=1, no_repeat=False, exit_rank=None, min_hold=1,
                    stop_loss=None, take_profit=None, trail_pct=None,
                    rat_up=None, rat_floor=None, threshold_q=None,
                    exclude_st=True, exclude_limit_up=True, sell_limit_filter=True,
-                   use_cost=True, sell_at="open")
+                   use_cost=True, sell_at="open",
+                   trail_on_high=False, max_entry_gap=None)
 
 
 # ---------------- 市场数据 ----------------
@@ -72,8 +73,8 @@ def load_calendar():
 def load_market():
     """载入窗口内价格/名称映射 (open/close/prev_close/name, 按 (date,code) 键)。"""
     df = pd.read_parquet(PROJECT_ROOT + "data/daily_adj.parquet",
-                         columns=["stock_code", "trade_date", "open", "close",
-                                  "amount", "stock_name"])
+                         columns=["stock_code", "trade_date", "open", "high",
+                                  "close", "amount", "stock_name"])
     df["trade_date"] = df["trade_date"].str.replace("-", "", regex=False)
     df["code"] = df["stock_code"].str.replace(".SZ", "", regex=False) \
                                   .str.replace(".SH", "", regex=False)
@@ -81,13 +82,14 @@ def load_market():
     df["prev_close"] = df.groupby("code")["close"].shift(1)
     df = df[(df["trade_date"] >= "20250801") & (df["trade_date"] <= "20260904")]
     open_m = df.set_index(["trade_date", "code"])["open"].to_dict()
+    high_m = df.set_index(["trade_date", "code"])["high"].to_dict()
     close_m = df.set_index(["trade_date", "code"])["close"].to_dict()
     prev_m = df.set_index(["trade_date", "code"])["prev_close"].to_dict()
     name_m = df.set_index(["trade_date", "code"])["stock_name"].to_dict()
     name_last = df.drop_duplicates("code", keep="last") \
                  .set_index("code")["stock_name"].to_dict()
-    return dict(open=open_m, close=close_m, prev=prev_m, name=name_m,
-                name_last=name_last, max_date=df["trade_date"].max())
+    return dict(open=open_m, high=high_m, close=close_m, prev=prev_m,
+                name=name_m, name_last=name_last, max_date=df["trade_date"].max())
 
 
 def load_scores(set_name, window=(WINDOW_START, WINDOW_END)):
@@ -134,6 +136,7 @@ def run_backtest(scores, cfg, market, tds=None, tdi=None,
     if tds is None:
         tds, tdi = load_calendar()
     open_m, close_m, prev_m = market["open"], market["close"], market["prev"]
+    high_m = market.get("high", {})
     name_m, name_last = market["name"], market["name_last"]
 
     i1 = tdi.get(window[1])
@@ -249,6 +252,11 @@ def run_backtest(scores, cfg, market, tds=None, tdi=None,
                             and bp / pc - 1 >= LIMIT_UP:
                         skipped_buy += 1
                         continue
+                    # 入场跳空过滤 (避免追高开盘): 开盘较昨收跳空 ≥ 阈值 → 顺延
+                    if cfg["max_entry_gap"] is not None and pc and pc > 0 \
+                            and bp / pc - 1 >= cfg["max_entry_gap"]:
+                        skipped_buy += 1
+                        continue
                     # 因子日一字涨停过滤 (旧引擎口径: 因子日 close/prev_close-1 >= 0.095 → 次日买不进)
                     if cfg["exclude_limit_up"]:
                         fc = close_m.get((fd_open, code))
@@ -328,7 +336,12 @@ def run_backtest(scores, cfg, market, tds=None, tdi=None,
             if cc is None or cc <= 0:
                 continue
             held = i - p["buy_i"]
-            p["peak"] = max(p["peak"], cc)
+            if cfg["trail_on_high"]:
+                hh = high_m.get((t, code))
+                pk = max(cc, hh) if (hh is not None and hh > 0) else cc
+                p["peak"] = max(p["peak"], pk)
+            else:
+                p["peak"] = max(p["peak"], cc)
             reason = None
             # 到期: 开盘买入 → 买入日收盘即算持有 1 个交易日 → 收盘已满 hold 天则次日开盘卖
             # (hold=1: 买入次日开盘卖; hold=5: 第 5 个交易日收盘后 → 次日开盘卖)

@@ -1,0 +1,94 @@
+[analysis] feature_map: 848 因子
+[analysis] 待推演 246 日 (增量): 20250901 ~ 20260904
+[analysis] 因子行 236652 (缺失列补 0: 0)
+[analysis] 实际使用特征列 848
+[analysis]   fold1 (族a/k1): epoch=4-val_rankic=0.1328.ckpt (val=0.1328)
+[analysis]   fold2 (族a/k2): epoch=0-val_rankic=0.0806.ckpt (val=0.0806)
+[analysis]   fold3 (族a/k3): epoch=1-val_rankic=0.0705.ckpt (val=0.0705)
+[analysis]   fold4 (族a/k4): epoch=2-val_rankic=0.0962.ckpt (val=0.0962)
+[analysis]   fold5 (族a/k5): epoch=0-val_rankic=0.1131.ckpt (val=0.1131)
+[analysis]   fold6 (族a/k6): epoch=2-val_rankic=0.0677.ckpt (val=0.0677)
+[analysis]   fold7 (族a/k7): epoch=3-val_rankic=0.0691.ckpt (val=0.0691)
+[analysis]   fold8 (族a/k8): epoch=1-val_rankic=0.1165.ckpt (val=0.1165)
+[analysis]   fold9 (族c/k1): epoch=9-val_rankic=0.1268.ckpt (val=0.1268)
+[analysis]   fold10 (族c/k2): epoch=4-val_rankic=0.1061.ckpt (val=0.1061)
+[analysis]   fold11 (族c/k3): epoch=3-val_rankic=0.0934.ckpt (val=0.0934)
+[analysis]   fold12 (族c/k4): epoch=5-val_rankic=0.0916.ckpt (val=0.0916)
+[analysis]   fold13 (族c/k5): epoch=5-val_rankic=0.1309.ckpt (val=0.1309)
+[analysis]   fold14 (族c/k6): epoch=4-val_rankic=0.0823.ckpt (val=0.0823)
+[analysis]   fold15 (族c/k7): epoch=2-val_rankic=0.1016.ckpt (val=0.1016)
+[analysis]   fold16 (族c/k8): epoch=0-val_rankic=0.1219.ckpt (val=0.1219)
+[analysis] 推演进度 80/3936 (最新 20250905)
+[analysis] 推演进度 160/3936 (最新 20250912)
+[analysis] 推演进度 240/3936 (最新 20250919)
+[analysis] 推演进度 320/3936 (最新 20250926)
+[analysis] 推演进度 400/3936 (最新 20251013)
+[analysis] 推演进度 480/3936 (最新 20251020)
+[analysis] 推演进度 560/3936 (最新 20251027)
+[analysis] 推演进度 640/3936 (最新 20251103)
+[analysis] 推演进度 720/3936 (最新 20251110)
+[analysis] 推演进度 800/3936 (最新 20251117)
+[analysis] 推演进度 880/3936 (最新 20251124)
+[analysis] 推演进度 960/3936 (最新 20251201)
+[analysis] 推演进度 1040/3936 (最新 20251208)
+[analysis] 推演进度 1120/3936 (最新 20251215)
+[analysis] 推演进度 1200/3936 (最新 20251222)
+[analysis] 推演进度 1280/3936 (最新 20251229)
+[analysis] 推演进度 1360/3936 (最新 20260107)
+[analysis] 推演进度 1440/3936 (最新 20260114)
+[analysis] 推演进度 1520/3936 (最新 20260121)
+[analysis] 推演进度 1600/3936 (最新 20260128)
+[analysis] 推演进度 1680/3936 (最新 20260204)
+[analysis] 推演进度 1760/3936 (最新 20260211)
+[analysis] 推演进度 1840/3936 (最新 20260226)
+[analysis] 推演进度 1920/3936 (最新 20260305)
+[analysis] 推演进度 2000/3936 (最新 20260312)
+[analysis] 推演进度 2080/3936 (最新 20260319)
+[analysis] 推演进度 2160/3936 (最新 20260326)
+[analysis] 推演进度 2240/3936 (最新 20260402)
+[analysis] 推演进度 2320/3936 (最新 20260410)
+[analysis] 推演进度 2400/3936 (最新 20260417)
+[analysis] 推演进度 2480/3936 (最新 20260424)
+[analysis] 推演进度 2560/3936 (最新 20260506)
+[analysis] 推演进度 2640/3936 (最新 20260513)
+[analysis] 推演进度 2720/3936 (最新 20260520)
+[analysis] 推演进度 2800/3936 (最新 20260527)
+[analysis] 推演进度 2880/3936 (最新 20260603)
+[analysis] 推演进度 2960/3936 (最新 20260610)
+[analysis] 推演进度 3040/3936 (最新 20260617)
+[analysis] 推演进度 3120/3936 (最新 20260625)
+[analysis] 推演进度 3200/3936 (最新 20260702)
+[analysis] 推演进度 3280/3936 (最新 20260709)
+[analysis] 推演进度 3360/3936 (最新 20260716)
+[analysis] 推演进度 3440/3936 (最新 20260723)
+[analysis] 推演进度 3520/3936 (最新 20260730)
+[analysis] 推演进度 3600/3936 (最新 20260806)
+[analysis] 推演进度 3680/3936 (最新 20260813)
+[analysis] 推演进度 3760/3936 (最新 20260820)
+[analysis] 推演进度 3840/3936 (最新 20260827)
+[analysis] 推演进度 3920/3936 (最新 20260903)
+[analysis] 推演进度 3936/3936 (最新 20260904)
+[analysis] 推演完成, 合并落盘 heads ...
+[analysis] heads 落盘完成: /autodl-fs/data/lingqiData/Model/V21/model_pred/2026q3/heads_a / /autodl-fs/data/lingqiData/Model/V21/model_pred/2026q3/heads_c
+[search] 家族组合 60 个 (A 30 + C 30)
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/Model/V21/analysis.py", line 600, in <module>
+    main()
+  File "/autodl-fs/data/lingqiData/Model/V21/analysis.py", line 505, in main
+    weight_search(verbose=True)
+  File "/autodl-fs/data/lingqiData/Model/V21/analysis.py", line 343, in weight_search
+    rows = [r for r in pool.imap_unordered(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/multiprocessing/pool.py", line 451, in <genexpr>
+    return (item for chunk in result for item in chunk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/multiprocessing/pool.py", line 873, in next
+    raise value
+  File "/autodl-fs/data/miniconda3/lib/python3.12/multiprocessing/pool.py", line 540, in _handle_tasks
+    put(task)
+  File "/autodl-fs/data/miniconda3/lib/python3.12/multiprocessing/connection.py", line 206, in send
+    self._send_bytes(_ForkingPickler.dumps(obj))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/miniconda3/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+AttributeError: Can't pickle local object 'weight_search.<locals>.run_one'

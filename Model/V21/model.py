@@ -845,7 +845,8 @@ def champion_backtest(score=None, split=True, verbose=True, proto=None):
     m, trades, equity = eng.run_backtest(sc, F, mkt, tds, tdi)
     ic = _eval_ic_long(score)
     out = {'full': m, 'ic': ic, 'n_trades': m['n_trades'] if m else 0,
-           'trades': trades, 'equity': equity, 'name_map': eng.load_name_map(),
+           'trades': trades, 'equity': equity,
+           'name_map': mkt.get('name_last', {}),
            'tds': tds, 'F': F}
     if split and m is not None:
         m1, _, _ = eng.run_backtest(sc, F, mkt, tds, tdi, window=('20250901', '20260227'))
