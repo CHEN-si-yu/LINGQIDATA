@@ -46,3 +46,16 @@
 [V22] label_ret_20d 标签 1619/1619 天
 [V22] label_ret_20d 有效行 1533258/1557478
 [V22] label_ret_20d fold1: train 1182815 / valid 28817
+[V22] label_ret_20d fold1: best_iter 45, valid l2 0.97023
+[V22] label_ret_20d fold1 推演 225 天落盘
+[V22] label_ret_20d fold2: train 1182815 / valid 28804
+[V22] label_ret_20d fold2: best_iter 156, valid l2 0.95650
+[V22] label_ret_20d fold2 推演 225 天落盘
+[V22] label_ret_20d fold3: train 1182815 / valid 28812
+[V22] label_ret_20d fold3: best_iter 34, valid l2 0.98713
+[V22] label_ret_20d fold3 推演 225 天落盘
+[V22] label_ret_20d fold4: train 1182815 / valid 28796
+[V22] label_ret_20d fold4: best_iter 22, valid l2 0.98752
+[V22] label_ret_20d fold4 推演 225 天落盘
+[V22] 集成 v22_label_ret_20d.fea: (225, 962) — DONE
+[V22] ALL DONE
