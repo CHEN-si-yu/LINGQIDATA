@@ -1,0 +1,69 @@
+# V21 — 长周期协议耦合模型单元 (双族 16 折, 从零训练)
+
+**V21 = 模型×策略耦合迭代第 1 号单元** (2026-09-05): 针对新目标协议
+`h20tr20_t2` (Top2 等权, 持有 ≤20 交易日, 自峰值移动止损 20%, 开盘先卖后买,
+真实净值口径含利润再投资) 把模型全部信号周期从 V20 的 1d/3d/5d 换到 5d/10d/20d。
+
+## 一、背景: 为什么需要 V21
+
+- Trading 迭代 (Model/Trading, 2026-09-05) 发现: 用 Trading 引擎 (开盘换仓,
+  1 份资金闭环, 真实净值含再投资) 回测, V20_ensw2 在 h20tr20_t2 协议上真实净值
+  **+352%** (Sharpe 3.47, H1/H2 +133%/+94%, T1/T2/T3 全正), 远超旧冠军协议
+  D01 (Top1 hold5+止损8%, 真实净值 +197%)。
+- 该协议平均持有 ~19 个交易日 → 打分信号瞄准 10d/20d 中周期收益更合理,
+  而 V20 的 heads 全部以 1d/3d/5d 标签训练 → 模型与策略错配。
+- 注意: 旧 Trading 报告 (SUMMARY_REPORT.md) 的 headline 数字用的是逐笔复利
+  `cum_trade` (对 2 仓策略假设每仓满额资金, 系统性高估); 本迭代统一改用
+  **真实净值 `cum_net`** (含利润再投资, engine.py 已修复 "盈利滞留现金" 问题)。
+
+## 二、V21 在训练什么 (16 折)
+
+| 全局 fold | 族 | 线性排序头 | 顶部分支主/辅目标 | 风格 |
+|---|---|---|---|---|
+| 1..8 | a | lin_5d / lin_10d / lin_20d | 5d 软Top 主 + 10d 软Top 辅 | k1-4 保守 / k5-8 激进 |
+| 9..16 | c | lin_5d / lin_10d / lin_20d | 10d 软Top 主 + 20d 软Top 辅 | k1-4 保守 / k5-8 激进 |
+
+- 每族 8 折 = 4 折划分 × 2 风格, 独立种子 (seed + k×1000); 划分与 V20 一致
+  (TEST 20250901~20260901 / TRAIN_END 20250809 / VALID 120 天 / PURGE 5)。
+- 结构: 线性排序头 (ridge_init.csv 热启动) + 独立小 MLP 顶部分支; 848 因子秩高斯化;
+  损失 = -(IC+RankIC)×{5d,10d,20d} + 软Top(主/辅) + ListNet + R-Drop +
+  时间衰减(hl=600d) + AdamW(warmup+cosine)。
+- checkpoint 选择 = 家族主周期 val_rankic (族 a → 5d, 族 c → 10d)。
+
+## 三、打分组装与权重搜索
+
+初始权重 (冠军配方映射到长周期):
+```
+ens21 = z(族a mix) + 2·z(族c mix)
+族a mix = Σ_{8折} z( 1·r5 + 0.25·r10 + 0·r20 + 2·top )
+族c mix = Σ_{8折} z( 1·r10 + 0·r20 + 0·r5 + 1·top )
+```
+`analysis.py` 内置权重搜索: 家族内 (w10, w20, wtop) × 跨族 wc 网格, 在
+h20tr20_t2 协议上以真实净值排序 (结果落盘 model_pred/2026q3/weight_search.csv);
+最终权重须同时通过 H1/H2 双正、T1-T3 无负段、平台区检查再定案。
+
+## 四、标准流程
+
+```bash
+cd /autodl-fs/data/lingqiData/Model/V21
+bash train.sh                 # 16 折全量训练 (6/6/4 三批, 120GB 内存铁律)
+python3 analysis.py           # 推演 heads → 权重搜索 → ens21 出榜+回测报告
+python3 analysis.py --no-search --skip-infer   # 跳过搜索/推演, 快速出报告
+```
+
+产物: `model_train/2026q3/fold{1..16}` → `model_pred/2026q3/heads_{a,c}/{r5,r10,r20,top}_f{1..8}.fea`
++ `score_ens23*.fea` + `weight_search.csv` + `model_pic/output.md`。
+
+## 五、评估口径 (三维)
+
+1. IC 层: RankIC(5d/10d/20d) + top_return (可交易池, Test 243 天; 20d 标签至 20260806)
+2. 策略层: Trading 引擎 h20tr20_t2 真实净值 (含成本/过滤/再投资) + 对照 D01/S2 协议
+3. 稳定性层: H1/H2 分半、T1/T2/T3 三等分、去最大 1-2 笔、bootstrap Sharpe CI、
+   无成本/1W 资金/无过滤变体、与 V20_ensw2 的对照 (同协议下必须显著更优才升级)
+
+## 六、与其它版本关系
+
+- V20: 冠军短周期单元 (1d/3d/5d), 旧协议 D01 与 h20tr20_t2 的对照基线。
+- V22: 长周期 GBDT (10d/20d 标签, 修复后的 V18 管线); V23: trail 轨迹标签 NN
+  (build_trail_label.py 构造, 与引擎逐笔验证一致) — 三者共同构成耦合迭代谱系。
+- 协议层: Model/Trading/engine.py (真实净值口径) 为统一评估引擎。

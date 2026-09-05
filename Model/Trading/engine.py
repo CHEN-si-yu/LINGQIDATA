@@ -258,6 +258,17 @@ def run_backtest(scores, cfg, market, tds=None, tdi=None,
                             continue
                     if sell_at == "close_overlap":
                         avail = budget  # 旧口径: 开盘买入按满额预算 (双倍资金场景)
+                    elif cfg.get("reinvest", True):
+                        # 利润再投资: 每仓目标 = 当前总净值/top_n (等权再平衡),
+                        # 单仓买入动用全部可用现金 (以目标额为上限) — 修复旧版
+                        # "盈利滞留现金不复投"导致的净值低估 (avg_cash 曾 ~33%)
+                        mv_other = sum(q["lots"] * LOT *
+                                       (open_m.get((t, q["code"]))
+                                        or close_m.get((t, q["code"]))
+                                        or q["buy_prc"])
+                                       for q in positions.values())
+                        eq_now = cash + mv_other
+                        avail = min(cash, eq_now / top_n)
                     else:
                         avail = min(cash, budget)
                     lots = int(avail // (LOT * bp))

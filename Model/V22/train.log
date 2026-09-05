@@ -1,0 +1,48 @@
+[V22] 848 factors
+[V22] 1619 个日期
+[V22] 1557478 rows 已读入
+[V22] 预处理 250/1619 天
+[V22] 预处理 500/1619 天
+[V22] 预处理 750/1619 天
+[V22] 预处理 1000/1619 天
+[V22] 预处理 1250/1619 天
+[V22] 预处理 1500/1619 天
+[V22] 特征矩阵 (1557478, 848) (5.3GB)
+[V22] label_ret_10d 标签 150/1619 天
+[V22] label_ret_10d 标签 300/1619 天
+[V22] label_ret_10d 标签 450/1619 天
+[V22] label_ret_10d 标签 600/1619 天
+[V22] label_ret_10d 标签 750/1619 天
+[V22] label_ret_10d 标签 900/1619 天
+[V22] label_ret_10d 标签 1050/1619 天
+[V22] label_ret_10d 标签 1200/1619 天
+[V22] label_ret_10d 标签 1350/1619 天
+[V22] label_ret_10d 标签 1500/1619 天
+[V22] label_ret_10d 标签 1619/1619 天
+[V22] label_ret_10d 有效行 1542875/1557478
+[V22] label_ret_10d fold1: train 1182815 / valid 28817
+[V22] label_ret_10d fold1: best_iter 67, valid l2 0.96966
+[V22] label_ret_10d fold1 推演 235 天落盘
+[V22] label_ret_10d fold2: train 1182815 / valid 28804
+[V22] label_ret_10d fold2: best_iter 58, valid l2 0.96983
+[V22] label_ret_10d fold2 推演 235 天落盘
+[V22] label_ret_10d fold3: train 1182815 / valid 28812
+[V22] label_ret_10d fold3: best_iter 20, valid l2 0.98899
+[V22] label_ret_10d fold3 推演 235 天落盘
+[V22] label_ret_10d fold4: train 1182815 / valid 28796
+[V22] label_ret_10d fold4: best_iter 28, valid l2 0.98882
+[V22] label_ret_10d fold4 推演 235 天落盘
+[V22] 集成 v22_label_ret_10d.fea: (235, 962) — DONE
+[V22] label_ret_20d 标签 150/1619 天
+[V22] label_ret_20d 标签 300/1619 天
+[V22] label_ret_20d 标签 450/1619 天
+[V22] label_ret_20d 标签 600/1619 天
+[V22] label_ret_20d 标签 750/1619 天
+[V22] label_ret_20d 标签 900/1619 天
+[V22] label_ret_20d 标签 1050/1619 天
+[V22] label_ret_20d 标签 1200/1619 天
+[V22] label_ret_20d 标签 1350/1619 天
+[V22] label_ret_20d 标签 1500/1619 天
+[V22] label_ret_20d 标签 1619/1619 天
+[V22] label_ret_20d 有效行 1533258/1557478
+[V22] label_ret_20d fold1: train 1182815 / valid 28817
