@@ -52,6 +52,9 @@ SCORE_SETS["V11_ensw2"] = "Model/V11/model_pred/2026q3/score_ens_w2.fea"
 SCORE_SETS["V18_f1"] = "Model/V18/model_pred/v18_f1.fea"
 SCORE_SETS["V18_f2"] = "Model/V18/model_pred/v18_f2.fea"
 SCORE_SETS["V20_ensw2"] = "Model/V20/model_pred/2026q3/score_ens_w2.fea"
+SCORE_SETS["V22_10d"] = "Model/V22/model_pred/v22_label_ret_10d.fea"
+SCORE_SETS["V22_20d"] = "Model/V22/model_pred/v22_label_ret_20d.fea"
+SCORE_SETS["V23_ens23"] = "Model/V23/model_pred/2026q3/score_ens23.fea"
 
 DEFAULT_CFG = dict(top_n=1, hold=1, no_repeat=False, exit_rank=None, min_hold=1,
                    stop_loss=None, take_profit=None, trail_pct=None,
