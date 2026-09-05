@@ -988,14 +988,12 @@ def rank_block(date, score, topn=10, tds=None, name_map=None):
         tds = load_trading_dates()
     top = score.loc[date].sort_values(ascending=False).head(topn)
     buy_dt = next_td(date, 1, tds)
-    sell_dt = next_td(buy_dt, HOLD_DAYS, tds) if buy_dt else None
     lines = [BAR,
-             '  打分模型: ens_w2 = z(族a mixA) + 2·z(族c r1+top)  (V20 自训 16 折)',
+             '  打分模型: ens24 = ens_w2 + w·z(10d/20d弱混合)  (V24 自训 16 折, 锐度主干+弱长周期)',
              f'  因子日期：{zh_date(date)} 收盘']
     if buy_dt:
-        lines.append(f'  冠军策略：{zh_date(buy_dt)} 开盘买入 Top1 → 持有 {HOLD_DAYS} 个交易日'
-                     f' ({(zh_date(sell_dt) if sell_dt else "?")} 收盘卖出); '
-                     f'持仓期收盘较买入价下跌 ≥ {STOP_LOSS:.0%} → 次日开盘止损')
+        lines.append(f'  目标策略：{zh_date(buy_dt)} 开盘买入 Top2 → 持有 ≤20 个交易日; '
+                     f'收盘较持仓期峰值下跌 ≥ 20% → 次日开盘卖出 (开盘先卖后买)')
     lines += [BAR, '',
               '  排名   代码        名称                  打分',
               '  ' + '-' * 37]
@@ -1015,14 +1013,14 @@ def decision_block(date, score, tds=None, name_map=None, holdings_path=None):
         tds = load_trading_dates()
     top = score.loc[date].sort_values(ascending=False)
     c1 = top.index[0]
+    c2 = top.index[1]
     buy_dt = next_td(date, 1, tds)
-    sell_dt = next_td(buy_dt, HOLD_DAYS, tds) if buy_dt else None
-    lines = [BAR, '  冠军策略指令 (Top1 单票, 5W 账户口径)',
+    lines = [BAR, '  目标策略指令 (Top2 双仓, 5W 账户口径)',
              f'  Top1: {c1}  {name_map.get(c1, "?")}   打分 {top[c1]:+.4f}',
-             f'  动作: {zh_date(buy_dt) if buy_dt else "?"} 开盘买入 (整手) '
-             f'→ 持有 {HOLD_DAYS} 个交易日 → '
-             f'{zh_date(sell_dt) if sell_dt else "?"} 收盘卖出',
-             f'  风控: 持仓期收盘较买入价下跌 ≥ {STOP_LOSS:.0%} → 次日开盘止损']
+             f'  Top2: {c2}  {name_map.get(c2, "?")}   打分 {top[c2]:+.4f}',
+             f'  动作: {zh_date(buy_dt) if buy_dt else "?"} 开盘买入 (整手, 各 ~2.5W) '
+             f'→ 持有 ≤20 个交易日',
+             f'  风控: 收盘较持仓期峰值下跌 ≥ 20% → 次日开盘卖出; 换仓日开盘先卖后买']
     if holdings_path and os.path.exists(holdings_path):
         try:
             st = _json.load(open(holdings_path, encoding='utf-8'))
