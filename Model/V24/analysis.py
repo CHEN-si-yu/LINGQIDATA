@@ -296,90 +296,41 @@ def ic_block(ic):
 
 
 def champion_log(score, names, verbose=True):
-    """冠军协议成交明细 (hold5s8-收盘卖, 含成本, 窗口 = 打分起点 ~ 最新因子日)。
+    """目标协议成交明细 (h20tr20_t2, Trading 引擎真实净值, 含成本)。
 
-    返回 (log_text, stats_dict, trades_df)。trades_df 为已实现成交; 若窗口末端存在
-    未到期持仓 (卖出日无价格) 则 log 末尾追加一行待定 (sell '-'), 累加收益冻结。
-    """
-    mod_engine = __import__('model', fromlist=['x'])._close_sell_backtest_module()
-    rb = mod_engine['run_backtest']
-    open_map, close_map, prev_close_map, amount_map, nm = mod_engine['load_prices']()
-    tds = mod_engine['load_calendar']()
-    F = dict(use_cost=True, exclude_st=True, exclude_limit_up=True,
-             buy_gap_limit=0.095, hold=HOLD_DAYS, stop_loss=STOP_LOSS)
-    w_start, w_end = str(score.index.min()), str(score.index.max())
-    m, trades, _ = rb(score, open_map, close_map, prev_close_map, nm,
-                      amount_map=amount_map, tds=tds,
-                      window_start=w_start, window_end=w_end, **F)
-
-    # 逐笔: 顺序 = 开仓时间; 累加收益 = 复利 (与冠军净累计口径一致)
-    tr = trades.sort_values('buy_dt').reset_index(drop=True)
-    cum = 0.0
-    rows = []
-    for _, r in tr.iterrows():
-        cum = (1.0 + cum) * (1.0 + r['net_pct'] / 100.0) - 1.0
-        rows.append((str(r['factor_dt']), str(r['buy_dt']), r['code'],
-                     r.get('name') or nm.get(r['code'], ''),
-                     float(r['score']), float(r['buy_prc']),
-                     str(r['sell_dt']), float(r['sell_prc']),
-                     r['net_pct'] / 100.0, cum))
-    realized = len(rows)
-    last_sell_dt = str(tr['sell_dt'].max()) if realized else w_start
-
-    # 待定持仓: 最后一个可开仓(买入价可得)且卖出日价格尚未出现的因子日
-    pending = None
-    factor_dates = [d for d in score.index if w_start <= str(d) <= w_end]
-    for d in factor_dates:
-        buy_dt = next_td(d, 1, tds)
-        if buy_dt is None or buy_dt <= last_sell_dt:
-            continue
-        code = score.loc[d].sort_values(ascending=False).index[0]
-        bp = open_map.get((buy_dt, code))
-        if bp is None:
-            continue
-        sell_dt = next_td(buy_dt, HOLD_DAYS, tds)
-        sp = close_map.get((sell_dt, code)) if sell_dt else None
-        if sp is not None:
-            continue            # 已能卖出 → 引擎应已实现, 非待定
-        pending = (str(d), buy_dt, code, names.get(code, '?'),
-                   float(score.loc[d, code]), float(bp), sell_dt)
-        break                    # 单持仓: 仅最近一笔
-    n_pending = 1 if pending else 0
-    eq_series = pd.Series([r[9] for r in rows], dtype=float)  # 复利权益轨迹
-
-    L = []
-    L.append(SEP)
-    L.append(f'  Trade Log — ens_w2 冠军协议 hold{HOLD_DAYS}s{int(STOP_LOSS*100)} 收盘卖 '
-             f'| Top 1 | 含成本 | {w_start} ~ {w_end}')
-    L.append(SEP)
-    L.append(' FactorDt   BuyDt     Code     Name      Score   BuyPrc   SellDt  '
-             'SellPrc   Net%   累加收益(净,复利)')
+    返回 (log_text, stats_dict, trades_df)。"""
+    from model import _trading_engine, _df_to_scores
+    eng = _trading_engine()
+    mkt = eng.load_market()
+    tds, tdi = eng.load_calendar()
+    F = dict(top_n=2, hold=20, trail_pct=0.20)
+    sc = _df_to_scores(score)
+    m, trades, eq = eng.run_backtest(sc, F, mkt, tds, tdi)
+    tr = trades.sort_values('buy_dt').reset_index(drop=True) if trades is not None \
+        else pd.DataFrame()
+    L = [SEP,
+         '  Trade Log — ens24/ens_w2 目标协议 Top2+持有≤20日+移动止损20% '
+         '| 开盘换仓 | 含成本 | ' + str(score.index.min()) + ' ~ ' + str(score.index.max()),
+         SEP]
+    L.append(' BuyDt     SellDt    Code     Name       BuyPrc   SellPrc  '
+             'Hold  Net%     Reason')
     L.append('-' * 100)
-    for fd, bd, code, name, sc, bp, sd, sp, net, c in rows:
-        L.append(f' {fd:<10}{bd:<10}{code:<7}{name:<9}{sc:+8.2f}{bp:9.2f}  '
-                 f'{sd:<9}{sp:9.2f}  {net:+7.2%}  {c:+9.2%}')
-    if pending:
-        fd, bd, code, name, sc, bp, sd = pending
-        L.append(f' {fd:<10}{bd:<10}{code:<7}{name:<9}{sc:+8.2f}{bp:9.2f}  '
-                 f'{sd:<9}{"-":>9}  {"-":>7}  {cum:+9.2%}')
+    for _, r in tr.iterrows():
+        L.append(f' {r["buy_dt"]:<10}{r["sell_dt"]:<10}{r["code"]:<7}'
+                 f'{r.get("name") or names.get(r["code"], ""):<9}'
+                 f'{r["buy_prc"]:9.2f} {r["sell_prc"]:9.2f} '
+                 f'{int(r["hold_days"]):>4} {r["net_pct"]:+8.2%}  {r["reason"]}')
     L.append(SEP)
-    win = int(np.sum(tr['net_pct'] > 0)) if realized else 0
-    dr_mean = float(np.mean(tr['net_pct'] / 100.0)) if realized else 0.0
-    eq_maxdd = 0.0
-    if realized:
-        peak = np.maximum.accumulate(eq_series.values)
-        eq_maxdd = float((eq_series.values - peak).min())
-    L.append(f'Realized: {realized}  |  Pending: {n_pending}')
-    L.append(f'Cumulative(净,复利): {cum:+.4f} ({cum*100:+.2f}%)  |  '
-             f'Win rate: {win}/{realized} ({win/max(1,realized)*100:.1f}%)  |  '
-             f'Mean(笔均): {dr_mean:+.5f}  |  MaxDD: 见下方 Summary (官方口径)')
-    stats = dict(realized=realized, pending=n_pending, cum=cum,
-                 win=win, maxdd=eq_maxdd, mean=dr_mean)
+    if m is not None:
+        L.append(f'Realized: {m["n_trades"]}  |  真实净值: {m["cum_net"]:+.2%}  |  '
+                 f'Win rate: {m["win_rate"]:.1%}  |  Avg hold: {m["avg_hold"]:.1f} 日')
+    stats = dict(realized=m['n_trades'] if m else 0, cum=m['cum_net'] if m else 0.0,
+                 win=m['win_rate'] if m else 0.0)
     return '\n'.join(L), stats, tr
 
 
 def figure_01(score, trades, out_path, title_window):
-    """V9 风格图: 左 = 累计净收益曲线, 右 = 逐笔净收益直方 (model_pic/figure_01.png)。"""
+    """V9 风格图: 左 = 净值曲线 (Trading 引擎 equity), 右 = 逐笔净收益直方。"""
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -387,6 +338,21 @@ def figure_01(score, trades, out_path, title_window):
     except Exception as e:
         print(f'[analysis] matplotlib 不可用, 跳过出图: {e}')
         return
+    from model import _trading_engine, _df_to_scores
+    eng = _trading_engine()
+    mkt = eng.load_market()
+    tds, tdi = eng.load_calendar()
+    F = dict(top_n=2, hold=20, trail_pct=0.20)
+    m, trades, eq = eng.run_backtest(_df_to_scores(score), F, mkt, tds, tdi)
+    if m is None:
+        return
+    eqd = eq['equity'] / eq['equity'].iloc[0] - 1
+    fig, axes = plt.subplots(1, 2, figsize=(16, 5))
+    axes[0].plot(range(len(eqd)), eqd.values, color='#d62728', lw=1.6)
+    axes[0].axhline(0, color='gray', lw=0.8, ls='--')
+    axes[0].set_title(f'True Equity (Top2 hold≤20 trail20%) | {title_window}', fontsize=13)
+    axes[0].set_xlabel('Trading day'); axes[0].set_ylabel('Cumulative Net Return')
+    axes[0].grid(alpha=0.3)
     tr = trades.sort_values('buy_dt').reset_index(drop=True)
     if len(tr) == 0:
         return
@@ -496,25 +462,24 @@ def main():
     s = stats
     f_ = bt['full']
     text.append(SEP2)
-    text.append(f'  Recent Summary | ens_w2 冠军协议 hold{HOLD_DAYS}s'
-                f'{int(STOP_LOSS*100)} 收盘卖 | 含成本 | 官方 Test 集窗口')
+    text.append('  Recent Summary | ens24/ens_w2 + Top2 持有≤20日+移动止损20% '
+                '| 开盘换仓 | 含成本 | 官方 Test 窗口')
     text.append(SEP2)
     text.append(f'  Test 窗口  : {TEST_START} ~ {TEST_END}  (243 交易日, 严格样本外)')
-    text.append(f'  Net Cum    : {f_["净累计%"]:+.2f}%  |  净年化 {f_["净年化%"]:+.2f}%  |  '
-                f'Sharpe {f_["Sharpe"]:.3f}')
-    text.append(f'  MaxDD      : {f_["MaxDD%"]:+.2f}%  |  胜率 {f_["胜率%"]:.1f}%  '
-                f'({s["win"]}/{s["realized"]} 已实现)  |  成本拖累 {f_["成本拖累%"]:.2f}%')
-    text.append(f'  累计(复利) : 至 {score.index.max()} 因子日 = {s["cum"]*100:+.2f}% '
-                f'(含 {s["pending"]} 笔待定未计入)')
-    if not args.no_split:
-        h1, h2 = bt['h1']['净累计%'], bt['h2']['净累计%']
-        text.append(f'  分半 H1/H2 : {TEST_START}~20260227 {h1:+.2f}%  |  '
-                    f'20260302~{TEST_END} {h2:+.2f}%')
+    if f_ is not None:
+        text.append(f'  真实净值    : {f_["cum_net"]:+.2%}  |  逐笔复利 {f_["cum_trade"]:+.2%}'
+                    f'  |  Sharpe {f_["sharpe"]:.3f}')
+        text.append(f'  MaxDD      : {f_["maxdd"]:+.2%}  |  胜率 {f_["win_rate"]:.1%}  |  '
+                    f'交易 {f_["n_trades"]}  |  成本拖累 {f_["cost_drag"]:+.2%}')
+        text.append(f'  平均持有    : {f_["avg_hold"]:.1f} 交易日  |  资金闲置 '
+                    f'{f_["avg_cash_ratio"]:.1%}')
+        if not args.no_split:
+            h1, h2 = bt['h1'], bt['h2']
+            if h1 is not None and h2 is not None:
+                text.append(f'  分半 H1/H2 : 20250901~20260227 {h1["cum_net"]:+.2%}  |  '
+                            f'20260302~20260901 {h2["cum_net"]:+.2%}')
     text.append(SEP2)
     text.append('')
-    if s['pending']:
-        text.append(f'[Pending] {s["pending"]} 笔持仓未到期 (卖出日价格尚未出现): 见 Trade Log 末行')
-        text.append('')
     text.append(decision_block(latest, score, tds=tds, name_map=name_map,
                                holdings_path=os.path.join(PROJECT_ROOT,
                                                           'Model/V11/holdings.json')))
@@ -525,7 +490,7 @@ def main():
     sys.stdout.flush()
 
     if not args.no_md:
-        md_dir = os.environ.get('V20_MD_DIR') or os.path.join(HERE, 'model_pic')
+        md_dir = os.environ.get('V24_MD_DIR') or os.path.join(HERE, 'model_pic')
         try:
             os.makedirs(md_dir, exist_ok=True)
             with open(os.path.join(md_dir, 'output.md'), 'w', encoding='utf-8') as f:
@@ -535,8 +500,8 @@ def main():
             print(f'\n[analysis] 报告已写入: {md_dir}/output.md (+figure_01.png)')
         except OSError as e:
             print(f'\n[analysis] 报告写入 {md_dir} 失败 (跳过): {e}')
-            print('  若需更新 V20/model_pic/*, 请以文件拥有者运行本脚本, 或设置 '
-                  'V20_MD_DIR 指向可写目录')
+            print('  若需更新 V24/model_pic/*, 请以文件拥有者运行本脚本, 或设置 '
+                  'V24_MD_DIR 指向可写目录')
 
 
 if __name__ == '__main__':

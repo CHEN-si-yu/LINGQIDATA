@@ -745,7 +745,8 @@ CACHE_SCORE = MODEL_PRED + '/score_ens_w2.fea'
 CALENDAR_PATH = PROJECT_ROOT + 'data/calendar.parquet'
 PRICES_PATH = PROJECT_ROOT + 'data/daily_adj.parquet'
 FAC_PATH = fac_path + fac_name + '.fea'
-V11_STRAT = PROJECT_ROOT + 'Model/V11/strat_backtest.py'   # 冠军回测引擎 (全版本共用)
+V11_STRAT = PROJECT_ROOT + 'Model/V11/strat_backtest.py'   # 旧回测引擎 (历史对照)
+TRADING_ENGINE = PROJECT_ROOT + 'Model/Trading/engine.py'  # 新协议回测引擎 (真实净值口径)
 V11_HOLDINGS = PROJECT_ROOT + 'Model/V11/holdings.json'    # 纸面账户状态 (只读提示)
 
 HOLD_DAYS = 5          # 冠军协议: 持有交易日数
@@ -891,50 +892,89 @@ def _close_sell_backtest_module():
     return mod
 
 
-def champion_backtest(score=None, split=True, verbose=True):
-    """冠军协议回测 (hold5 + stop8% + 收盘卖 + 含成本) 及可选 H1/H2 分半。
+def champion_backtest(score=None, split=True, verbose=True, proto=None):
+    """目标协议回测 (h20tr20_t2: Top2 等权, 持有≤20 交易日, 自峰值移动止损 20%,
+    开盘先卖后买, 含成本+过滤+利润再投资 — Trading 引擎真实净值口径) 及 H1/H2 分半。
 
-    返回 out, 含: full/h1/h2 (summarize 指标), ic, n_trades, trades (成交明细
-    DataFrame), daily (逐笔日收益序列) 与 name_map (日志/出图用)。"""
+    返回 out: full (metrics), ic, n_trades, trades, equity, name_map, F。"""
     if score is None:
         score = score_ens_w2()
-    mod = _close_sell_backtest_module()
-    rb, summ = mod['run_backtest'], mod['summarize']
-    open_map, close_map, prev_close_map, amount_map, name_map = mod['load_prices']()
-    tds = mod['load_calendar']()
-    F = dict(use_cost=True, exclude_st=True, exclude_limit_up=True,
-             buy_gap_limit=0.095, hold=HOLD_DAYS, stop_loss=STOP_LOSS)
-
-    def one(ws=None, we=None):
-        kw = {}
-        if ws:
-            kw['window_start'] = ws
-        if we:
-            kw['window_end'] = we
-        m, tr, dr = rb(score, open_map, close_map, prev_close_map, name_map,
-                       amount_map=amount_map, tds=tds, **F, **kw)
-        return m, tr, dr
-
-    full, trades, daily = one()
-    ic = mod['eval_ic'](score)
-    out = {'full': summ(full), 'ic': ic, 'n_trades': len(trades),
-           'trades': trades, 'daily': daily, 'name_map': name_map,
+    eng = _trading_engine()
+    F = dict(top_n=2, hold=20, trail_pct=0.20)
+    if proto:
+        F = {**F, **proto}
+    mkt = eng.load_market()
+    tds, tdi = eng.load_calendar()
+    sc = _df_to_scores(score)
+    m, trades, equity = eng.run_backtest(sc, F, mkt, tds, tdi)
+    ic = _eval_ic_long(score)
+    out = {'full': m, 'ic': ic, 'n_trades': m['n_trades'] if m else 0,
+           'trades': trades, 'equity': equity,
+           'name_map': mkt.get('name_last', {}),
            'tds': tds, 'F': F}
-    if split:
-        h1, _, _ = one(ws=TEST_START, we='20260227')
-        h2, _, _ = one(ws='20260302', we=TEST_END)
-        out['h1'], out['h2'] = summ(h1), summ(h2)
-    if verbose:
-        s = out['full']
-        print('===== 冠军策略回测 (hold5 + stop8% + 收盘卖, 含成本) =====')
-        print(f"  RankIC={ic['RankIC']:+.4f}  RankICIR={ic['RankICIR']:+.4f}  "
-              f"top_return={ic['top_return']:+.4f}")
-        print(f"  净累计 {s['净累计%']:>8.2f}%  |  净年化 {s['净年化%']:>7.2f}%  |  "
-              f"Sharpe {s['Sharpe']:>6.3f}  |  MaxDD {s['MaxDD%']:>7.2f}%  |  "
-              f"胜率 {s['胜率%']:>5.1f}%  |  交易 {s['交易数']}  |  成本拖累 {s['成本拖累%']:>6.2f}%")
-        if split:
-            print(f"  分半 H1 ({TEST_START}~20260227): {out['h1']['净累计%']:>8.2f}%   |   "
-                  f"H2 (20260302~{TEST_END}): {out['h2']['净累计%']:>8.2f}%")
+    if split and m is not None:
+        m1, _, _ = eng.run_backtest(sc, F, mkt, tds, tdi,
+                                    window=('20250901', '20260227'))
+        m2, _, _ = eng.run_backtest(sc, F, mkt, tds, tdi,
+                                    window=('20260302', '20260901'))
+        out['h1'], out['h2'] = m1, m2
+    if verbose and m is not None:
+        print('===== 目标协议回测 (h20tr20_t2: Top2 + 持有≤20日 + 移动止损20%, 开盘换仓, 含成本) =====')
+        print(f"  RankIC1/5/10/20={ic.get('ic1', np.nan):+.4f}/{ic.get('ic5', np.nan):+.4f}/"
+              f"{ic.get('ic10', np.nan):+.4f}/{ic.get('ic20', np.nan):+.4f}  "
+              f"top10d_ret={ic.get('top10', np.nan):+.4f}")
+        print(f"  真实净值 {m['cum_net']:>8.2%}  |  逐笔复利 {m['cum_trade']:>8.2%}  |  "
+              f"Sharpe {m['sharpe']:>6.3f}  |  MaxDD {m['maxdd']:>7.2%}  |  "
+              f"胜率 {m['win_rate']:>5.1%}  |  交易 {m['n_trades']}  |  "
+              f"成本拖累 {m['cost_drag']:>6.2%}")
+        if split and out['h1'] is not None:
+            print(f"  分半 H1 (20250901~20260227): {out['h1']['cum_net']:>8.2%}   |   "
+                  f"H2 (20260302~20260901): {out['h2']['cum_net']:>8.2%}")
+    return out
+
+
+def _trading_engine():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('trading_engine', TRADING_ENGINE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _df_to_scores(df):
+    ranked, scores, top1 = {}, {}, {}
+    for d in df.index:
+        row = df.loc[d].dropna()
+        scores[d] = row.to_dict()
+        ranked[d] = row.sort_values(ascending=False).index.tolist()
+        top1[d] = float(row.max()) if len(row) else np.nan
+    return dict(scores=scores, ranked=ranked, top1=top1, dates=sorted(scores.keys()))
+
+
+def _eval_ic_long(score):
+    """多周期 IC 评估: RankIC(1d/5d/10d/20d) + top_return(10d), 可交易池。"""
+    buy = params.buyable_mask
+    out = {}
+    for h, df in (('1', params.ret_1d_data), ('5', params.ret_5d_data),
+                  ('10', params.ret_10d_data), ('20', params.ret_20d_data)):
+        ics, tops = [], []
+        for date in score.index:
+            if date not in df.index:
+                continue
+            s = score.loc[date]
+            lab = df.loc[date].reindex(s.index)
+            if date in buy.index:
+                b = pd.to_numeric(buy.loc[date].reindex(s.index), errors='coerce')
+            else:
+                b = pd.Series(np.nan, index=s.index)
+            tradable = b.gt(0.5) & lab.notna()
+            if tradable.sum() < MIN_DAY_STOCKS:
+                continue
+            ics.append(s[tradable].rank().corr(lab[tradable].rank()))
+            top_codes = s[tradable].sort_values(ascending=False).index[:1]
+            tops.append(lab[top_codes].mean())
+        out[f'ic{h}'] = float(np.mean(ics)) if ics else np.nan
+        out[f'top{h}'] = float(np.mean(tops)) if tops else np.nan
     return out
 
 
