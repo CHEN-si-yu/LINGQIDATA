@@ -37,7 +37,9 @@ CONFIG_PAIR = [
     ("A_V20h20", "V20_ensw2", dict(top_n=2, hold=20, trail_pct=0.20), 0.5),
     ("B_V11D01", "V11_ensw2", dict(top_n=1, hold=5, stop_loss=0.08), 0.5),
 ]
-CONFIG_TRIPLE = CONFIG_PAIR[:2] + [
+CONFIG_TRIPLE = [
+    ("A_V20h20", "V20_ensw2", dict(top_n=2, hold=20, trail_pct=0.20), 1 / 3),
+    ("B_V11D01", "V11_ensw2", dict(top_n=1, hold=5, stop_loss=0.08), 1 / 3),
     ("C_V22S2", "V22_20d", dict(top_n=2, hold=None, exit_rank=300, min_hold=2,
                                 stop_loss=0.08, trail_pct=0.15), 1 / 3),
 ]
