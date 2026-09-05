@@ -147,7 +147,8 @@ def main():
             ok = ~np.isnan(v)
             rg = pd.Series(w[ok]).rank().to_numpy(np.float64)
             rg = ((rg - rg.mean()) / rg.std()).astype(np.float32)
-            label_rg[dm][ok] = rg
+            pos = np.flatnonzero(dm)[ok]   # ok 相对当日行, 先取当日全局位置 (坑11: 链式索引静默丢弃)
+            label_rg[pos] = rg
         print(f'[V18] 标签 {min(i + BATCH_DAYS, len(dates_u))}/{len(dates_u)} 天',
               flush=True)
     print('[V18] 标签处理完成', flush=True)
