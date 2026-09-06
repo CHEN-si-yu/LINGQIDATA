@@ -114,7 +114,7 @@ STYLE_CONS = {
     'LISTNET_TAU_FRAC': 0.15,
     'LISTNET_K': 20,
     'TOP_DOWN_WEIGHT': 0.2,   # V25: 预测 Top-k 内未来亏损惩罚 (下行不对称)
-    'TOP_DOWN_K_FRAC': 0.05,
+    'TOP_DOWN_K_FRAC': 0.8,   # 温度系数 (温和, 梯度丰富)
 }
 STYLE_AGGR = {
     'RANK_W1': 0.5,
@@ -127,7 +127,7 @@ STYLE_AGGR = {
     'LISTNET_TAU_FRAC': 0.10,
     'LISTNET_K': 10,
     'TOP_DOWN_WEIGHT': 1.0,   # V25: 激进族下行惩罚更重 (针对 trail 深亏簇)
-    'TOP_DOWN_K_FRAC': 0.03,
+    'TOP_DOWN_K_FRAC': 0.4,   # 激进族更集中
 }
 
 
@@ -350,16 +350,22 @@ def rank_loss(preds, y_rg, w):
 
 def top_loss(preds, y_rg, y_winsor, w_ret, tau_ret, w_ln, tau_ln, k_ln,
              w_down=0.0, k_down_frac=0.05):
-    """V25: 原 soft-top + listnet 之外, 增加"下行不对称惩罚":
-    对当前被预测进 Top-k 的股票, 若其未来标签为负 (将亏损), 施加与亏损
-    幅度成比例的惩罚 → 抑制"高排位但实际会深跌"的顶部误选 (冻结慢腿策略
-    的亏损主要来自此类 trail 深亏簇与排名退出负单)。"""
+    """V25: 原 soft-top + listnet 之外, 增加"下行不对称惩罚"(可微 softmax 版):
+    对当前被预测排前的股票, 若其未来标签为负 (将亏损), 按"softmax 预测权重 ×
+    亏损幅度"惩罚 → 抑制"高排位但实际会深跌"的顶部误选 (冻结慢腿策略的亏损
+    主要来自此类 trail 深亏簇与排名退出负单)。注: 硬 topk 索引不可微 (梯度为
+    0, 改动惰性), 故用 softmax(2·z(preds)) 近似 top 集中权重, 全链路可微。"""
     ret = _soft_top_ret(preds, y_rg, tau_ret)
     ln = _listnet_topk(preds, y_winsor, k_ln, tau_ln)
     if w_down > 0:
-        kd = max(5, int(k_down_frac * len(preds)))
-        down_idx = torch.topk(preds, kd).indices
-        down = (-y_winsor.clamp(max=0))[down_idx].mean()
+        # 温和温度 (k_down_frac×std, 取值 ~0.4-0.8 → 梯度丰富区; 过锐会因
+        # 单点主导 softmax 自抵消而梯度恒 0) 的"预测权重 × 未来亏损"惩罚:
+        # 被预测排前的股票若将亏损, 其打分被拉下; 赢家与低预测股票不受罚。
+        p = preds.reshape(-1)
+        yneg = (-y_winsor.reshape(-1)).clamp(min=0)   # 未来亏损幅度 (赢家为 0)
+        tau = k_down_frac * p.std().detach().clamp_min(1e-6)
+        wgt = torch.softmax((p - p.mean()) / tau, dim=0)
+        down = (wgt * yneg).sum()
         return -w_ret * ret + w_ln * ln + w_down * down, ret, ln, down
     return -w_ret * ret + w_ln * ln, ret, ln, torch.zeros_like(ret)
 
@@ -496,7 +502,7 @@ class DLLitModule(LightningModule):
                 cfg['LISTNET_WEIGHT'], cfg['LISTNET_TAU_FRAC'],
                 cfg['LISTNET_K'],
                 cfg.get('TOP_DOWN_WEIGHT', 0.0),
-                cfg.get('TOP_DOWN_K_FRAC', 0.05))
+                cfg.get('TOP_DOWN_K_FRAC', 0.8))
             # 顶部分支辅助目标 (族 a: 5d / 族 c: 1d 软Top)
             ltop5 = 0.0
             if cfg['TOP_AUX_WEIGHT'] > 0:
