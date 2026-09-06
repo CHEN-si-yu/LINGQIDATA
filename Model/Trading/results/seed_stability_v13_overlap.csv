@@ -1,0 +1,11 @@
+kind,pair,value,note
+top1_jaccard,V13_allz|V13b_allz,0.06172839506172839,同日全同占比 6.2%
+top1_jaccard,V13_allz|V13c_allz,0.04526748971193416,同日全同占比 4.5%
+top1_jaccard,V13b_allz|V13c_allz,0.024691358024691357,同日全同占比 2.5%
+top1_triple_same,ALL,0.00823045267489712,三者同日 Top1 全同
+trade_jaccard,V13_allz|V13b_allz,0.0,S7_h10_tr12_t1 成交 0 笔共同
+ret_corr,V13_allz|V13b_allz,0.2557317348527931,S7_h10_tr12_t1 日净值收益相关
+trade_jaccard,V13_allz|V13c_allz,0.04081632653061224,S7_h10_tr12_t1 成交 2 笔共同
+ret_corr,V13_allz|V13c_allz,0.3036975566246607,S7_h10_tr12_t1 日净值收益相关
+trade_jaccard,V13b_allz|V13c_allz,0.0,S7_h10_tr12_t1 成交 0 笔共同
+ret_corr,V13b_allz|V13c_allz,0.32400468776689323,S7_h10_tr12_t1 日净值收益相关

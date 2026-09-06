@@ -1,0 +1,12 @@
+kind,pair,value,note
+top2_jaccard,V20_ensw2|V20b_ensw2,0.0823045267489712,同日全同占比 0.8%
+top2_jaccard,V20_ensw2|V20c_ensw2,0.08093278463648833,同日全同占比 1.6%
+top2_jaccard,V20b_ensw2|V20c_ensw2,0.1083676268861454,同日全同占比 2.9%
+top2_triple_same,ALL,0.00411522633744856,三者同日 Top2 全同
+top2_triple_common,ALL,0.0411522633744856,三者公共成员 0~2 均值
+trade_jaccard,V20_ensw2|V20b_ensw2,0.0196078431372549,h20tr20_t2 成交 1 笔共同
+ret_corr,V20_ensw2|V20b_ensw2,0.33940049331169514,h20tr20_t2 日净值收益相关
+trade_jaccard,V20_ensw2|V20c_ensw2,0.08333333333333333,h20tr20_t2 成交 4 笔共同
+ret_corr,V20_ensw2|V20c_ensw2,0.41914550715773585,h20tr20_t2 日净值收益相关
+trade_jaccard,V20b_ensw2|V20c_ensw2,0.04,h20tr20_t2 成交 2 笔共同
+ret_corr,V20b_ensw2|V20c_ensw2,0.522154601967994,h20tr20_t2 日净值收益相关
