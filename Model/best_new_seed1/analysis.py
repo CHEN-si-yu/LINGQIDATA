@@ -1,608 +1,1139 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-analysis.py — best_new_seed1 推演/回测/最终结果入口 (对 best 自训的 16 折 checkpoint 工作)
+import sys, os, atexit
 
-使命: 用 model.py 定义的结构 + run.py/train.sh 训练出的 16 个 checkpoint,
-全窗口逐日推演各头打分 → 组装冠军 ens_w2 → 输出**V9 风格完整报告**:
-  1) Test 集打分 (RankIC/IR/top_return)
-  2) 最新模型打分 Top 推荐 (最近 N 个交易日排行榜块, 默认 10, 增量滑动到最新因子日)
-  3) Trade Log — 冠军协议成交明细 (hold5s8-收盘卖, 含成本; 含逐笔净收益 + 累加收益,
-     随交易日推进增量更新, 末尾为当前待定持仓行)
-  4) Summary / 分半 / Pending 说明
-  5) 冠军策略指令 (Top1 行动)  +  model_pic/figure_01.png (累计收益+日收益图, 同 V9 风格)
+# ============================================================
+# Setup: output redirection + plt.show → savefig
+# ============================================================
 
-用法:
-  python3 analysis.py                  # 出完整 V9 风格报告 (输出到 stdout 与 model_pic/output.md)
-  python3 analysis.py --days 3         # 推荐块数量 (默认 10)
-  python3 analysis.py --date 20260902  # 只看指定因子日
-  python3 analysis.py --top 5          # 每块榜单长度 (默认 10)
-  python3 analysis.py --update         # 强制重推最近 10 个交易日
-  python3 analysis.py --skip-infer     # 跳过推演 (直接用现有 heads)
-  python3 analysis.py --no-md          # 不写 model_pic/output.md (也不出图)
-"""
-import argparse
-import glob
-import os
-import re
-import sys
-import warnings
+# ── Output directory ──
+PIC_DIR = './model_pic'
+os.makedirs(PIC_DIR, exist_ok=True)
 
-import numpy as np
-import pandas as pd
+# ── Figure counter for auto-naming saved images ──
+_fig_counter = [0]  # mutable counter so nested calls work
+
+# ── Tee: duplicate print output to both stdout and a .md file ──
+class _Tee:
+    """Write to both the real stdout and a markdown log file."""
+    def __init__(self, filepath):
+        self.file = open(filepath, "w", encoding="utf-8")
+        self.stdout = sys.stdout  # keep reference to *real* stdout
+    def write(self, message):
+        self.stdout.write(message)
+        self.file.write(message)
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
+    def close(self):
+        self.file.close()
+
+# ── Activate output capture ──
+_md_path = os.path.join(PIC_DIR, 'output.md')
+_tee = _Tee(_md_path)
+_real_stdout = sys.stdout  # capture real stdout before replacement below
+sys.stdout = _tee
+
+# ── Restore stdout & close .md file on exit ──
+def _cleanup():
+    if sys.stdout is _tee:
+        sys.stdout = _tee.stdout  # restore real stdout
+    _tee.close()
+atexit.register(_cleanup)
+
+# ── Monkey-patch plt.show() → plt.savefig() ──
+import matplotlib.pyplot as _plt
+_original_show = _plt.show
+def _savefig_show(*args, **kwargs):
+    """Replace plt.show() with savefig to PIC_DIR/."""
+    _fig_counter[0] += 1
+    fname = os.path.join(PIC_DIR, f"figure_{_fig_counter[0]:02d}.png")
+    _plt.savefig(fname, dpi=150, bbox_inches="tight")
+    # Use original stdout so this message is NOT double-logged in .md
+    _real_stdout.write(f"[Figure saved] {fname}\n")
+    _real_stdout.flush()
+    _plt.close()
+_plt.show = _savefig_show
+
+# ======================================================================
+# Cell 0 [code]
+# ======================================================================
+import re, os, sys, glob, warnings, gc
+
+import numpy as np, pandas as pd
+import pyarrow as pa, pyarrow.feather as pf, pyarrow.compute as pc
+
 import torch
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+# ======================================================================
+# Cell 1 [code]
+# ======================================================================
+# 从 model.py 导入共享配置（路径、因子名、标签名、预加载数据、数据划分边界）
+from model import (PROJECT_ROOT, root_path, fac_path, fac_name, params,
+                   PredictModel, TEST_START, TEST_END)
 
-from model import (PROJECT_ROOT, root_path, SEASON, MODEL_PRED, HEADS_A, HEADS_C,  # noqa: E402
-                   CACHE_SCORE, FAC_PATH, TEST_START, TEST_END, HOLD_DAYS, STOP_LOSS,
-                   fold_spec, N_FOLD_PER_FAMILY, TOTAL_FOLDS, PredictModel,
-                   load_trading_dates, load_name_map, score_ens_w2,
-                   champion_backtest, rank_block, decision_block,
-                   latest_reportable_date, heads_last_date, next_td)
+# ── 推演/打分/回测配置 (与 model.py 数据划分对齐) ──
+# 所有打分与回测均基于 Test 集合这一时间段 (20250901 ~ 20260901, 严格样本外)
+start = TEST_START          # 打分/回测窗口起点 = Test 集合起点 (含)
+END = TEST_END              # 打分/回测窗口终点 = Test 集合终点 (含)
+SEASON = '2026q3'           # checkpoint 目录: model_train/{SEASON}/foldN
+TOP_N = 1                   # 回测买入股票数量（trade log 展示用）
+EXCLUDE_LIMIT_UP = False    # 是否排除涨停板（factor日涨幅>=9.5%，历史保留选项，默认关闭）
+# 回测持仓天数 (策略口径): 1 = 单日换手, P&L 用正确的 1d 收益 (open[t+2]/open[t+1]-1) 计算
+LABEL_HORIZON_DAYS = 1
 
-# ============================================================
-# 配置
-# ============================================================
-MODEL_TRAIN = rf'{root_path}/model_train/{SEASON}'
-MODEL_TEST = rf'{root_path}/model_test'
-FEATURE_MAP = os.path.join(MODEL_TEST, 'feature_map.fea')
-TAIL_DAYS = 10          # --update 时重推的天数
-DEFAULT_DAYS = 10       # 推荐块滑动窗口 (同 V9: 最近 10 个交易日)
-SEP = '=' * 100
-SEP2 = '=' * 55
-BAR = '─' * 60
+# 执行可行性过滤（当前关闭: Top 推荐与 Trade Log 均按模型裸打分取 TopN, 不考虑流动性等过滤;
+# 如需过滤, 恢复 EXCLUDE_ST=True / BUY_GAP_LIMIT=0.095 / MIN_AMOUNT=5e7）
+EXCLUDE_ST = False          # 排除 ST/退市整理股（涨跌幅限制不同、退市风险、机构禁买）
+BUY_GAP_LIMIT = None        # 买入日开盘相对昨收跳空 >= 9.5% 视为一字板不可成交, 跳过
+MIN_AMOUNT = None           # 买入日成交额下限（元, 5000万以下流动性不足）
 
+# 分散组合统计 —— 在 Top1 trade log 之外, 汇总展示多档 Top-N 与 Top 分数带等权组合
+MULTI_TOPN = [5, 10, 20]    # 额外的 Top-N 等权档位
+BAND_FRACS = [0.01, 0.05, 0.10]  # Top 分数带等权: 前 1% / 5% / 10%
+
+fac_full_path = fac_path + fac_name + '.fea'      # 训练因子数据 fac_sample.fea
+model_train_base = rf'{root_path}/model_train'
+model_test_path = rf'{root_path}/model_test'      # 仅读取 feature_map.fea
+model_pred_path = rf'{root_path}/model_pred/{SEASON}'
+all_feather_path = rf'{model_pred_path}/all_zscore_score.fea'
+calendar_path = PROJECT_ROOT + 'data/calendar.parquet'
+
+
+# ======================================================================
+# Cell 2 [code]
 # ============================================================
-# 推演辅助 (与 V11/analysis.py 同口径)
+# 所有函数定义（引擎函数 + 展示/回测函数）
 # ============================================================
-_VAL_RANKIC_RE = re.compile(r'val_rankic=(-?\d+\.\d+)')
-_VAL_RANKIC_AVG_RE = re.compile(r'val_rankic_avg=(-?\d+\.\d+)')
+
+# checkpoint 命名优先级: V7.1 {epoch}-{val_rankic:.4f} > V6.3+ {epoch}-{val_rankic_avg:.4f} > 旧命名
 _VAL_IC_RE = re.compile(r'val_icmean=(-?\d+\.\d+)')
 _VAL_WEI_RE = re.compile(r'val_wei=(-?\d+\.\d+)')
-_VAL_COMBO_RE = re.compile(r'val_combo=(-?\d+\.\d+)')  # best: 策略混合标尺优先
+_VAL_RANKIC_AVG_RE = re.compile(r'val_rankic_avg=(-?\d+\.\d+)')
+_VAL_RANKIC_RE = re.compile(r'val_rankic=(-?\d+\.\d+)')
 
-
-def load_feature_map():
-    if not os.path.exists(FEATURE_MAP):
-        raise FileNotFoundError(f'feature_map.fea 不存在 ({FEATURE_MAP}); 先训练 (bash train.sh)')
-    with open(FEATURE_MAP, encoding='utf-8') as f:
-        raw = f.read().replace('\\n', '\n')
-    order = []
+def load_feature_map(model_test_path):
+    """读取训练时落盘的 feature_map.fea（因子顺序与 checkpoint 一致）。"""
+    feat_path = os.path.join(model_test_path, 'feature_map.fea')
+    if not os.path.exists(feat_path): return None
+    with open(feat_path, 'r') as f:
+        raw = f.read()
+    raw = raw.replace('\\n', '\n')
+    factor_order = []
     for line in raw.split('\n'):
+        line = line.strip()
         if '=' in line:
             name, idx = line.rsplit('=', 1)
-            order.append((int(idx.strip()), name.strip()))
-    order.sort(key=lambda x: x[0])
-    return [n for _, n in order]
+            factor_order.append((int(idx.strip()), name.strip()))
+    factor_order.sort(key=lambda x: x[0])
+    return [name for _, name in factor_order]
 
 
-def normed_infer(data, factor_list):
+def normed_data(data, factor_list):
+    """与训练一致的推理标准化 (V4: 截面秩高斯化替代 zscore):
+    有效性过滤 → 每因子截面 rank → 标准化 → 缺失填 0。
+    必须与 model.py 的 normed_data 特征处理完全一致。"""
     valid_threshold = max(1, int(0.1 * len(factor_list)))
     valid_mask = data[factor_list].notna().sum(axis=1) >= valid_threshold
     data = data.loc[valid_mask].copy()
-    codes = data['Code'].values
-    X = data[factor_list].rank(axis=0)
-    X = (X - X.mean()) / X.std()
-    X = X.fillna(0)
-    x = np.nan_to_num(X.to_numpy(dtype=np.float32, copy=False),
-                      nan=0.0, posinf=0.0, neginf=0.0)
-    return torch.from_numpy(x), codes
+    code_value = data['Code'].values
+    data_X = data[factor_list].rank(axis=0)
+    data_X = (data_X - data_X.mean()) / data_X.std()
+    data_X = data_X.fillna(0)
+    data_x_np = np.nan_to_num(data_X.to_numpy(dtype=np.float32, copy=False),
+                              nan=0.0, posinf=0.0, neginf=0.0)
+    return torch.from_numpy(data_x_np), code_value
 
 
-def load_model(checkpoint_path, input_dim):
-    ck = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
-    state = {k.removeprefix('model.'): v for k, v in ck['state_dict'].items()
-             if k.startswith('model.')}
-    m = PredictModel(input_dim=input_dim)
-    missing, unexpected = m.load_state_dict(state, strict=False)
-    if missing:
-        print(f'[warn] missing keys: {list(missing)[:5]}')
-    m.eval()
-    return m
+def load_model(checkpoint_path, input_dim, **kwargs):
+    """Load a trained checkpoint (strip lightning 'model.' prefix)。"""
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    state_dict = checkpoint['state_dict']
+    model_state = {k.removeprefix('model.'): v for k, v in state_dict.items()
+                   if k.startswith('model.')}
+    model = PredictModel(input_dim=input_dim, **kwargs)
+    missing, unexpected = model.load_state_dict(model_state, strict=False)
+    if missing: print(f'[load_model] WARNING: missing keys: {list(missing)[:10]}...')
+    if unexpected:
+        print(f"[load_model] WARNING: unexpected keys (ignored): {unexpected}")
+    model.eval()
+    return model
 
 
 def find_best_checkpoint(fold_dir):
-    files = glob.glob(os.path.join(fold_dir, '**', '*.ckpt'), recursive=True)
-    if not files:
-        raise FileNotFoundError(f'No ckpt under {fold_dir}')
-    best, bestv = None, -float('inf')
-    for ck in files:
-        m = (_VAL_COMBO_RE.search(os.path.basename(ck))   # best: 策略混合标尺优先
-             or _VAL_RANKIC_AVG_RE.search(os.path.basename(ck))
-             or _VAL_RANKIC_RE.search(os.path.basename(ck))
-             or _VAL_IC_RE.search(os.path.basename(ck))
-             or _VAL_WEI_RE.search(os.path.basename(ck)))
+    """在 fold 目录下找 val_icmean 最高的 checkpoint (V6.1 新命名), 兼容旧 val_wei 命名。"""
+    ckpt_files = glob.glob(os.path.join(fold_dir, '**', '*.ckpt'), recursive=True)
+    if not ckpt_files: raise FileNotFoundError(f'No ckpt under {fold_dir}')
+    best_ckpt, best_val = None, -float('inf')
+    for ckpt in ckpt_files:
+        m = _VAL_RANKIC_AVG_RE.search(os.path.basename(ckpt))  # V6.3+: val_rankic_avg
         if m is None:
-            continue
-        v = float(m.group(1))
-        if v > bestv:
-            bestv, best = v, ck
-    if best is None:
-        raise RuntimeError(f'无法从 checkpoint 名解析 val 指标: {fold_dir}')
-    return best, bestv
+            m = _VAL_RANKIC_RE.search(os.path.basename(ckpt))  # V7.1: val_rankic (1d)
+        if m is None:
+            m = _VAL_IC_RE.search(os.path.basename(ckpt))
+        if m is None:
+            m = _VAL_WEI_RE.search(os.path.basename(ckpt))  # 旧命名回退
+        if m is None: continue
+        val = float(m.group(1))
+        if val > best_val: best_val = val; best_ckpt = ckpt
+    if best_ckpt is None: raise RuntimeError(f'No val_icmean/val_wei parsed under {fold_dir}')
+    return best_ckpt, best_val
 
 
-def predict_heads(model, data, factor_list, device):
-    X, codes = normed_infer(data, factor_list)
+def discover_folds(model_dir):
+    folds = sorted(glob.glob(os.path.join(model_dir, 'fold[0-9]*')))
+    if not folds: raise FileNotFoundError(f'No folds under {model_dir}')
+    return folds
+
+
+def predict_date(model, date, all_data, factor_list, device):
+    data = all_data.loc[date].copy()
+    data_X, code_value = normed_data(data, factor_list)
+    data_X = data_X.to(device)
     with torch.no_grad():
-        out = model(X.to(device))
-    heads = {}
-    if isinstance(out, tuple):
-        for name, t in zip(('mixed', 'r1', 'r5', 'r3', 'top'), out[:5]):
-            if t is not None:
-                heads[name] = pd.DataFrame(t.detach().cpu().numpy(),
-                                           index=codes, columns=['value'])
-    return heads
+        output = model(data_X)
+        # V2 基线: 单输出 1d 收益打分 (兼容旧多头模型的 tuple 返回, 统一取 pred_1d)
+        score = output[0] if isinstance(output, tuple) else output
+    result = pd.DataFrame(score.detach().cpu().numpy(), index=code_value, columns=['value'])
+    result.index.name = 'Code'
+    return result
 
 
-# ============================================================
-# 推演 16 折 → 各头逐折 z 宽表 (heads_{a,c})
-# ============================================================
-def ensure_heads(target_date, force_update=False):
-    import pyarrow as pa
-    import pyarrow.compute as pc
-    import pyarrow.feather as pf
+def save_predictions(score_df, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    for date in score_df.index:
+        s = score_df.loc[date].copy(); s.index.name = 'Code'
+        s.to_pickle(os.path.join(output_dir, f'{date}.pkl'))
 
-    a_last, c_last = heads_last_date(HEADS_A), heads_last_date(HEADS_C)
-    if a_last is None or c_last is None:
-        print(f'[analysis] heads 缺失 (a={a_last}, c={c_last}) → 首次全窗口推演')
-    cur = min(a_last, c_last) if (a_last and c_last) else None
-    if cur is not None and cur >= target_date and not force_update:
-        print(f'[analysis] heads 已覆盖至 {cur} (目标 {target_date}), 无需推演')
-        return
 
-    factor_list = load_feature_map()
-    print(f'[analysis] feature_map: {len(factor_list)} 因子')
+def _load_trading_dates(calendar_path):
+    cal = pd.read_parquet(calendar_path)
+    return set(cal[cal['is_open'] == 1]['date'].astype(str).str.replace('-', '').tolist())
 
-    tds = set(load_trading_dates())
-    col = pf.read_table(FAC_PATH, columns=['date']).column('date')
-    all_factor = sorted(set(pc.unique(col).to_pandas().astype(str)))
-    full_dates = [d for d in all_factor if d >= TEST_START and d in tds]
-    if force_update:
-        run_dates = full_dates[-TAIL_DAYS:]
-    elif cur is None:
-        run_dates = full_dates
-    else:
-        run_dates = [d for d in full_dates if d > cur]
-    if not run_dates:
-        print('[analysis] 无新日期需要推演')
-        return
-    mode = f'重推最近 {TAIL_DAYS} 日' if force_update else '增量'
-    print(f'[analysis] 待推演 {len(run_dates)} 日 ({mode}): '
-          f'{run_dates[0]} ~ {run_dates[-1]}', flush=True)
 
-    all_cols = pf.read_table(FAC_PATH, columns=[]).column_names
-    available = [f for f in factor_list if f in all_cols]
-    missing = [f for f in factor_list if f not in all_cols]
-    cols = ['date', 'Code'] + available
-    table = pf.read_table(FAC_PATH, columns=cols)
-    mask = pc.is_in(table.column('date'), pa.array(run_dates))
-    data = table.filter(mask).to_pandas().set_index('date').sort_index()
-    del table
-    for f in missing:
-        data[f] = 0.0
-    print(f'[analysis] 因子行 {len(data)} (缺失列补 0: {len(missing)})')
+# ── 单一模型评估（Test 集合打分, 与 model.py 同口径） ────────────────────────
 
-    fold_dirs, missing_folds = {}, []
-    for g in range(1, TOTAL_FOLDS + 1):
-        d = os.path.join(MODEL_TRAIN, f'fold{g}')
-        if not os.path.exists(d):
-            missing_folds.append(g)
-        else:
-            fold_dirs[g] = d
-    if missing_folds:
-        raise RuntimeError('缺少训练产物 fold ' + ','.join(map(str, missing_folds))
-                           + f' (共 {TOTAL_FOLDS} 折) — 先 bash train.sh 完成 16 折训练')
+def _spearman(a, b):
+    """Spearman rank 相关系数 (numpy), 与训练 _rank_corr / eval_ensemble.py 同语义。"""
+    a = pd.Series(a).rank().values
+    b = pd.Series(b).rank().values
+    return np.corrcoef(a, b)[0, 1]
 
-    ckpt0, _ = find_best_checkpoint(fold_dirs[1])
-    meta = torch.load(ckpt0, map_location='cpu', weights_only=False)
-    dim0 = None
-    for key, t in meta['state_dict'].items():
-        if 'weight' in key and len(t.shape) == 2:
-            dim0 = t.shape[1]
-            break
-    del meta
-    flist = factor_list[:]
-    if dim0 is not None and dim0 != len(flist):
-        if dim0 > len(flist):
-            for i in range(dim0 - len(flist)):
-                flist.append(f'_pad_{i}')
-                data[f'_pad_{i}'] = 0.0
-        else:
-            flist = flist[:dim0]
-        print(f'[analysis] 输入维度校准: feature_map {len(factor_list)} → {len(flist)}')
-    factor_cols = [c for c in flist if c in data.columns]
-    print(f'[analysis] 实际使用特征列 {len(factor_cols)}', flush=True)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    models = {}
-    for g in range(1, TOTAL_FOLDS + 1):
-        fam, k = fold_spec(g)
-        ck, v = find_best_checkpoint(fold_dirs[g])
-        m = load_model(ck, len(factor_cols))
-        m.to(device)
-        models[g] = m
-        print(f'[analysis]   fold{g} (族{fam}/k{k}): {os.path.basename(ck)} '
-              f'(val={v:.4f})', flush=True)
+def test_window_dates(factor_dates):
+    """打分区间: Test 集合 (TEST_START~TEST_END) ∩ 因子数据 ∩ 1d 标签。"""
+    return sorted(d for d in factor_dates
+                  if TEST_START <= d <= TEST_END and d in params.ret_1d_data.index)
 
-    head_rows = {(fam, k, h): [] for fam in ('a', 'c')
-                 for k in range(1, N_FOLD_PER_FAMILY + 1)
-                 for h in ('r1', 'r3', 'r5', 'top')}
-    total = len(run_dates) * TOTAL_FOLDS
-    done = 0
-    for d in run_dates:
-        if d not in data.index:
+
+def eval_score_metrics(model_score, eval_dates, top_n=1):
+    """逐日评估: 可交易池(buyable>0.5 & label有限) Spearman rankIC + Top-N label 收益×100;
+    对照口径: 全池 Pearson IC (fillna(0), V5.2 同口径)。返回 (rank_ic, pearson_ic, top_ret)。"""
+    rank_ics, pearson_ics, top_rets, dlist, pdlist = [], [], [], [], []
+    for date in eval_dates:
+        if date not in model_score.index or date not in params.ret_1d_data.index:
             continue
-        day = data.loc[d]
-        if isinstance(day, pd.Series):
-            day = day.to_frame().T
-        for g in range(1, TOTAL_FOLDS + 1):
-            fam, k = fold_spec(g)
-            heads = predict_heads(models[g], day, factor_cols, device)
-            for h in ('r1', 'r3', 'r5', 'top'):
-                if h not in heads:
-                    continue
-                z = heads[h]['value']
-                z = (z - z.mean()) / z.std()
-                head_rows[(fam, k, h)].append(pd.Series(z.values,
-                                                        index=heads[h].index,
-                                                        name=d))
-            done += 1
-            if done % (TOTAL_FOLDS * 5) == 0 or done == total:
-                print(f'[analysis] 推演进度 {done}/{total} (最新 {d})', flush=True)
-    print('[analysis] 推演完成, 合并落盘 heads ...', flush=True)
-
-    for fam, dir_ in (('a', HEADS_A), ('c', HEADS_C)):
-        os.makedirs(dir_, exist_ok=True)
-        for k in range(1, N_FOLD_PER_FAMILY + 1):
-            for h in ('r1', 'r3', 'r5', 'top'):
-                rows = head_rows[(fam, k, h)]
-                if not rows:
-                    continue
-                new = pd.DataFrame(rows)
-                new.index.name = 'date'
-                path = os.path.join(dir_, f'{h}_f{k}.fea')
-                if os.path.exists(path):
-                    old = pd.read_feather(path).set_index('date')
-                    new = pd.concat([old, new], axis=0)
-                    new = new[~new.index.duplicated(keep='last')].sort_index()
-                new.reset_index().to_feather(path)
-    print(f'[analysis] heads 落盘完成: {HEADS_A} / {HEADS_C}')
+        scores = model_score.loc[date]
+        label = params.ret_1d_data.loc[date].reindex(scores.index)
+        if date in params.buyable_mask.index:
+            buy = pd.to_numeric(params.buyable_mask.loc[date].reindex(scores.index),
+                                errors='coerce')
+        else:
+            buy = pd.Series(np.nan, index=scores.index)
+        tradable = buy.gt(0.5) & label.notna()
+        # 主口径: 可交易池 rankIC (与训练 val_rankic 同口径, 样本 <50 跳过)
+        if tradable.sum() >= 50:
+            rank_ics.append(_spearman(scores[tradable], label[tradable]))
+            top_codes = scores[tradable].sort_values(ascending=False).index[:top_n]
+            top_rets.append(label[top_codes].mean() * 100)
+            dlist.append(date)
+        # 对照口径: 全池 Pearson IC (V5.2 同口径, label fillna(0))
+        pearson_ics.append(scores.corr(label.fillna(0)))
+        pdlist.append(date)
+    return (pd.Series(rank_ics, index=dlist, dtype='float'),
+            pd.Series(pearson_ics, index=pdlist, dtype='float'),
+            pd.Series(top_rets, index=dlist, dtype='float'))
 
 
-# ============================================================
-# V9 风格报告构建
-# ============================================================
-def fmt_date(d):
-    s = str(d)
-    return f'{int(s[:4])}年{int(s[4:6])}月{int(s[6:8])}日'
+# ── 展示/回测辅助函数（沿用 V5.2 版本） ───────────────────────
+
+def get_nth_next_trade_date(date_str, n=1):
+    """获取 date_str 之后第 n 个交易日"""
+    try:
+        idx = _trade_dates.index(date_str)
+        if idx + n < len(_trade_dates):
+            return _trade_dates[idx + n]
+    except (ValueError, IndexError):
+        pass
+    return None
+
+def fmt_date(date_str):
+    if date_str is None:
+        return "待定（交易日历未覆盖）"
+    return f"{date_str[:4]}年{int(date_str[4:6])}月{int(date_str[6:8])}日"
+
+def _next_td(date_str, n=1):
+    """Get the n-th trading day after (n>0) or before (n<0) date_str."""
+    try:
+        idx = _td_list.index(date_str)
+        t = idx + n
+        if 0 <= t < len(_td_list):
+            return _td_list[t]
+    except (ValueError, IndexError):
+        pass
+    return None
 
 
-def _pct(v, signed=True):
-    return f'{v * 100:+.2f}%' if signed else f'{v * 100:.2f}%'
+# ── CJK-aware display helpers ──────────────────────────────────────────
+
+def _cjk_width(s):
+    """Display width: CJK chars ≈ 2, ASCII ≈ 1."""
+    w = 0
+    for ch in str(s):
+        w += 2 if ord(ch) > 127 else 1
+    return w
+
+def _pad_cjk(s, w, align='<'):
+    """Pad string to display width w, accounting for CJK characters."""
+    s = str(s)
+    cur = _cjk_width(s)
+    pad = max(0, w - cur)
+    if align == '>': return ' ' * pad + s
+    elif align == '^': l = pad // 2; r = pad - l; return ' ' * l + s + ' ' * r
+    return s + ' ' * pad
 
 
-def ic_block(ic):
-    lines = ['---Test 集合打分---', f'  打分区间: Test 集合 {TEST_START} ~ {TEST_END} '
-             f'(严格样本外, 与训练/验证无重叠)', '']
-    for k, label in (('RankIC', 'RankIC'), ('RankICIR', 'RankICIR'),
-                     ('top_return', 'top_return')):
-        lines.append(f'  {k:<10} {ic.get(k, float("nan")):+.4f}')
-    lines += ['[提示] 回测/交易日志章节使用同一区间的实际价格收益 (daily_adj), '
-              '与训练 target 解耦', '']
-    return '\n'.join(lines)
+# ── Backtest shared utilities ──────────────────────────────────────────
+
+def _load_daily_adj():
+    """Load daily_adj price data (cached). Returns DataFrame."""
+    DAILY_ADJ_PATH = PROJECT_ROOT + "data/daily_adj.parquet"
+    try:
+        return daily_adj
+    except NameError:
+        pass
+    df = pd.read_parquet(DAILY_ADJ_PATH)
+    df['trade_date'] = df['trade_date'].str.replace('-', '')
+    df['code_clean'] = df['stock_code'].str.replace('.SZ', '').str.replace('.SH', '')
+    df = df.sort_values(['code_clean', 'trade_date'])
+    df['prev_close'] = df.groupby('code_clean')['close'].shift(1)
+    return df
 
 
-def champion_log(score, names, verbose=True):
-    """冠军协议成交明细 (hold5s8-收盘卖, 含成本, 窗口 = 打分起点 ~ 最新因子日)。
+def _load_name_map():
+    """Load stock code → name mapping (cached). Returns dict."""
+    try:
+        return code_to_name
+    except NameError:
+        pass
+    stock_info = pd.read_parquet(PROJECT_ROOT + 'data/stock_list.parquet')
+    stock_info = stock_info[stock_info['list_status'] == 'L']
+    return {
+        re.sub(r'\.(SZ|SH|BJ)$', '', row['stock_code']): row['name']
+        for _, row in stock_info.iterrows()
+    }
 
-    返回 (log_text, stats_dict, trades_df)。trades_df 为已实现成交; 若窗口末端存在
-    未到期持仓 (卖出日无价格) 则 log 末尾追加一行待定 (sell '-'), 累加收益冻结。
+
+def load_backtest_setup():
+    """Load all shared data for backtest cells: price maps + name map.
+
+    Also initializes module-level _td_list (used by _next_td) and _trade_dates
+    (used by get_nth_next_trade_date).
+
+    Returns:
+        close_map      : dict (trade_date, code_clean) → close
+        prev_close_map : dict (trade_date, code_clean) → prev_close
+        code_to_name   : dict code → name
     """
-    mod_engine = __import__('model', fromlist=['x'])._close_sell_backtest_module()
-    rb = mod_engine['run_backtest']
-    open_map, close_map, prev_close_map, amount_map, nm = mod_engine['load_prices']()
-    tds = mod_engine['load_calendar']()
-    F = dict(use_cost=True, exclude_st=True, exclude_limit_up=True,
-             buy_gap_limit=0.095, hold=HOLD_DAYS, stop_loss=STOP_LOSS)
-    w_start, w_end = str(score.index.min()), str(score.index.max())
-    m, trades, _ = rb(score, open_map, close_map, prev_close_map, nm,
-                      amount_map=amount_map, tds=tds,
-                      window_start=w_start, window_end=w_end, **F)
+    global _td_list, _trade_dates
 
-    # 逐笔: 顺序 = 开仓时间; 累加收益 = 复利 (与冠军净累计口径一致)
-    tr = trades.sort_values('buy_dt').reset_index(drop=True)
+    # --- Calendar ---
+    cal = pd.read_parquet(PROJECT_ROOT + 'data/calendar.parquet')
+    cal = cal[cal['is_open'] == 1]
+    _td_list = sorted(cal['date'].astype(str).str.replace('-', '').tolist())
+    _trade_dates = _td_list  # alias for get_nth_next_trade_date compatibility
+
+    # --- Price data ---
+    df = _load_daily_adj()
+    print(f"Price data: {len(df)} rows, "
+          f"dates {df['trade_date'].min()} ~ {df['trade_date'].max()}")
+
+    close_map      = df.set_index(['trade_date', 'code_clean'])['close'].to_dict()
+    open_map       = df.set_index(['trade_date', 'code_clean'])['open'].to_dict()
+    prev_close_map = df.set_index(['trade_date', 'code_clean'])['prev_close'].to_dict()
+    code_to_name   = _load_name_map()
+
+    # --- 成交额 (元): trade_amt.fea, index=date, columns=Code ---
+    amt_df = pd.read_feather(PROJECT_ROOT + 'trainingdata/trade_amt.fea').set_index('index')
+    amount_map = {}
+    for d, row in amt_df.iterrows():
+        for c, v in row.items():
+            if pd.notna(v):
+                amount_map[(str(d), str(c))] = v
+    del amt_df
+
+    return close_map, open_map, prev_close_map, code_to_name, amount_map
+
+
+def build_trade_log_df(model_score_extended, recent_dates, close_map, open_map,
+                        prev_close_map, code_to_name, amount_map=None,
+                        top_n=1, exclude_limit_up=False, label_horizon_days=1,
+                        exclude_st=False, buy_gap_limit=None, min_amount=None):
+    """Build trade log records and daily return series from model scores & price data.
+
+    V6.1: 新增执行可行性过滤 (默认在调用处开启):
+      exclude_st     : 排除名称含 ST/退 的股票
+      buy_gap_limit  : 买入日开盘相对昨收跳空 >= 该值(如 0.095)视为一字板不可成交, 跳过
+      min_amount     : 买入日成交额下限(元), 低于则流动性不足跳过
+
+    Returns:
+        trade_df   : DataFrame with columns [FactorDt, BuyDt, Code, Name, Score,
+                     BuyPrc, SellDt, SellPrc, Ret%, 累加收益]
+        ret_valid  : Series of realized daily returns
+        skip_total : int, number of stocks skipped by filters
+        skip_days  : int, number of days with at least one skip
+    """
+    records = []
+    daily_returns = {}
+    skip_total = 0
+    skip_days = 0
+    skip_reason = {}
+
+    for date in recent_dates:
+        scores = model_score_extended.loc[date].sort_values(ascending=False)
+        buy_date = _next_td(date, 1)
+
+        # Stock selection: top N by model score（依次跳过不可执行的候选）
+        picked = []
+        day_skipped = 0
+        for code in scores.index:
+            if len(picked) >= top_n:
+                break
+            reason = None
+            name = code_to_name.get(code, '')
+            if exclude_st and ('ST' in name or '退' in name):
+                reason = 'ST'
+            if exclude_limit_up and reason is None:
+                fc = close_map.get((date, code))
+                pc = prev_close_map.get((date, code))
+                if fc is not None and pc is not None and pc > 0 and fc / pc - 1.0 >= 0.095:
+                    reason = 'factor日涨停'
+            if buy_gap_limit is not None and reason is None and buy_date:
+                bo = open_map.get((buy_date, code))
+                pc = close_map.get((date, code))
+                if bo is not None and pc is not None and pc > 0 and bo / pc - 1.0 >= buy_gap_limit:
+                    reason = '一字板不可买'
+            if min_amount is not None and reason is None and buy_date:
+                amt = amount_map.get((buy_date, code)) if amount_map else None
+                if amt is not None and amt < min_amount:
+                    reason = '流动性不足'
+            if reason is not None:
+                day_skipped += 1
+                skip_reason[reason] = skip_reason.get(reason, 0) + 1
+                continue
+            picked.append(code)
+        if day_skipped > 0:
+            skip_days += 1
+            skip_total += day_skipped
+
+        day_rets = []
+        for rank_i, code in enumerate(picked):
+            score = scores[code]
+            buy_date = _next_td(date, 1)
+            sell_date = _next_td(buy_date, label_horizon_days) if buy_date else None
+
+            buy_price  = open_map.get((buy_date, code)) if buy_date else None
+            sell_price = open_map.get((sell_date, code)) if sell_date else None
+
+            if buy_price is not None and sell_price is not None and buy_price > 0:
+                ret_val = sell_price / buy_price - 1.0
+                ret_src  = 'OK'
+            else:
+                ret_val = None
+                ret_src  = 'pending'
+
+            day_rets.append(ret_val)
+
+            name = code_to_name.get(code, '?')
+            records.append({
+                'factor_dt': date,
+                'buy_dt':    buy_date or '-',
+                'code':      code,
+                'name':      name,
+                'score':     score,
+                'buy_prc':   buy_price,
+                'sell_dt':   sell_date or '-',
+                'sell_prc':  sell_price,
+                'ret_pct':   ret_val * 100.0 if ret_val is not None else None,
+                'status':    ret_src,
+            })
+
+        # Strategy daily return = mean of picked stocks' returns
+        valid = [r for r in day_rets if r is not None]
+        daily_returns[date] = float(np.mean(valid)) if valid else None
+
+    # Build return series
+    ret_series = pd.Series(daily_returns, name='daily_return').sort_index()
+    ret_valid = ret_series.dropna()
+
+    # Build trade_df
+    disp_cols = {
+        'factor_dt': 'FactorDt', 'buy_dt': 'BuyDt', 'code': 'Code',
+        'name': 'Name', 'score': 'Score', 'buy_prc': 'BuyPrc',
+        'sell_dt': 'SellDt', 'sell_prc': 'SellPrc', 'ret_pct': 'Ret%',
+    }
+    trade_df = pd.DataFrame(records).rename(columns=disp_cols)
+
+    # Cumulative additive return
     cum = 0.0
+    cum_list = []
+    for _, row in trade_df.iterrows():
+        val = row['Ret%']
+        if pd.notna(val):
+            cum += val
+        cum_list.append(cum)
+    trade_df['累加收益'] = cum_list
+    trade_df = trade_df[list(disp_cols.values()) + ['累加收益']]
+
+    return trade_df, ret_valid, skip_total, skip_days, skip_reason
+
+
+def backtest_diversified(model_score_extended, recent_dates, close_map, open_map,
+                         prev_close_map, code_to_name, amount_map=None,
+                         multi_topn=(5, 10, 20), band_fracs=(0.01, 0.05, 0.10),
+                         label_horizon_days=1, exclude_st=False,
+                         buy_gap_limit=None, min_amount=None):
+    """V6.1: 分散组合统计。
+
+    Top1 单票是彩票 —— 单日 rank IC≈0.02 的信号下, 单票日盈亏由尾部事件(涨跌停)主导。
+    这里统计多档 Top-N 等权与前 1%/5%/10% 分数带等权组合的日收益, 供横向对比。
+    过滤规则与 trade log 一致。返回 DataFrame: 每行一个构造。
+    """
+    def pick_codes(date):
+        scores = model_score_extended.loc[date].sort_values(ascending=False)
+        buy_date = _next_td(date, 1)
+        out = []
+        for code in scores.index:
+            name = code_to_name.get(code, '')
+            if exclude_st and ('ST' in name or '退' in name):
+                continue
+            if buy_gap_limit is not None and buy_date:
+                bo = open_map.get((buy_date, code))
+                pc = close_map.get((date, code))
+                if bo is not None and pc is not None and pc > 0 and bo / pc - 1.0 >= buy_gap_limit:
+                    continue
+            if min_amount is not None and buy_date:
+                amt = amount_map.get((buy_date, code)) if amount_map else None
+                if amt is not None and amt < min_amount:
+                    continue
+            out.append(code)
+        return out
+
+    def realized_ret(date, code):
+        buy_date = _next_td(date, 1)
+        sell_date = _next_td(buy_date, label_horizon_days) if buy_date else None
+        bp = open_map.get((buy_date, code)) if buy_date else None
+        sp = open_map.get((sell_date, code)) if sell_date else None
+        if bp is not None and sp is not None and bp > 0:
+            return sp / bp - 1.0
+        return None
+
+    series = {}  # 构造名 -> [(date, ret), ...]
+    for date in recent_dates:
+        codes = pick_codes(date)
+        n = len(codes)
+        if n == 0:
+            continue
+        for k in multi_topn:
+            if k > n:
+                continue
+            rs = [r for r in (realized_ret(date, c) for c in codes[:k]) if r is not None]
+            if rs:
+                series.setdefault(f'Top{k}', []).append((date, np.mean(rs)))
+        for frac in band_fracs:
+            k = max(1, int(n * frac))
+            rs = [r for r in (realized_ret(date, c) for c in codes[:k]) if r is not None]
+            if rs:
+                series.setdefault(f'前{frac:.0%}', []).append((date, np.mean(rs)))
+
     rows = []
-    for _, r in tr.iterrows():
-        cum = (1.0 + cum) * (1.0 + r['net_pct'] / 100.0) - 1.0
-        rows.append((str(r['factor_dt']), str(r['buy_dt']), r['code'],
-                     r.get('name') or nm.get(r['code'], ''),
-                     float(r['score']), float(r['buy_prc']),
-                     str(r['sell_dt']), float(r['sell_prc']),
-                     r['net_pct'] / 100.0, cum))
-    realized = len(rows)
-    last_sell_dt = str(tr['sell_dt'].max()) if realized else w_start
+    for name, items in series.items():
+        rets = np.array([r for _, r in items])
+        rows.append({
+            '构造': name,
+            '天数': len(rets),
+            '日均': rets.mean() * 100,
+            '累计': rets.sum() * 100,
+            '胜率': (rets > 0).mean() * 100,
+            '年化Sharpe': rets.mean() / rets.std() * np.sqrt(252) if rets.std() > 0 else 0.0,
+        })
+    return pd.DataFrame(rows)
 
-    # 待定持仓: 最后一个可开仓(买入价可得)且卖出日价格尚未出现的因子日
-    pending = None
-    factor_dates = [d for d in score.index if w_start <= str(d) <= w_end]
-    for d in factor_dates:
-        buy_dt = next_td(d, 1, tds)
-        if buy_dt is None or buy_dt <= last_sell_dt:
+
+def build_daily_pnl_series(model_score_extended, recent_dates, open_map, close_map,
+                           prev_close_map, code_to_name, amount_map=None,
+                           top_n=1, label_horizon_days=1, exclude_st=False,
+                           buy_gap_limit=None, min_amount=None):
+    """V6.1: 重叠持仓策略的真实日度组合 P&L。
+
+    多日持有 (label_horizon_days>1) 时, 每个交易日组合同时持有 H 个篮子,
+    组合当日收益 = 所有在持仓位的 1 日 open-open 收益均值 (即用正确的 1d 收益口径,
+    与账户净值一致)。逐笔 H 日收益直接相加会重复计算重叠区间, 是错误的。
+
+    hold=1 时退化为每日 TopN 篮子收益, 与 build_trade_log_df 的 ret_valid 完全一致。
+    返回 (daily_series, pending_factor_dates)。
+    """
+    idx_map = {d: i for i, d in enumerate(_td_list)}
+    baskets = {}
+    for date in recent_dates:
+        scores = model_score_extended.loc[date].sort_values(ascending=False)
+        buy_date = _next_td(date, 1)
+        picked = []
+        for code in scores.index:
+            if len(picked) >= top_n:
+                break
+            name = code_to_name.get(code, '')
+            if exclude_st and ('ST' in name or '退' in name):
+                continue
+            if buy_gap_limit is not None and buy_date:
+                bo = open_map.get((buy_date, code))
+                pc = close_map.get((date, code))
+                if bo is not None and pc is not None and pc > 0 and bo / pc - 1.0 >= buy_gap_limit:
+                    continue
+            if min_amount is not None and buy_date:
+                amt = amount_map.get((buy_date, code)) if amount_map else None
+                if amt is not None and amt < min_amount:
+                    continue
+            picked.append(code)
+        baskets[date] = picked
+
+    first_buy = _next_td(recent_dates[0], 1)
+    if first_buy is None:
+        return pd.Series(dtype=float), list(recent_dates)
+
+    out = {}
+    for t in _td_list:
+        if idx_map[t] < idx_map[first_buy]:
             continue
-        code = score.loc[d].sort_values(ascending=False).index[0]
-        bp = open_map.get((buy_dt, code))
-        if bp is None:
-            continue
-        sell_dt = next_td(buy_dt, HOLD_DAYS, tds)
-        sp = close_map.get((sell_dt, code)) if sell_dt else None
-        if sp is not None:
-            continue            # 已能卖出 → 引擎应已实现, 非待定
-        pending = (str(d), buy_dt, code, names.get(code, '?'),
-                   float(score.loc[d, code]), float(bp), sell_dt)
-        break                    # 单持仓: 仅最近一笔
-    n_pending = 1 if pending else 0
-    eq_series = pd.Series([r[9] for r in rows], dtype=float)  # 复利权益轨迹
+        t1 = _next_td(t, 1)
+        if t1 is None:
+            break
+        # 区间 (t, t+1) 在持的篮子: factor date d 满足 d+1 <= t <= d+H
+        basket_rets = []
+        for d, codes in baskets.items():
+            b = _next_td(d, 1)
+            last_interval_start = _next_td(d, label_horizon_days)
+            if b is None or last_interval_start is None:
+                continue
+            if idx_map[b] <= idx_map[t] <= idx_map[last_interval_start]:
+                rs = []
+                for c in codes:
+                    o1, o2 = open_map.get((t, c)), open_map.get((t1, c))
+                    if o1 and o2 and o1 > 0:
+                        rs.append(o2 / o1 - 1.0)
+                if rs:
+                    basket_rets.append(np.mean(rs))
+        if not basket_rets:
+            break
+        out[t] = float(np.mean(basket_rets))
 
-    L = []
-    L.append(SEP)
-    L.append(f'  Trade Log — ens_w2 冠军协议 hold{HOLD_DAYS}s{int(STOP_LOSS*100)} 收盘卖 '
-             f'| Top 1 | 含成本 | {w_start} ~ {w_end}')
-    L.append(SEP)
-    L.append(' FactorDt   BuyDt     Code     Name      Score   BuyPrc   SellDt  '
-             'SellPrc   Net%   累加收益(净,复利)')
-    L.append('-' * 100)
-    for fd, bd, code, name, sc, bp, sd, sp, net, c in rows:
-        L.append(f' {fd:<10}{bd:<10}{code:<7}{name:<9}{sc:+8.2f}{bp:9.2f}  '
-                 f'{sd:<9}{sp:9.2f}  {net:+7.2%}  {c:+9.2%}')
-    if pending:
-        fd, bd, code, name, sc, bp, sd = pending
-        L.append(f' {fd:<10}{bd:<10}{code:<7}{name:<9}{sc:+8.2f}{bp:9.2f}  '
-                 f'{sd:<9}{"-":>9}  {"-":>7}  {cum:+9.2%}')
-    L.append(SEP)
-    win = int(np.sum(tr['net_pct'] > 0)) if realized else 0
-    dr_mean = float(np.mean(tr['net_pct'] / 100.0)) if realized else 0.0
-    eq_maxdd = 0.0
-    if realized:
-        peak = np.maximum.accumulate(eq_series.values)
-        eq_maxdd = float((eq_series.values - peak).min())
-    L.append(f'Realized: {realized}  |  Pending: {n_pending}')
-    L.append(f'Cumulative(净,复利): {cum:+.4f} ({cum*100:+.2f}%)  |  '
-             f'Win rate: {win}/{realized} ({win/max(1,realized)*100:.1f}%)  |  '
-             f'Mean(笔均): {dr_mean:+.5f}  |  MaxDD: 见下方 Summary (官方口径)')
-    stats = dict(realized=realized, pending=n_pending, cum=cum,
-                 win=win, maxdd=eq_maxdd, mean=dr_mean)
-    return '\n'.join(L), stats, tr
+    daily = pd.Series(out, name='daily_return').sort_index()
+    # 尚未完全平仓的 factor date: 其最后一个持仓区间起点晚于最后一个已结算区间
+    last_t = daily.index[-1] if len(daily) else None
+    pending = []
+    if last_t is not None:
+        for d in recent_dates:
+            last_start = _next_td(d, label_horizon_days)
+            if last_start is None or idx_map[last_start] > idx_map[last_t]:
+                pending.append(d)
+    return daily, pending
 
 
-def figure_01(score, trades, out_path, title_window):
-    """V9 风格图: 左 = 累计净收益曲线, 右 = 逐笔净收益直方 (model_pic/figure_01.png)。"""
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-    except Exception as e:
-        print(f'[analysis] matplotlib 不可用, 跳过出图: {e}')
+def plot_backtest_curve(ret_valid, start_d, end_d, top_n=1, label_horizon_days=1,
+                         predicted_dates=None):
+    """Plot cumulative return + daily return bar chart."""
+    dates_plot = ret_valid.index.tolist()
+    vals_plot = ret_valid.values
+
+    if len(dates_plot) == 0:
+        print("\nWARNING: no return data available, skipping plot.")
         return
-    tr = trades.sort_values('buy_dt').reset_index(drop=True)
-    if len(tr) == 0:
-        return
-    net = tr['net_pct'] / 100.0
-    cum = ((1.0 + net).cumprod() - 1.0)
+
+    step = max(1, len(dates_plot) // 10)
+    tick_idx = list(range(0, len(dates_plot), step))
+    tick_lbl = [dates_plot[i] for i in tick_idx]
+
     fig, axes = plt.subplots(1, 2, figsize=(16, 5))
-    axes[0].plot(range(len(cum)), cum.values, color='#d62728', lw=1.6)
-    axes[0].axhline(0, color='gray', lw=0.8, ls='--')
-    axes[0].set_title(f'Top 1 Cumulative Net Return (ens_w2 hold{HOLD_DAYS}) | '
-                      f'{title_window}', fontsize=13)
-    axes[0].set_xlabel('Trade #')
-    axes[0].set_ylabel('Cumulative Net Return')
-    axes[0].grid(alpha=0.3)
-    axes[1].bar(range(len(net)), net.values, color=['#2ca02c' if v >= 0 else '#d62728'
-                                                    for v in net])
-    axes[1].axhline(0, color='gray', lw=0.8, ls='--')
-    axes[1].set_title(f'Per-Trade Net Return ({len(net)} realized)', fontsize=13)
-    axes[1].set_xlabel('Trade #')
-    axes[1].set_ylabel('Net Return')
-    axes[1].grid(alpha=0.3)
+
+    # Left: Cumulative return
+    cum = np.cumsum(vals_plot)
+    axes[0].plot(dates_plot, cum, color='#1f77b4', linewidth=1.8, marker='o', markersize=3)
+    axes[0].fill_between(range(len(dates_plot)), 0, cum, alpha=0.10, color='#1f77b4')
+    axes[0].axhline(y=0, color='gray', linestyle='--', linewidth=0.8)
+    if predicted_dates:
+        p0 = predicted_dates[0]
+        if p0 in dates_plot:
+            axes[0].axvline(x=p0, color='red', linestyle='--', alpha=0.5, linewidth=1.2)
+    axes[0].set_title(f'Top {top_n} Cumulative Return | {start_d} ~ {end_d}', fontsize=13)
+    axes[0].set_ylabel('Cumulative Return', fontsize=11)
+    axes[0].set_xticks(tick_idx)
+    axes[0].set_xticklabels(tick_lbl, rotation=45, ha='right')
+    axes[0].grid(True, alpha=0.3)
+
+    # Right: Daily return
+    bar_colors = ['#d62728' if v < 0 else '#2ca02c' for v in vals_plot]
+    axes[1].bar(range(len(dates_plot)), vals_plot, color=bar_colors, alpha=0.80, width=0.65)
+    axes[1].axhline(y=0, color='black', linewidth=0.8)
+    axes[1].set_title(f'Daily Return ({label_horizon_days}d holding)', fontsize=13)
+    axes[1].set_ylabel('Daily Return', fontsize=11)
+    axes[1].set_xticks(tick_idx)
+    axes[1].set_xticklabels(tick_lbl, rotation=45, ha='right')
+    axes[1].grid(True, alpha=0.3)
+
     plt.tight_layout()
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    plt.savefig(out_path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
-    print(f'[analysis] 图已保存: {out_path}')
+    plt.show()
 
 
-# ============================================================
-# 主流程
-# ============================================================
-def main():
-    ap = argparse.ArgumentParser(description='best_new_seed1 推演/回测/最终结果入口 (V9 风格报告)')
-    ap.add_argument('--top', type=int, default=10)
-    ap.add_argument('--date', default=None, help='只展示指定因子日 YYYYMMDD')
-    ap.add_argument('--days', type=int, default=DEFAULT_DAYS, help='推荐块数量 (默认 10)')
-    ap.add_argument('--no-split', action='store_true', help='Summary 不做 H1/H2 分半')
-    ap.add_argument('--update', action='store_true',
-                    help=f'强制重推最近 {TAIL_DAYS} 个交易日')
-    ap.add_argument('--skip-infer', action='store_true', help='跳过推演 (直接用 heads)')
-    ap.add_argument('--no-md', action='store_true', help='不写 model_pic/output.md')
-    args = ap.parse_args()
+def print_trade_log_table(trade_df, ret_valid, recent_dates, top_n=1, label_horizon_days=1):
+    """Print CJK-aligned trade log table with cumulative return."""
+    print(f"\n{'='*100}")
+    print(f"  Trade Log — Top {top_n} | {len(recent_dates)} days | "
+          f"hold {label_horizon_days}d | Returns from daily_adj open prices")
+    print(f"{'='*100}")
 
-    # 1) 推演 (按需 / 强制)
-    target = latest_reportable_date()
-    if not args.skip_infer:
-        ensure_heads(target, force_update=args.update)
+    # Format
+    fmt_df = trade_df.copy()
+    fmt_df['Score']   = fmt_df['Score'].apply(lambda x: f'{x:+.2f}' if pd.notna(x) else '-')
+    fmt_df['BuyPrc']  = fmt_df['BuyPrc'].apply(lambda x: f'{x:.2f}' if pd.notna(x) else '-')
+    fmt_df['SellPrc'] = fmt_df['SellPrc'].apply(lambda x: f'{x:.2f}' if pd.notna(x) else '-')
+    fmt_df['Ret%']    = fmt_df['Ret%'].apply(lambda x: f'{x:+.2f}%' if pd.notna(x) else '-')
+    fmt_df['累加收益'] = fmt_df['累加收益'].apply(
+        lambda x: f'{x:+.2f}%' if abs(x) >= 0.01 else f'{x:+.4f}%')
+
+    # Column widths & alignment
+    _cols = fmt_df.columns.tolist()
+    _col_align = {c: ('<' if c == 'Name' else '>') for c in _cols}
+    _col_w = [max(_cjk_width(c), max((_cjk_width(str(v)) for v in fmt_df[c]), default=0)) + 2
+              for c in _cols]
+
+    # Header (centered), separator, rows (numbers right, names left)
+    print(''.join(_pad_cjk(c, _col_w[i], '^') for i, c in enumerate(_cols)))
+    print(''.join('-' * _col_w[i] for i in range(len(_cols))))
+    for _, row in fmt_df.iterrows():
+        print(''.join(_pad_cjk(str(row[c]), _col_w[i], _col_align[c]) for i, c in enumerate(_cols)))
+
+    print(f"{'='*100}\n")
+
+    # Quick stats
+    n_ok   = len(ret_valid)
+    n_pend = len(recent_dates) - n_ok
+    print(f"Realized: {n_ok}  |  Pending: {n_pend}")
+
+    if len(ret_valid) > 0:
+        cum_r = ret_valid.sum()
+        win_r = int((ret_valid > 0).sum())
+        print(f"Cumulative: {cum_r:+.4f} ({cum_r*100:+.2f}%)  |  "
+              f"Win rate: {win_r}/{len(ret_valid)} ({win_r/len(ret_valid)*100:.1f}%)  |  "
+              f"Mean: {ret_valid.mean():+.6f}  |  "
+              f"MaxDD: {(np.cumsum(ret_valid.values) - np.maximum.accumulate(np.cumsum(ret_valid.values))).min():.4f}")
+    print()
+
+
+def print_backtest_summary(ret_valid, recent_dates, start_d, end_d, n_lookback,
+                            top_n=1, label_horizon_days=1,
+                            skip_total=0, skip_days=0, exclude_limit_up=False,
+                            pending_dates=None):
+    """Print backtest summary statistics.
+
+    V6.1: hold>1 时 ret_valid 为重叠持仓的日度组合序列 (见 build_daily_pnl_series),
+    pending 由 pending_dates 显式给出 (默认按 ret_valid 缺失日期推断, 适用于 hold=1)。
+    """
+    total_days = len(recent_dates)
+    valid_days = len(ret_valid)
+    pending_days = len(pending_dates) if pending_dates is not None else (total_days - valid_days)
+
+    if valid_days > 0:
+        vals = ret_valid.values
+        win_days = int((vals > 0).sum())
+        cum_ret = float(vals.sum())
+        cummax_track = np.maximum.accumulate(np.cumsum(vals))
+        drawdown = np.cumsum(vals) - cummax_track
+        max_dd = float(drawdown.min())
+        max_dd_idx = int(drawdown.argmin())
+        best_idx = int(vals.argmax())
+        worst_idx = int(vals.argmin())
+        ann_ret = float(vals.mean() * 252 * 100)
+        ann_sharpe = float(vals.mean() / vals.std() * np.sqrt(252)) if vals.std() > 0 else 0.0
+        win_rate = win_days / valid_days * 100
     else:
-        print('[analysis] 跳过推演 (--skip-infer)')
+        win_days = cum_ret = max_dd = ann_ret = ann_sharpe = win_rate = 0.0
+        best_idx = worst_idx = max_dd_idx = 0
 
-    # 2) 组装冠军打分
-    try:
-        score = score_ens_w2()
-    except FileNotFoundError as e:
-        print(f'[analysis] 无法组装打分: {e}')
-        print('  请先完成 16 折训练 (bash train.sh) 并运行本文件推演 heads。')
-        sys.exit(1)
-    print(f'[analysis] ens_w2 组装完成: {score.shape[0]} 天 × {score.shape[1]} 股票 '
-          f'({score.index.min()} ~ {score.index.max()})', flush=True)
-    try:
-        os.makedirs(MODEL_PRED, exist_ok=True)
-        score.reset_index().to_feather(CACHE_SCORE)
-        print(f'[analysis] 打分缓存: {CACHE_SCORE}')
-    except OSError as e:
-        print(f'[analysis] 打分缓存写入失败 (跳过, 不影响报告): {e}')
+    print(f"{'='*55}")
+    print(f"  Recent {n_lookback}d Summary  |  Top {top_n}  |  Hold {label_horizon_days}d")
+    print(f"{'='*55}")
+    print(f"  Window     : {start_d} ~ {end_d}  ({total_days} days)")
+    print(f"  Realized   : {valid_days} days  |  Pending : {pending_days} days")
+    if valid_days > 0:
+        print(f"  Cum Return : {cum_ret:+.4f}  ({cum_ret*100:+.2f}%)")
+        print(f"  Daily Mean : {vals.mean():+.6f}  ({vals.mean()*100:+.4f}%)")
+        print(f"  Ann Return : {ann_ret:.2f}%")
+        print(f"  Sharpe     : {ann_sharpe:.4f}")
+        print(f"  Win Rate   : {win_rate:.1f}%  ({win_days}/{valid_days})")
+        print(f"  Best Day   : {vals[best_idx]:+.4f}  ({ret_valid.index[best_idx]})")
+        print(f"  Worst Day  : {vals[worst_idx]:+.4f}  ({ret_valid.index[worst_idx]})")
+        if max_dd < 0:
+            print(f"  Max Drawdown: {max_dd:.4f}  ({max_dd*100:.2f}%)  at {ret_valid.index[max_dd_idx]}")
+        else:
+            print(f"  Max Drawdown: 0 (no drawdown)")
+    print(f"{'='*55}\n")
 
-    # 3) 报告构建
-    dates = list(score.index)
-    tds, name_map = load_trading_dates(), load_name_map()
-    latest = dates[-1]
+    # Pending-dates detail
+    if pending_days > 0:
+        if pending_dates is None:
+            pending_dates = [d for d in recent_dates if d not in ret_valid.index]
+        print(f"[Pending] {len(pending_dates)} date(s) — {label_horizon_days}d return not yet realized:")
+        for d in pending_dates:
+            buy_d = _next_td(d, 1)
+            sell_d = _next_td(buy_d, label_horizon_days) if buy_d else None
+            print(f"  {d}: buy {buy_d or '?'}  ->  sell {sell_d or '?'}")
+        print()
 
-    # 3.1 官方 Test 集指标 (含 IC; Summary 用, 与 FINAL_REPORT 口径一致)
-    bt = champion_backtest(score, split=True, verbose=False)
-    ic_res = bt['ic']
-    text = []
-    text.append('# best_new_seed1 冠军系统每日报告 (ens_w2 + hold5s8-收盘卖, 含成本)')
-    text.append('')
-    text.append(ic_block(ic_res))
-
-    # 3.2 推荐块 (最近 N 日, 升序)
-    text.append(SEP)
-    text.append('                    最新模型打分 Top 推荐')
-    text.append(SEP)
-    text.append(f'  报告截至因子日期：{fmt_date(latest)} 收盘, '
-                f'以下展示最近 {args.days} 个交易日')
-    text.append('')
-    if args.date:
-        if args.date not in score.index:
-            ap.error(f'--date {args.date} 不在打分范围 ({dates[0]}~{dates[-1]})')
-        show = [args.date]
-    else:
-        show = dates[-max(1, min(args.days, len(dates))):]
-    for d in show:
-        text.append(rank_block(d, score, topn=args.top, tds=tds, name_map=name_map))
-        text.append('')
-
-    # 3.3 Trade Log (冠军协议, 窗口 = 打分起点 ~ 最新因子日, 增量更新) + Summary
-    log_text, stats, trades = champion_log(score, name_map)
-    text.append(log_text)
-    text.append('')
-    s = stats
-    f_ = bt['full']
-    text.append(SEP2)
-    text.append(f'  Recent Summary | ens_w2 冠军协议 hold{HOLD_DAYS}s'
-                f'{int(STOP_LOSS*100)} 收盘卖 | 含成本 | 官方 Test 集窗口')
-    text.append(SEP2)
-    text.append(f'  Test 窗口  : {TEST_START} ~ {TEST_END}  (243 交易日, 严格样本外)')
-    text.append(f'  Net Cum    : {f_["净累计%"]:+.2f}%  |  净年化 {f_["净年化%"]:+.2f}%  |  '
-                f'Sharpe {f_["Sharpe"]:.3f}')
-    text.append(f'  MaxDD      : {f_["MaxDD%"]:+.2f}%  |  胜率 {f_["胜率%"]:.1f}%  '
-                f'({s["win"]}/{s["realized"]} 已实现)  |  成本拖累 {f_["成本拖累%"]:.2f}%')
-    text.append(f'  累计(复利) : 至 {score.index.max()} 因子日 = {s["cum"]*100:+.2f}% '
-                f'(含 {s["pending"]} 笔待定未计入)')
-    if not args.no_split:
-        h1, h2 = bt['h1']['净累计%'], bt['h2']['净累计%']
-        text.append(f'  分半 H1/H2 : {TEST_START}~20260227 {h1:+.2f}%  |  '
-                    f'20260302~{TEST_END} {h2:+.2f}%')
-    text.append(SEP2)
-    text.append('')
-    if s['pending']:
-        text.append(f'[Pending] {s["pending"]} 笔持仓未到期 (卖出日价格尚未出现): 见 Trade Log 末行')
-        text.append('')
-    text.append(decision_block(latest, score, tds=tds, name_map=name_map,
-                               holdings_path=os.path.join(PROJECT_ROOT,
-                                                          'Model/V11/holdings.json')))
-    text.append('')
-    report = '\n'.join(text)
-
-    sys.stdout.write(report)
-    sys.stdout.flush()
-
-    if not args.no_md:
-        md_dir = os.environ.get('best_new_seed1_MD_DIR') or os.path.join(HERE, 'model_pic')
-        try:
-            os.makedirs(md_dir, exist_ok=True)
-            with open(os.path.join(md_dir, 'output.md'), 'w', encoding='utf-8') as f:
-                f.write(report)
-            figure_01(score, trades, os.path.join(md_dir, 'figure_01.png'),
-                      f'{score.index.min()} ~ {score.index.max()}')
-            print(f'\n[analysis] 报告已写入: {md_dir}/output.md (+figure_01.png)')
-        except OSError as e:
-            print(f'\n[analysis] 报告写入 {md_dir} 失败 (跳过): {e}')
-            print('  若需更新 V29/model_pic/*, 请以文件拥有者运行本脚本, 或设置 '
-                  'best_new_seed1_MD_DIR 指向可写目录')
-
-
-if __name__ == '__main__':
-    main()
+    # Limit-up filter stats
+    if exclude_limit_up and skip_total > 0:
+        print(f"[Limit-Up Filter] {skip_total} stocks filtered across "
+              f"{skip_days}/{total_days} days ({skip_days/total_days*100:.1f}%)")
 
 
 # ======================================================================
-# 冻结双腿策略评估 + 当日操作 (FIXED_STRATEGY.md v1.0) — 本单元自测入口
-# 运行本文件即: 推演→score→冻结策略回测→当日纸面操作 (打分源 = 本单元)
+# Cell 3 [code]
+# ============================================================
+# 1. 统一推演：加载 checkpoint，推演 Test 集合区间内所有交易日
+# ============================================================
+
+# ── Step 0: 上次推演结果（用于增量合并与一致性验证） ──
+model_score = None
+if os.path.exists(all_feather_path):
+    model_score = pd.read_feather(all_feather_path).set_index('date')
+
+# ── Step 1: 读取训练因子顺序（feature_map.fea，与 checkpoint 对齐） ──
+train_factors = load_feature_map(model_test_path)
+if train_factors is None:
+    raise FileNotFoundError(f'feature_map.fea not found under {model_test_path}')
+
+# ── Step 2: 因子数据列（fac_sample 中实际存在的 feature_map 因子） ──
+all_cols = pf.read_table(fac_full_path, columns=[]).column_names
+available = [f for f in train_factors if f in all_cols]
+missing = [f for f in train_factors if f not in all_cols]
+if missing:
+    print(f"[predict] WARNING: {len(missing)} training factors missing from DB, will fill with 0")
+cols_to_load = ['date', 'Code'] + available
+
+# ── Step 3: 待推演日期 = Test 集合打分区间 (20250901~20260901) 的全部交易日 ──
+all_factor_dates = sorted(pd.Series(
+    pf.read_table(fac_full_path, columns=['date']).column('date').to_pandas()).unique())
+trading_dates = _load_trading_dates(calendar_path)
+# 打分区间: Test 集合 ∩ 1d 标签 (供「Test 集合打分」使用)
+eval_pool = test_window_dates(all_factor_dates)
+# 推演区间: Test 集合内的全部交易日 (回测用实际价格收益, 末端无标签的日期也推演)
+full_dates = [d for d in all_factor_dates if TEST_START <= d <= TEST_END and d in trading_dates]
+
+# 增量模式: 每次重跑都重新推算最新 10 个交易日并覆盖上次结果, 更早历史沿用上次推演
+if model_score is not None and len(model_score) > 0:
+    last_saved = model_score.index.max()
+    dates = full_dates[-10:]
+    print(f"\n>>> 增量推演最新 {len(dates)} 个交易日: {dates[0]} ~ {dates[-1]}"
+          f"（覆盖上次结果; 上次已覆盖至 {last_saved}。"
+          f"如需重算全部历史(如更换 checkpoint), 请删除 all_zscore_score.fea 后重跑）")
+else:
+    dates = full_dates
+    print(f"\n>>> 首次统一推演 {len(dates)} 个日期: {dates[0]} ~ {dates[-1]}")
+
+if dates:
+    table = pf.read_table(fac_full_path, columns=cols_to_load)
+    mask = pc.is_in(table.column('date'), pa.array(dates))
+    table = table.filter(mask)
+    all_data = table.to_pandas(); del table
+    all_data = all_data.set_index('date', drop=True).sort_index()
+else:
+    all_data = pd.DataFrame()
+
+# 缺失训练因子补 0
+for f in missing:
+    all_data[f] = 0.0
+
+# ── Step 4: 核对 checkpoint 期望输入维度 ──
+model_dir = os.path.join(model_train_base, SEASON)
+folds = discover_folds(model_dir)
+first_ckpt_path, _ = find_best_checkpoint(folds[0])
+ckpt_meta = torch.load(first_ckpt_path, map_location='cpu', weights_only=False)
+ckpt_input_dim = None
+for key, tensor in ckpt_meta['state_dict'].items():
+    if 'weight' in key and len(tensor.shape) == 2:
+        ckpt_input_dim = tensor.shape[1]  # [out_features, in_features]
+        break
+del ckpt_meta
+
+factor_list = train_factors[:]
+if ckpt_input_dim is not None and ckpt_input_dim != len(factor_list):
+    shortage = ckpt_input_dim - len(factor_list)
+    if shortage > 0:
+        for i in range(shortage):
+            placeholder = f'_padding_{i}'
+            factor_list.append(placeholder)
+            all_data[placeholder] = 0.0
+        print(f"[predict] Padded {shortage} zero placeholder(s) to reach {ckpt_input_dim}")
+    else:
+        factor_list = factor_list[:ckpt_input_dim]
+        print(f"[predict] Trimmed factor_list to {ckpt_input_dim}")
+print(f"[predict] feature_map has {len(train_factors)} factors, "
+      f"{len(available)} available in DB, {len(missing)} missing")
+print(f"[predict] Final factor_list: {len(factor_list)} features → model input_dim={len(factor_list)}")
+
+# ── Step 5: 加载 Fold 最佳 checkpoint (V2 为单模型, 一般只有 fold1) ──
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"[predict] Using {len(folds)} fold(s)")
+models = []
+for fold_dir in folds:
+    fn = os.path.basename(fold_dir)
+    ckpt, val = find_best_checkpoint(fold_dir)
+    print(f"[predict]   [{fn}] {os.path.basename(ckpt)} (val_rankic={val:.4f})")
+    m = load_model(ckpt, len(factor_list))
+    m.to(device)
+    models.append(m)
+
+# ── Step 6: 推演: 各 Fold 模型分别预测, 逐日 zscore 后求和集成 (单 Fold 即自身) ──
+new_scores = []
+for date in dates:
+    if date not in all_data.index:
+        continue
+    fold_preds = [predict_date(m, date, all_data, factor_list, device) for m in models]
+    zscored = [(f - f.mean()) / f.std() for f in fold_preds]
+    ensemble = sum(zscored)
+    date_score = ensemble['value']; date_score.name = date
+    new_scores.append(date_score)
+    print(f"[predict]   [{date}] done, {len(ensemble)} stocks")
+new_score_df = pd.DataFrame(new_scores); new_score_df.index.name = 'date'
+print(f"[predict] Done, {len(new_score_df)} days.")
+
 # ======================================================================
-def _frozen_test_block():
-    import os as _os
-    import sys as _sys
-    import pandas as _pd
-    _HERE = _os.path.dirname(_os.path.abspath(__file__))
-    _ROOT = _os.path.dirname(_HERE)
-    _SCORE = _os.path.join(_HERE, "model_pred", "2026q3",
-                           "score_ens_w2.fea")
-    print("\n" + "=" * 80)
-    print(" 冻结双腿策略 (FIXED_STRATEGY.md v1.0): 本单元打分 → 回测 → 操作")
-    print("=" * 80)
-    if not _os.path.exists(_SCORE):
-        print(" ⚠ score_ens_w2.fea 不存在 (推演未完成?), 跳过冻结评估")
-        return
-    try:
-        _sys.path.insert(0, _os.path.join(_ROOT, "Trading"))
-        from engine import load_calendar, load_market, run_backtest  # noqa
-        import daily_frozen as _df  # noqa
-        _mkt = load_market()
-        _tds, _tdi = load_calendar()
-        _sc = _pd.read_feather(_SCORE).set_index("date").sort_index()
-        _scores = dict(
-            scores={_d: _sc.loc[_d].dropna().to_dict() for _d in _sc.index},
-            ranked={_d: _sc.loc[_d].dropna().sort_values(ascending=False)
-                    .index.tolist() for _d in _sc.index},
-            top1={_d: float(_sc.loc[_d].max()) for _d in _sc.index},
-            dates=sorted(_sc.index))
-        _mS, _trS, _eqS = run_backtest(
-            _scores, dict(top_n=2, hold=20, exit_rank=300, min_hold=2,
-                          trail_pct=0.15), _mkt, _tds, _tdi)
-        _mF, _trF, _eqF = run_backtest(
-            _scores, dict(top_n=1, hold=5, stop_loss=0.08),
-            _mkt, _tds, _tdi)
-        print(" --- Test 窗 (20250901~20260901) 回测 (引擎口径, 含成本) ---")
-        print(f"  慢腿 u_h20_re300_tr15: cum={_mS['cum_net']:+.1%} "
-              f"sharpe={_mS['sharpe']:.2f} maxdd={_mS['maxdd']:.1%} "
-              f"H1={_mS['h1_cum']:+.1%} H2={_mS['h2_cum']:+.1%} "
-              f"(n={_mS['n_trades']})")
-        print(f"  快腿 D01: cum={_mF['cum_net']:+.1%} "
-              f"sharpe={_mF['sharpe']:.2f} maxdd={_mF['maxdd']:.1%} "
-              f"H1={_mF['h1_cum']:+.1%} H2={_mF['h2_cum']:+.1%} "
-              f"(n={_mF['n_trades']})")
-        _eS = _eqS.set_index("date")["equity"]
-        _eF = _eqF.set_index("date")["equity"]
-        _j = _eS.index.intersection(_eF.index)
-        _cb = (0.5 * _eS.loc[_j] + 0.5 * _eF.loc[_j]).to_frame()
-        _cb.columns = ["equity"]
-        _cb["ret"] = _cb["equity"].pct_change()
-        _r = _cb["ret"].dropna()
-        _cum = float((1 + _r).prod() - 1)
-        _sh = float(_r.mean() / _r.std() * (252 ** 0.5))
-        _pk = _cb["equity"].cummax()
-        _dd = float((_cb["equity"] / _pk - 1).min())
-        print(f"  双腿合计 (10W=慢5W+快5W): cum={_cum:+.1%} "
-              f"sharpe={_sh:.2f} maxdd={_dd:.1%}")
-        print(" --- 当日纸面操作 (状态文件与 V11 共用 holdings_frozen.json) ---")
-        _df.run_daily(_SCORE)
-    except Exception as _e:
-        import traceback as _tb
-        print(f" ⚠ 冻结评估/操作块失败: {_e}")
-        _tb.print_exc()
+# Cell 4 [code]
+# ============================================================
+# 2. 合并上次推演结果 + 落盘 + 一致性验证
+# ============================================================
 
+new_scores = new_score_df.copy()
 
-_frozen_test_block()
+if new_scores is not None and len(new_scores) > 0:
+    if model_score is not None and len(model_score) > 0:
+        # 本次重推的日期覆盖上次结果 (keep='last'), 更早历史日期保留
+        model_score_extended = pd.concat([model_score, new_scores], axis=0)
+        model_score_extended = model_score_extended[
+            ~model_score_extended.index.duplicated(keep='last')].sort_index()
+        n_overlap = len(set(model_score.index) & set(new_scores.index))
+        print(f"\n合并完成：原始 {len(model_score)} 天 + 本次重推 {len(new_scores)} 天"
+              f"（其中覆盖 {n_overlap} 天） = {len(model_score_extended)} 天")
+        print(f"本次重推日期: {list(new_scores.index)}")
+    else:
+        model_score_extended = new_scores.copy()
+        print(f"\n合并完成：首次推演 {len(new_scores)} 天")
+
+    # 落盘: 重推日期逐日 pkl (覆盖) + 完整汇总 feather
+    save_predictions(new_scores, model_pred_path)
+    model_score_extended.reset_index().to_feather(all_feather_path)
+    print(f"已保存到: {model_pred_path}")
+else:
+    model_score_extended = model_score.copy() if model_score is not None else None
+    print("无新增日期，使用上次推演结果。")
+
+# ---- 与上次推演一致性验证（重叠的最后 3 天） ----
+if model_score is not None and len(model_score) > 0:
+    hist_dates = sorted(model_score.index)[-3:]
+    hist_dates = [d for d in hist_dates if d in new_score_df.index]
+    if hist_dates:
+        print("\n--- 与上次推演一致性验证 ---")
+        for date in hist_dates:
+            old = model_score.loc[date]
+            new = new_score_df.loc[date]
+            common = old.index.intersection(new.index)
+            if len(common) > 0:
+                corr = old[common].corr(new[common])
+                print(f"  {date}: corr={corr:.6f}, 共同股票数={len(common)}")
+            else:
+                print(f"  {date}: 无共同股票")
+
+# ======================================================================
+# Cell 4.5 [code]
+# ============================================================
+# 4.5 单一模型评估: Test 集合打分 (20250901~20260901, 严格样本外)
+# ============================================================
+
+eval_dates = [d for d in eval_pool if d in model_score_extended.index]
+rank_ic, pearson_ic, top_ret = eval_score_metrics(model_score_extended, eval_dates, top_n=TOP_N)
+
+print("\n---Test 集合打分---")
+print(f"  持仓数: {TOP_N} 只")
+print(f"  打分区间: Test 集合 {TEST_START} ~ {TEST_END} "
+      f"({len(eval_dates)} 天, 严格样本外, 与训练/验证无重叠)")
+
+if len(rank_ic) > 0:
+    metrics = {
+        'RankIC': rank_ic.mean(),
+        'RankICIR': rank_ic.mean() / rank_ic.std() if rank_ic.std() != 0 else 0.0,
+        'top_return': top_ret.mean(),
+    }
+    eval_df = pd.DataFrame(index=list(metrics.keys()))
+    eval_df.index.name = '指标'
+    eval_df['模型值'] = [metrics[k] for k in metrics]
+    print("\n模型评估结果")
+    print(eval_df.round(4))
+    if len(pearson_ic) > 0 and pearson_ic.std() != 0:
+        print(f"[对照] 全池 Pearson IC: IC={pearson_ic.mean():+.4f}  "
+              f"ICIR={pearson_ic.mean() / pearson_ic.std():+.4f}")
+    print("[提示] 后续回测章节使用同一 Test 区间的实际价格收益 (daily_adj open), 与训练 target 解耦")
+else:
+    print("WARNING: 打分区间内无有效 IC 日期, 跳过模型评估")
+
+# ======================================================================
+# Cell 5 [code]
+# ============================================================
+# 3. 最新推荐展示：股票名称映射、Top 打分、投资建议
+# ============================================================
+
+# --- 加载回测共用数据 (价格/名称/成交额/交易日历; Cell 6 回测复用) ---
+close_map, open_map, prev_close_map, code_to_name, amount_map = load_backtest_setup()
+
+# 本次推演的最新因子日期（即这一批数据的"当前日期"）
+latest_factor_date = model_score_extended.index.max()
+
+# ============================================================
+# 展示最近 10 个交易日的 Top 推荐（模型裸打分 TopN, 不做执行过滤）
+# ============================================================
+print()
+print("=" * 72)
+print("                    最新模型打分 Top 推荐")
+print("=" * 72)
+print(f"  报告截至因子日期：{fmt_date(latest_factor_date)} 收盘, 以下展示最近 10 个交易日")
+
+# 总是展示最近的 10 个交易日（不再只展示本次新增的日期）
+block_dates = sorted(model_score_extended.index)[-10:]
+
+for date in block_dates:
+    scores = model_score_extended.loc[date].sort_values(ascending=False)
+    buy_date = get_nth_next_trade_date(date, 1)
+    sell_date = get_nth_next_trade_date(buy_date, LABEL_HORIZON_DAYS) if buy_date else None
+
+    print(f"\n{'─' * 60}")
+    print(f"  因子日期：{fmt_date(date)} 收盘")
+    if buy_date and sell_date:
+        print(f"  模型预测{LABEL_HORIZON_DAYS}日收益率：{fmt_date(buy_date)} 买入 → {fmt_date(sell_date)} 卖出")
+    elif buy_date:
+        print(f"  模型预测{LABEL_HORIZON_DAYS}日收益率：{fmt_date(buy_date)} 买入 → {fmt_date(sell_date)}")
+    else:
+        print(f"  模型预测{LABEL_HORIZON_DAYS}日收益率：无法推算交易日（需更新交易日历）")
+    print(f"{'─' * 60}")
+
+    top_n = min(10, len(scores))
+    print(f"\n  {'排名':<5}{'代码':<10}{'名称':<20}打分")
+    print(f"  {'-' * 37}")
+    for rank, (code, score) in enumerate(scores.head(top_n).items(), 1):
+        name = code_to_name.get(code, '未知')
+        sign = '+' if score > 0 else ''
+        print(f"  {rank:<5}{code:<10}{name:<12}{sign}{score:>9.4f}")
+
+# ======================================================================
+# Cell 6 [code]
+# ============================================================
+# Test 集合回测 (20250901 ~ 20260901)
+# Dynamic tracking: return curve + daily trade log (symbol / price / return)
+# ALL returns computed from actual price data (daily_adj), NOT from label
+# ============================================================
+
+WINDOW_START = start  # 回测窗口起点 = Test 集合起点 20250901 (含)
+WINDOW_END = END      # 回测窗口终点 = Test 集合终点 20260901 (含)
+
+print(f"--- Backtest: {WINDOW_START} ~ {WINDOW_END} (Test 集合) ---")
+
+# ── Setup: 价格/名称/成交额/交易日历已在 Cell 5 加载 ──
+
+# ── Select window: Test 集合区间 20250901 ~ 20260901 ──
+all_dates = sorted(model_score_extended.index)
+recent_dates = [d for d in all_dates if WINDOW_START <= d <= WINDOW_END]
+start_d, end_d = recent_dates[0], recent_dates[-1]
+N_LOOKBACK = len(recent_dates)  # 实际交易日数，仅供 summary 标题展示
+
+_prev_idx = set(model_score.index) if model_score is not None else set()
+predicted_dates = [d for d in recent_dates if d not in _prev_idx]
+
+print(f"Window : {start_d} ~ {end_d}  ({len(recent_dates)} trading days)")
+if predicted_dates:
+    tag = f"{predicted_dates[0]}~{predicted_dates[-1]}" if len(predicted_dates) > 1 else predicted_dates[0]
+    print(f"  predicted: {len(predicted_dates)} days  ({tag})")
+
+# ── Build trade log ──
+trade_df, ret_valid, skip_total, skip_days, skip_reason = build_trade_log_df(
+    model_score_extended, recent_dates, close_map, open_map, prev_close_map, code_to_name,
+    amount_map=amount_map, top_n=TOP_N, exclude_limit_up=EXCLUDE_LIMIT_UP,
+    label_horizon_days=LABEL_HORIZON_DAYS, exclude_st=EXCLUDE_ST,
+    buy_gap_limit=BUY_GAP_LIMIT, min_amount=MIN_AMOUNT,
+)
+
+# ── V6.1: hold>1 时组合日度 P&L 必须按重叠持仓的 1d 实际收益计算 (逐笔相加会重复计) ──
+ret_for_stats = ret_valid
+pending_for_summary = None
+if LABEL_HORIZON_DAYS > 1:
+    ret_for_stats, pending_for_summary = build_daily_pnl_series(
+        model_score_extended, recent_dates, open_map, close_map, prev_close_map,
+        code_to_name, amount_map=amount_map, top_n=TOP_N,
+        label_horizon_days=LABEL_HORIZON_DAYS, exclude_st=EXCLUDE_ST,
+        buy_gap_limit=BUY_GAP_LIMIT, min_amount=MIN_AMOUNT,
+    )
+    # 账本"累加收益"列改为组合日度序列的累计值 (按各笔卖出日对齐)
+    if len(ret_for_stats):
+        cum_map = ret_for_stats.cumsum().to_dict()
+        trade_df['累加收益'] = trade_df['SellDt'].map(lambda x: cum_map.get(x, np.nan))
+
+# ── Plot return curve ──
+plot_backtest_curve(ret_for_stats, start_d, end_d, top_n=TOP_N,
+                    label_horizon_days=LABEL_HORIZON_DAYS,
+                    predicted_dates=predicted_dates if predicted_dates else None)
+
+# ── Trade log table ──
+print_trade_log_table(trade_df, ret_for_stats, recent_dates,
+                      top_n=TOP_N, label_horizon_days=LABEL_HORIZON_DAYS)
+
+# ── Summary statistics ──
+print_backtest_summary(ret_for_stats, recent_dates, start_d, end_d, N_LOOKBACK,
+                       top_n=TOP_N, label_horizon_days=LABEL_HORIZON_DAYS,
+                       skip_total=skip_total, skip_days=skip_days,
+                       exclude_limit_up=EXCLUDE_LIMIT_UP,
+                       pending_dates=pending_for_summary)
+
+if skip_reason:
+    print(f"[执行过滤] 跳过明细: {skip_reason}")
+
+# ── V6.1: 分散组合对比 (Top1 是彩票, 多档组合才反映信号质量) ──
+div_df = backtest_diversified(
+    model_score_extended, recent_dates, close_map, open_map, prev_close_map,
+    code_to_name, amount_map=amount_map, multi_topn=MULTI_TOPN, band_fracs=BAND_FRACS,
+    label_horizon_days=LABEL_HORIZON_DAYS, exclude_st=EXCLUDE_ST,
+    buy_gap_limit=BUY_GAP_LIMIT, min_amount=MIN_AMOUNT,
+)
+if len(div_df):
+    print(f"{'='*55}")
+    print(f"  分散组合对比  |  Hold {LABEL_HORIZON_DAYS}d  |  {start_d} ~ {end_d}")
+    print(f"{'='*55}")
+    print(div_df.to_string(index=False, formatters={
+        '日均': lambda x: f'{x:+.3f}%',
+        '累计': lambda x: f'{x:+.2f}%',
+        '胜率': lambda x: f'{x:.1f}%',
+        '年化Sharpe': lambda x: f'{x:+.2f}',
+    }))
+    print(f"{'='*55}\n")
+    print("[提示] Top1 单票的日盈亏由涨跌停等尾部事件主导, 统计意义很弱; "
+          "请以上表分散组合为准判断信号质量。")
+
+# ======================================================================
+# End of analysis.py — cleanup will run automatically via atexit
+# ======================================================================
