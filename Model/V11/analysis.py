@@ -1204,3 +1204,152 @@ if len(div_df):
 # ======================================================================
 # End of analysis.py — cleanup will run automatically via atexit
 # ======================================================================
+
+
+# ======================================================================
+# 冻结双腿策略 (FIXED_STRATEGY.md v1.0): ens_w2 打分刷新 → 回测 → 当日操作
+# 每次运行本文件自动执行; 打分源 = V11_ensw2 (V11+V13 heads, 与官方流水线同配方)
+# ======================================================================
+def _frozen_daily_block():
+    import os as _os
+    import sys as _sys
+    import subprocess as _sp
+    import pandas as _pd
+    _HERE = _os.path.dirname(_os.path.abspath(__file__))
+    _ROOT = _os.path.dirname(_HERE)
+    _V11_HD = _os.path.join(_HERE, "model_pred", "2026q3", "heads")
+    _V13_HD = _os.path.join(_ROOT, "V13", "model_pred", "2026q3", "heads")
+    _SCORE = _os.path.join(_HERE, "model_pred", "2026q3",
+                           "score_ens_w2.fea")
+
+    def _zn(_df):
+        return (_df - _df.mean(axis=1).values[:, None]) \
+            / _df.std(axis=1).values[:, None]
+
+    def _build(_hd, _w1, _w5, _w3, _wt):
+        _heads = ("r1", "r5", "r3", "top")
+        _ph = {h: {} for h in _heads}
+        for _h in _heads:
+            for _f in range(1, 9):
+                _p = _os.path.join(_hd, f"{_h}_f{_f}.fea")
+                if _os.path.exists(_p):
+                    _ph[_h][_f] = _pd.read_feather(_p).set_index("date")
+        if not _ph["r1"]:
+            raise FileNotFoundError(f"{_hd} 无 r1 头文件")
+        _sc = None
+        for _f in sorted(_ph["r1"].keys()):
+            _fs = _w1 * _ph["r1"][_f]
+            if _w5:
+                _fs = _fs + _w5 * _ph["r5"][_f]
+            if _w3:
+                _fs = _fs + _w3 * _ph["r3"][_f]
+            _fs = _fs + _wt * _ph["top"][_f]
+            _fs = _zn(_fs)
+            _sc = _fs if _sc is None else _sc.add(_fs, fill_value=0.0)
+        return _sc
+
+    print("\n" + "=" * 80)
+    print(" 冻结双腿策略 (FIXED_STRATEGY.md v1.0): 打分刷新 → 回测 → 当日操作")
+    print("=" * 80)
+
+    # 1) V13 打分过期 (族c 组件) → 自动刷新 (失败不阻断, 沿用现有)
+    def _newest_pkl(_dir):
+        try:
+            _fs = [_f for _f in _os.listdir(_dir) if _f.endswith(".pkl")]
+            return max(_f[:8] for _f in _fs) if _fs else None
+        except OSError:
+            return None
+    try:
+        _d11 = _newest_pkl(_os.path.join(_HERE, "model_pred", "2026q3"))
+        _d13 = _newest_pkl(_os.path.join(_ROOT, "V13", "model_pred", "2026q3"))
+        _v13_heads_missing = not _os.path.exists(
+            _os.path.join(_V13_HD, "r1_f1.fea"))
+        if _v13_heads_missing or (_d13 and _d11 and _d13 < _d11):
+            print(f" [ens_w2] V13 需刷新 (heads缺失={_v13_heads_missing}, "
+                  f"pkl {_d13} vs {_d11}), 自动运行 V13 analysis ...")
+            _r = _sp.run(["python3", "analysis.py"],
+                         cwd=_os.path.join(_ROOT, "V13"),
+                         capture_output=True, text=True, timeout=5400)
+            if _r.returncode != 0:
+                print(f" [ens_w2] ⚠ V13 刷新失败 (rc={_r.returncode}): "
+                      f"{_r.stderr[-200:]}")
+    except Exception as _e:
+        print(f" [ens_w2] ⚠ V13 刷新检查跳过: {_e}")
+
+    # 2) ens_w2 组装 (与 run_daily_pipeline.sh 逐字一致) + 扩展合并保全历史
+    #    (heads 由 analysis 增量维护为滑动窗口; 只覆盖其含有的最新日, 其余历史保留)
+    try:
+        _mixA = _build(_V11_HD, 1.0, 0.0, 0.25, 2.0)
+        _v11c = _build(_V13_HD, 1.0, 0.0, 0.0, 1.0)
+        _ens = _zn(_mixA).add(2.0 * _zn(_v11c), fill_value=0.0)
+        _ens.index.name = "date"
+        _old = None
+        if _os.path.exists(_SCORE):
+            _old = _pd.read_feather(_SCORE).set_index("date")
+            _old.index = _old.index.astype(str)
+        _ens.index = _ens.index.astype(str)
+        if _old is not None and len(_old):
+            _full = _pd.concat([_old, _ens], axis=0)
+            _full = _full[~_full.index.duplicated(keep="last")].sort_index()
+        else:
+            _full = _ens.copy()
+            print(" [ens_w2] ⚠ 无旧打分文件, 请确保 heads 覆盖全历史 "
+                  "(必要时删 heads 目录重跑一次全量推演)")
+        _full.reset_index().to_feather(_SCORE)
+        print(f" [ens_w2] score_ens_w2.fea 已刷新: {_full.shape[0]} 天 × "
+              f"{_full.shape[1]} 股, {_full.index.min()} ~ {_full.index.max()}"
+              f" (本次覆盖 {len(_ens)} 天)")
+    except Exception as _e:
+        print(f" [ens_w2] ⚠ 组装失败, 沿用旧打分: {_e}")
+
+    # 3) Trading 引擎: Test 窗回测 + 当日纸面操作
+    try:
+        _sys.path.insert(0, _os.path.join(_ROOT, "Trading"))
+        from engine import load_calendar, load_market, run_backtest  # noqa
+        import daily_frozen as _df  # noqa
+        _mkt = load_market()
+        _tds, _tdi = load_calendar()
+        _sc = _pd.read_feather(_SCORE).set_index("date").sort_index()
+        _scores = dict(
+            scores={_d: _sc.loc[_d].dropna().to_dict() for _d in _sc.index},
+            ranked={_d: _sc.loc[_d].dropna().sort_values(ascending=False)
+                    .index.tolist() for _d in _sc.index},
+            top1={_d: float(_sc.loc[_d].max()) for _d in _sc.index},
+            dates=sorted(_sc.index))
+        _mS, _trS, _eqS = run_backtest(
+            _scores, dict(top_n=2, hold=20, exit_rank=300, min_hold=2,
+                          trail_pct=0.15), _mkt, _tds, _tdi)
+        _mF, _trF, _eqF = run_backtest(
+            _scores, dict(top_n=1, hold=5, stop_loss=0.08),
+            _mkt, _tds, _tdi)
+        print(" --- Test 窗 (20250901~20260901) 回测 (引擎口径, 含成本) ---")
+        print(f"  慢腿 u_h20_re300_tr15: cum={_mS['cum_net']:+.1%} "
+              f"sharpe={_mS['sharpe']:.2f} maxdd={_mS['maxdd']:.1%} "
+              f"H1={_mS['h1_cum']:+.1%} H2={_mS['h2_cum']:+.1%} "
+              f"(n={_mS['n_trades']})")
+        print(f"  快腿 D01: cum={_mF['cum_net']:+.1%} "
+              f"sharpe={_mF['sharpe']:.2f} maxdd={_mF['maxdd']:.1%} "
+              f"H1={_mF['h1_cum']:+.1%} H2={_mF['h2_cum']:+.1%} "
+              f"(n={_mF['n_trades']})")
+        _eS = _eqS.set_index("date")["equity"]
+        _eF = _eqF.set_index("date")["equity"]
+        _j = _eS.index.intersection(_eF.index)
+        _cb = (0.5 * _eS.loc[_j] + 0.5 * _eF.loc[_j]).to_frame()
+        _cb.columns = ["equity"]
+        _cb["ret"] = _cb["equity"].pct_change()
+        _r = _cb["ret"].dropna()
+        _cum = float((1 + _r).prod() - 1)
+        _sh = float(_r.mean() / _r.std() * (252 ** 0.5))
+        _pk = _cb["equity"].cummax()
+        _dd = float((_cb["equity"] / _pk - 1).min())
+        print(f"  双腿合计 (10W=慢5W+快5W, Test 窗): cum={_cum:+.1%} "
+              f"sharpe={_sh:.2f} maxdd={_dd:.1%}")
+        print(" --- 当日纸面操作 (每日收盘后运行, 推进状态) ---")
+        _df.run_daily(_SCORE)
+    except Exception as _e:
+        import traceback as _tb
+        print(f" [frozen] ⚠ 回测/决策块失败 (不影响上方旧报告): {_e}")
+        _tb.print_exc()
+
+
+_frozen_daily_block()
