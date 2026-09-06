@@ -56,3 +56,6 @@ trainingdata/
 
 # Debug generated data (parquet/fea snapshots)
 debug/*/data10d/
+Model/best/paper_state.json
+Model/best/paper_trades.csv
+Model/best/equity_history.csv

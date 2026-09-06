@@ -56,3 +56,18 @@ python3 analysis.py      # 推演 + score_ens_w2.fea + 冻结双腿回测 + 当�
 ③ 期望水平按 +50~60% 规划, +79% 视为好年份; ④ 机制猜想: 配方简单
 (V6 结构无多目标叠加) + 8 折 bagging 内部双种子平均 → 慢腿标尺下不易被
 种子扰动。best = 生产首选慢腿打分源 (可再生、可刷新、种子稳健)。
+
+---
+
+## 六、每日操作 (Model/best/daily_ops.py, 20260906 起)
+
+```bash
+cd /autodl-fs/data/lingqiData/Model/best
+python3 daily_ops.py            # 每天收盘后数据更新完运行一次
+python3 daily_ops.py --history  # 收益历史
+python3 daily_ops.py --reset    # 重置空仓起点 (谨慎)
+```
+自动完成: 打分刷新(落后即推演) → 双腿纸面结算+计划 → 输出明日开盘操作
+(慢腿 Top2 + 快腿 Top1, 按序成交/跳过 ST·涨停·无价) → 净值记入
+equity_history.csv (20260906 空仓 10W 基准, 逐日累计收益)。错过某日未运行 →
+过期指令自动丢弃并提示, 按最新打分重新计划。状态: paper_state.json。

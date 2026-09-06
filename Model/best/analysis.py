@@ -837,7 +837,8 @@ trading_dates = _load_trading_dates(calendar_path)
 # 打分区间: Test 集合 ∩ 1d 标签 (供「Test 集合打分」使用)
 eval_pool = test_window_dates(all_factor_dates)
 # 推演区间: Test 集合内的全部交易日 (回测用实际价格收益, 末端无标签的日期也推演)
-full_dates = [d for d in all_factor_dates if TEST_START <= d <= TEST_END and d in trading_dates]
+full_dates = [d for d in all_factor_dates if d >= TEST_START and d in trading_dates]
+# [daily] 推演延伸至因子数据最新日 (0901 后实盘用); 指标/回测窗仍由 eval_pool 固定 Test
 
 # 增量模式: 每次重跑都重新推算最新 10 个交易日并覆盖上次结果, 更早历史沿用上次推演
 if model_score is not None and len(model_score) > 0:
