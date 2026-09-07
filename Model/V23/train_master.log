@@ -7,3 +7,9 @@
 [train.sh] 启动批次: fold 7 8 9 10 11 12
 [train.sh] 批次完成: fold 7 8 9 10 11 12
 [train.sh] 启动批次: fold 13 14 15 16
+[train.sh] 批次完成: fold 13 14 15 16
+============================================================
+ ALL 16 FOLDS DONE — 训练产物: model_train/2026q3/fold{1..16}
+ 下一步: python3 analysis.py   (全窗口推演 + ens23 权重搜索 + 出榜)
+         python3 analysis.py --backtest  (目标协议 h20tr20_t2 回测)
+============================================================

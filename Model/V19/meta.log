@@ -1,0 +1,15 @@
+[meta] 组装 OOF 特征 (120 天 × 8 列)
+[meta] 训练矩阵 (115229, 11), 特征 ['a_r1', 'a_r3', 'a_r5', 'a_top', 'c_r1', 'c_r3', 'c_r5', 'c_top']
+[meta] alpha=0.03: holdout(后20天) r2=-0.0087
+[meta] alpha=0.1: holdout(后20天) r2=-0.0087
+[meta] alpha=0.3: holdout(后20天) r2=-0.0087
+[meta] alpha=1.0: holdout(后20天) r2=-0.0087
+[meta] alpha=3.0: holdout(后20天) r2=-0.0087
+[meta] alpha=10.0: holdout(后20天) r2=-0.0087
+[meta] 选择 alpha=0.03 (holdout r2=-0.0087)
+[meta] 全量训练 r2=0.0192  (weighted 0.9800)
+[meta] coefs → {'a_r1': -0.4561, 'a_r3': 0.4947, 'a_r5': 0.2678, 'a_top': 0.0408, 'c_r1': 0.5089, 'c_r3': -0.42, 'c_r5': -0.2407, 'c_top': 0.0425}
+[meta] 组装 Test 特征 (V11/V13 heads 8 折均值)
+[meta] Test 特征 (233766, 10), 243 天
+[meta] → /autodl-fs/data/lingqiData/Model/V19/model_pred/2026q3/score_meta.fea (243, 962)
+[meta] Test 5d RankIC = 0.0562 (240 天)

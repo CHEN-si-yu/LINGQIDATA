@@ -1,0 +1,5 @@
+[flex] ====== best 开始 20:08 (CONC=6) ======
+[train.sh] 批次:{  1 2 3 4 5 6 } 并发=6
+[train.sh] 批次:{  7 8 } 并发=6
+TRAIN DONE (folds: 1 2 3 4 5 6 7 8)
+[flex] best 训练未齐 (EXIT:0=3/8) — 中止链

@@ -1,0 +1,146 @@
+[20:10:14] 调度开始: units=['best', 'best_new_seed1', 'best_new_seed2', 'best_new_seed3'], 待办=36 (32折+4推演), 并发槽=6
+[20:10:14]   [fold] best_new_seed1/fold2 启动[20:10:14]   [fold] best_new_seed3/fold1 启动[20:10:14]   [fold] best_new_seed1/fold1 启动
+
+[20:10:14]   [fold] best/fold2 启动[20:10:14]   [fold] best/fold1 启动
+
+[20:10:14]   [fold] best_new_seed2/fold1 启动
+
+[20:10:14]   启动 best_new_seed1/fold1 (pid 70613)
+[20:10:14]   启动 best_new_seed3/fold1 (pid 70610)[20:10:14]   启动 best/fold2 (pid 70612)[20:10:14]   启动 best_new_seed1/fold2 (pid 70611)
+
+
+[20:10:14]   启动 best_new_seed2/fold1 (pid 70614)
+[20:10:14]   启动 best/fold1 (pid 70615)
+[20:20:56]   完成 best_new_seed1/fold2 rc=0
+[20:20:56]   [done] best_new_seed1 fold 2 rc=0
+[20:20:56]   [fold] best_new_seed2/fold2 启动
+[20:20:56]   启动 best_new_seed2/fold2 (pid 72271)
+[20:21:00]   完成 best/fold1 rc=0
+[20:21:02]   [done] best fold 1 rc=0
+[20:21:02]   [fold] best_new_seed3/fold2 启动
+[20:21:02]   启动 best_new_seed3/fold2 (pid 72303)
+[20:21:36]   完成 best_new_seed2/fold1 rc=0
+[20:21:38]   [done] best_new_seed2 fold 1 rc=0
+[20:21:38]   [fold] best/fold3 启动
+[20:21:39]   启动 best/fold3 (pid 72512)
+[20:30:03]   完成 best/fold3 rc=0
+[20:30:04]   [done] best fold 3 rc=0
+[20:30:04]   [fold] best_new_seed1/fold3 启动
+[20:30:04]   启动 best_new_seed1/fold3 (pid 73234)
+[20:30:28]   完成 best_new_seed3/fold2 rc=0
+[20:30:28]   [done] best_new_seed3 fold 2 rc=0
+[20:30:28]   [fold] best_new_seed2/fold3 启动
+[20:30:28]   启动 best_new_seed2/fold3 (pid 73367)
+[20:33:22]   完成 best/fold2 rc=0
+[20:33:24]   [done] best fold 2 rc=0
+[20:33:24]   [fold] best_new_seed3/fold3 启动
+[20:33:24]   启动 best_new_seed3/fold3 (pid 73707)
+[20:35:37]   完成 best_new_seed3/fold1 rc=0
+[20:35:38]   [done] best_new_seed3 fold 1 rc=0
+[20:35:38]   [fold] best/fold4 启动
+[20:35:38]   启动 best/fold4 (pid 73970)
+[20:36:15]   完成 best_new_seed1/fold1 rc=0
+[20:36:16]   [done] best_new_seed1 fold 1 rc=0
+[20:36:16]   [fold] best_new_seed1/fold4 启动
+[20:36:16]   启动 best_new_seed1/fold4 (pid 74130)
+[20:37:32]   完成 best_new_seed1/fold3 rc=0
+[20:37:34]   [done] best_new_seed1 fold 3 rc=0
+[20:37:34]   [fold] best_new_seed2/fold4 启动
+[20:37:34]   启动 best_new_seed2/fold4 (pid 74337)
+[20:39:34]   完成 best_new_seed2/fold2 rc=0
+[20:39:36]   [done] best_new_seed2 fold 2 rc=0
+[20:39:36]   [fold] best_new_seed3/fold4 启动
+[20:39:36]   启动 best_new_seed3/fold4 (pid 74593)
+[20:40:13]   完成 best_new_seed2/fold3 rc=0
+[20:40:14]   [done] best_new_seed2 fold 3 rc=0
+[20:40:14]   [fold] best/fold5 启动
+[20:40:14]   启动 best/fold5 (pid 74752)
+[20:43:13]   完成 best/fold4 rc=0
+[20:43:14]   [done] best fold 4 rc=0
+[20:43:14]   [fold] best_new_seed1/fold5 启动
+[20:43:14]   启动 best_new_seed1/fold5 (pid 75101)
+[20:43:36]   完成 best_new_seed3/fold3 rc=0
+[20:43:38]   [done] best_new_seed3 fold 3 rc=0
+[20:43:38]   [fold] best_new_seed2/fold5 启动
+[20:43:38]   启动 best_new_seed2/fold5 (pid 75249)
+[20:45:09]   完成 best_new_seed1/fold4 rc=0
+[20:45:10]   [done] best_new_seed1 fold 4 rc=0
+[20:45:10]   [fold] best_new_seed3/fold5 启动
+[20:45:10]   启动 best_new_seed3/fold5 (pid 75503)
+[20:46:08]   完成 best_new_seed2/fold4 rc=0
+[20:46:08]   [done] best_new_seed2 fold 4 rc=0
+[20:46:08]   [fold] best/fold6 启动
+[20:46:08]   启动 best/fold6 (pid 75679)
+[20:47:14]   完成 best_new_seed3/fold4 rc=0
+[20:47:14]   [done] best_new_seed3 fold 4 rc=0
+[20:47:14]   [fold] best_new_seed1/fold6 启动
+[20:47:14]   启动 best_new_seed1/fold6 (pid 75870)
+[20:47:43]   完成 best/fold5 rc=0
+[20:47:44]   [done] best fold 5 rc=0
+[20:47:44]   [fold] best_new_seed2/fold6 启动
+[20:47:44]   启动 best_new_seed2/fold6 (pid 75956)
+[20:50:39]   完成 best_new_seed1/fold5 rc=0
+[20:50:40]   [done] best_new_seed1 fold 5 rc=0
+[20:50:40]   [fold] best_new_seed3/fold6 启动
+[20:50:40]   启动 best_new_seed3/fold6 (pid 76374)
+[20:51:09]   完成 best_new_seed2/fold5 rc=0
+[20:51:10]   [done] best_new_seed2 fold 5 rc=0
+[20:51:10]   [fold] best/fold7 启动
+[20:51:10]   启动 best/fold7 (pid 76524)
+[20:52:24]   完成 best_new_seed3/fold5 rc=0
+[20:52:24]   [done] best_new_seed3 fold 5 rc=0
+[20:52:24]   [fold] best_new_seed1/fold7 启动
+[20:52:24]   启动 best_new_seed1/fold7 (pid 76705)
+[20:55:12]   完成 best_new_seed1/fold6 rc=0
+[20:55:14]   [done] best_new_seed1 fold 6 rc=0
+[20:55:14]   [fold] best_new_seed2/fold7 启动
+[20:55:14]   启动 best_new_seed2/fold7 (pid 77000)
+[20:57:01]   完成 best/fold6 rc=0
+[20:57:02]   [done] best fold 6 rc=0
+[20:57:02]   [fold] best_new_seed3/fold7 启动
+[20:57:02]   启动 best_new_seed3/fold7 (pid 77236)
+[20:58:04]   完成 best_new_seed3/fold6 rc=0
+[20:58:06]   [done] best_new_seed3 fold 6 rc=0
+[20:58:06]   [fold] best/fold8 启动
+[20:58:06]   启动 best/fold8 (pid 77429)
+[20:58:43]   完成 best/fold7 rc=0
+[20:58:44]   [done] best fold 7 rc=0
+[20:58:44]   [fold] best_new_seed1/fold8 启动
+[20:58:44]   启动 best_new_seed1/fold8 (pid 77586)
+[21:01:52]   完成 best_new_seed1/fold7 rc=0
+[21:01:52]   [done] best_new_seed1 fold 7 rc=0
+[21:01:52]   [fold] best_new_seed2/fold8 启动
+[21:01:52]   启动 best_new_seed2/fold8 (pid 77961)
+[21:05:02]   完成 best_new_seed2/fold6 rc=0
+[21:05:02]   [done] best_new_seed2 fold 6 rc=0
+[21:05:02]   [fold] best_new_seed3/fold8 启动
+[21:05:02]   启动 best_new_seed3/fold8 (pid 78278)
+[21:05:42]   完成 best/fold8 rc=0
+[21:05:43]   [done] best fold 8 rc=0
+[21:05:43]   [analysis] best 启动
+[21:05:43]   启动 best/analysis (pid 78435)
+[21:06:50]   完成 best_new_seed1/fold8 rc=0
+[21:06:52]   [done] best_new_seed1 fold 8 rc=0
+[21:09:28]   完成 best/analysis rc=0
+[21:09:29]   [done] best analysis  rc=0
+[21:09:29]   [analysis] best_new_seed1 启动
+[21:09:29]   启动 best_new_seed1/analysis (pid 78869)
+[21:09:34]   完成 best_new_seed2/fold8 rc=0
+[21:09:35]   [done] best_new_seed2 fold 8 rc=0
+[21:10:34]   完成 best_new_seed2/fold7 rc=0
+[21:10:35]   [done] best_new_seed2 fold 7 rc=0
+[21:11:58]   完成 best_new_seed3/fold8 rc=0
+[21:11:59]   [done] best_new_seed3 fold 8 rc=0
+[21:13:05]   完成 best_new_seed1/analysis rc=0
+[21:13:05]   [done] best_new_seed1 analysis  rc=0
+[21:13:05]   [analysis] best_new_seed2 启动
+[21:13:05]   启动 best_new_seed2/analysis (pid 79178)
+[21:16:40]   完成 best_new_seed2/analysis rc=0
+[21:16:41]   [done] best_new_seed2 analysis  rc=0
+[21:21:26]   完成 best_new_seed3/fold7 rc=0
+[21:21:27]   [done] best_new_seed3 fold 7 rc=0[21:21:27]   [analysis] best_new_seed3 启动
+
+[21:21:28]   启动 best_new_seed3/analysis (pid 79843)
+[21:25:23]   完成 best_new_seed3/analysis rc=0
+[21:25:23]   [done] best_new_seed3 analysis  rc=0
+[21:25:23] 调度器退出; 汇总: best:OK; best_new_seed1:OK; best_new_seed2:OK; best_new_seed3:OK

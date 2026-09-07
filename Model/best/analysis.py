@@ -71,12 +71,12 @@ warnings.filterwarnings("ignore")
 # ======================================================================
 # 从 model.py 导入共享配置（路径、因子名、标签名、预加载数据、数据划分边界）
 from model import (PROJECT_ROOT, root_path, fac_path, fac_name, params,
-                   PredictModel, TEST_START, TEST_END)
+                   PredictModel, LIVE_START)
 
 # ── 推演/打分/回测配置 (与 model.py 数据划分对齐) ──
-# 所有打分与回测均基于 Test 集合这一时间段 (20250901 ~ 20260901, 严格样本外)
-start = TEST_START          # 打分/回测窗口起点 = Test 集合起点 (含)
-END = TEST_END              # 打分/回测窗口终点 = Test 集合终点 (含)
+# 实战版 (2026-09-07): 不再有 Test 集合 — 20260901 前全部数据已入训练池;
+# 打分/评估/回测窗口 = 实盘起点 (20260901) ~ 因子数据最新日, 随实盘滚动增长。
+start = LIVE_START          # 打分/评估窗口起点 = 实盘起点 (含)
 SEASON = '2026q3'           # checkpoint 目录: model_train/{SEASON}/foldN
 TOP_N = 1                   # 回测买入股票数量（trade log 展示用）
 EXCLUDE_LIMIT_UP = False    # 是否排除涨停板（factor日涨幅>=9.5%，历史保留选项，默认关闭）
@@ -212,7 +212,7 @@ def _load_trading_dates(calendar_path):
     return set(cal[cal['is_open'] == 1]['date'].astype(str).str.replace('-', '').tolist())
 
 
-# ── 单一模型评估（Test 集合打分, 与 model.py 同口径） ────────────────────────
+# ── 单一模型评估（实盘窗口打分, 与 model.py 同口径） ────────────────────────
 
 def _spearman(a, b):
     """Spearman rank 相关系数 (numpy), 与训练 _rank_corr / eval_ensemble.py 同语义。"""
@@ -221,10 +221,10 @@ def _spearman(a, b):
     return np.corrcoef(a, b)[0, 1]
 
 
-def test_window_dates(factor_dates):
-    """打分区间: Test 集合 (TEST_START~TEST_END) ∩ 因子数据 ∩ 1d 标签。"""
+def live_window_dates(factor_dates):
+    """实盘窗口打分区间: LIVE_START ~ 因子数据最新日 (动态, 无上界) ∩ 1d 标签。"""
     return sorted(d for d in factor_dates
-                  if TEST_START <= d <= TEST_END and d in params.ret_1d_data.index)
+                  if d >= LIVE_START and d in params.ret_1d_data.index)
 
 
 def eval_score_metrics(model_score, eval_dates, top_n=1):
@@ -809,7 +809,7 @@ def print_backtest_summary(ret_valid, recent_dates, start_d, end_d, n_lookback,
 # ======================================================================
 # Cell 3 [code]
 # ============================================================
-# 1. 统一推演：加载 checkpoint，推演 Test 集合区间内所有交易日
+# 1. 统一推演：加载 checkpoint，推演实盘窗口 (20260901 起) 内所有交易日
 # ============================================================
 
 # ── Step 0: 上次推演结果（用于增量合并与一致性验证） ──
@@ -830,15 +830,15 @@ if missing:
     print(f"[predict] WARNING: {len(missing)} training factors missing from DB, will fill with 0")
 cols_to_load = ['date', 'Code'] + available
 
-# ── Step 3: 待推演日期 = Test 集合打分区间 (20250901~20260901) 的全部交易日 ──
+# ── Step 3: 待推演日期 = 实盘窗口 (20260901 起) 的全部交易日 ──
 all_factor_dates = sorted(pd.Series(
     pf.read_table(fac_full_path, columns=['date']).column('date').to_pandas()).unique())
 trading_dates = _load_trading_dates(calendar_path)
-# 打分区间: Test 集合 ∩ 1d 标签 (供「Test 集合打分」使用)
-eval_pool = test_window_dates(all_factor_dates)
-# 推演区间: Test 集合内的全部交易日 (回测用实际价格收益, 末端无标签的日期也推演)
-full_dates = [d for d in all_factor_dates if d >= TEST_START and d in trading_dates]
-# [daily] 推演延伸至因子数据最新日 (0901 后实盘用); 指标/回测窗仍由 eval_pool 固定 Test
+# 打分区间: 实盘窗口 ∩ 1d 标签 (供「实盘窗口评估」; 0901 起为训练外新数据)
+eval_pool = live_window_dates(all_factor_dates)
+# 推演区间: 实盘窗口内全部交易日 (含末端无标签日期, 为次日实盘操作打分)
+full_dates = [d for d in all_factor_dates if d >= LIVE_START and d in trading_dates]
+# [daily] 推演延伸至因子数据最新日 (实盘滚动); 指标/回测窗随实盘增长, 无固定 Test
 
 # 增量模式: 每次重跑都重新推算最新 10 个交易日并覆盖上次结果, 更早历史沿用上次推演
 if model_score is not None and len(model_score) > 0:
@@ -967,16 +967,16 @@ if model_score is not None and len(model_score) > 0:
 # ======================================================================
 # Cell 4.5 [code]
 # ============================================================
-# 4.5 单一模型评估: Test 集合打分 (20250901~20260901, 严格样本外)
+# 4.5 单一模型评估: 实盘窗口打分 (20260901 ~ 因子数据最新日)
 # ============================================================
 
 eval_dates = [d for d in eval_pool if d in model_score_extended.index]
 rank_ic, pearson_ic, top_ret = eval_score_metrics(model_score_extended, eval_dates, top_n=TOP_N)
 
-print("\n---Test 集合打分---")
+print("\n---实盘窗口打分---")
 print(f"  持仓数: {TOP_N} 只")
-print(f"  打分区间: Test 集合 {TEST_START} ~ {TEST_END} "
-      f"({len(eval_dates)} 天, 严格样本外, 与训练/验证无重叠)")
+print(f"  打分区间: 实盘 {start} ~ {model_score_extended.index.max()} "
+      f"({len(eval_dates)} 天, 0901 起为训练外新数据, 随实盘滚动增长)")
 
 if len(rank_ic) > 0:
     metrics = {
@@ -992,7 +992,7 @@ if len(rank_ic) > 0:
     if len(pearson_ic) > 0 and pearson_ic.std() != 0:
         print(f"[对照] 全池 Pearson IC: IC={pearson_ic.mean():+.4f}  "
               f"ICIR={pearson_ic.mean() / pearson_ic.std():+.4f}")
-    print("[提示] 后续回测章节使用同一 Test 区间的实际价格收益 (daily_adj open), 与训练 target 解耦")
+    print("[提示] 后续回测章节使用同一实盘窗口的实际价格收益 (daily_adj open), 与训练 target 解耦")
 else:
     print("WARNING: 打分区间内无有效 IC 日期, 跳过模型评估")
 
@@ -1046,21 +1046,19 @@ for date in block_dates:
 # ======================================================================
 # Cell 6 [code]
 # ============================================================
-# Test 集合回测 (20250901 ~ 20260901)
+# 实盘窗口回测 (20260901 ~ 打分最新日, 随实盘滚动; 该区间日期未入训练)
 # Dynamic tracking: return curve + daily trade log (symbol / price / return)
 # ALL returns computed from actual price data (daily_adj), NOT from label
-# ============================================================
 
-WINDOW_START = start  # 回测窗口起点 = Test 集合起点 20250901 (含)
-WINDOW_END = END      # 回测窗口终点 = Test 集合终点 20260901 (含)
+WINDOW_START = start  # 回测窗口起点 = 实盘起点 20260901 (含)
 
-print(f"--- Backtest: {WINDOW_START} ~ {WINDOW_END} (Test 集合) ---")
+print(f"--- Backtest: {WINDOW_START} ~ 至今 (实盘窗口, 随实盘滚动) ---")
 
 # ── Setup: 价格/名称/成交额/交易日历已在 Cell 5 加载 ──
 
-# ── Select window: Test 集合区间 20250901 ~ 20260901 ──
+# ── Select window: 实盘窗口 20260901 ~ 打分最新日 ──
 all_dates = sorted(model_score_extended.index)
-recent_dates = [d for d in all_dates if WINDOW_START <= d <= WINDOW_END]
+recent_dates = [d for d in all_dates if d >= WINDOW_START]
 start_d, end_d = recent_dates[0], recent_dates[-1]
 N_LOOKBACK = len(recent_dates)  # 实际交易日数，仅供 summary 标题展示
 

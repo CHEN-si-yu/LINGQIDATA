@@ -1,0 +1,7 @@
+[2026-09-04 20:55:40] [preflight] Skipped (--no-wait)
+[2026-09-04 20:55:40] [incremental] 1 datasets | overlap=3 days | workers=6 | parallel=False
+[2026-09-04 20:55:40] [incremental] Datasets: ['indicators_1min']
+[2026-09-04 20:55:40] 
+============================================================
+[2026-09-04 20:55:40] [incremental] Batch-processing 1 local indicators: ['indicators_1min']
+[2026-09-04 20:55:40] [indicators] 962 stocks, 1 indicator dataset(s): ['ALL']

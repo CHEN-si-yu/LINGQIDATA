@@ -39,11 +39,13 @@ os.environ['NUMEXPR_NUM_THREADS'] = str(cpu_num)
 torch.set_num_threads(cpu_num)
 
 # ============================================================
-# 数据划分边界 (与 analysis.py 对齐, 保持 V2 不变)
+# 数据划分边界 (与 analysis.py 对齐; 2026-09-07 实战版)
+# 实战口径: 不再设 Test 集合 — 20260901 之前的全部数据进入训练池
+# (Train + 尾部 Valid 120d, 与旧逻辑一致); 20260901 起为实盘日。
+# analysis.py 打分/评估/回测窗口 = LIVE_START ~ 因子数据最新日 (动态)。
 # ============================================================
-TEST_START = '20250901'
-TEST_END = '20260901'
-TRAIN_END = '20250809'
+LIVE_START = '20260901'      # 实盘起点: 打分窗口起点, 且 >= 该日的数据不进训练池
+TRAIN_END = LIVE_START       # 训练池切点: date < TRAIN_END 的全部数据可用 (含 Valid 尾段)
 VALID_DAYS = 120
 N_FOLDS = 4
 PURGE_DAYS = 5
@@ -496,8 +498,8 @@ class DLLitModule(LightningModule):
 
 def get_date_splits(date_list, fold=1):
     date_list = sorted(date_list)
+    # 实战版: 无 Test 集合, 全部历史 (< TRAIN_END = < 20260901) 进入训练池
     train_allowed = [d for d in date_list if d < TRAIN_END]
-    test_dates = [d for d in date_list if TEST_START <= d <= TEST_END]
     n = len(train_allowed)
     if n < VALID_DAYS + PURGE_DAYS + 10:
         raise ValueError(f'训练可用日期不足: {n} < {VALID_DAYS + PURGE_DAYS + 10}')
@@ -512,7 +514,7 @@ def get_date_splits(date_list, fold=1):
     size = base + (1 if f < rem else 0)
     valid_dates = sorted(valid_pool[start:start + size])
     train_dates = train_allowed[:n - VALID_DAYS - PURGE_DAYS]
-    return train_dates, valid_dates, test_dates
+    return train_dates, valid_dates
 
 
 def train_single(args, name, seed, train_date_list, valid_date_list):
@@ -561,7 +563,7 @@ def train(args, season='2026q3', fold=1, state='train'):
 
     # V8 bagging: fold 5-8 复用 fold 1-4 的划分, 仅换种子 (2 seeds × 4 折)
     split_fold = (fold - 1) % N_FOLDS + 1
-    train_dates, valid_dates, test_dates = get_date_splits(date_list, fold=split_fold)
+    train_dates, valid_dates = get_date_splits(date_list, fold=split_fold)
     print('=' * 70)
     print('  V8: V6 结构 + 多种子 bagging (2 seeds × 4 折 = 8 模型, 集成 8 个 z-score)')
     print('  线性排序头 (ridge 热启动: 600d 截面秩线性拟合) + 独立小 MLP 顶部分支')
@@ -570,8 +572,8 @@ def train(args, season='2026q3', fold=1, state='train'):
     print('        top -1.0×TopRet(秩) + 0.3×ListNet-Top20; R-Drop 0.1 作用于混合分')
     print('  训练: AdamW(lin wd=1e-3, top wd=3e-3) + warmup+cosine, 时间衰减 hl=600d')
     print('=' * 70)
-    print('  数据划分:')
-    print(f'    Test  : {TEST_START} ~ {TEST_END} ({len(test_dates)} 个交易日)')
+    print('  数据划分 (实战版: 无 Test, 20260901 前全量入训练池):')
+    print(f'    Live  : {LIVE_START} 起实盘 (打分窗口起点, 不进训练池)')
     print(f'    Valid : 本 Fold({fold}/8, 划分复用 {split_fold}/{N_FOLDS}) 取 {len(valid_dates)} 天: {valid_dates[0]} ~ {valid_dates[-1]}')
     print(f'    Train : {train_dates[0]} ~ {train_dates[-1]} ({len(train_dates)} 天)')
     print(f'    factor_num={params.factor_num}, batch_size={args.batch_size}, '

@@ -1,0 +1,73 @@
+Seed set to 4253
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+The following callbacks returned in `LightningModule.configure_callbacks` will override existing callbacks passed to Trainer: ModelCheckpoint
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Loading `train_dataloader` to estimate number of stepping batches.
+[V20] fam=a style=cons cfg={'RANK_W1': 4.0, 'RANK_W3': 2.0, 'RANK_W5': 2.0, 'TOPRET_WEIGHT': 0.3, 'TOP_AUX_WEIGHT': 0.15, 'TOPRET_TAU_FRAC': 0.08, 'LISTNET_WEIGHT': 0.1, 'LISTNET_TAU_FRAC': 0.15, 'LISTNET_K': 20}
+PredictModel(
+  (lin_1d): Linear(in_features=848, out_features=1, bias=True)
+  (lin_3d): Linear(in_features=848, out_features=1, bias=True)
+  (lin_5d): Linear(in_features=848, out_features=1, bias=True)
+  (top_branch): Sequential(
+    (0): Linear(in_features=848, out_features=128, bias=True)
+    (1): GELU(approximate='none')
+    (2): Dropout(p=0.3, inplace=False)
+    (3): Linear(in_features=128, out_features=64, bias=True)
+    (4): GELU(approximate='none')
+    (5): Linear(in_features=64, out_features=1, bias=True)
+  )
+)
+┏━━━┳━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃   ┃ Name  ┃ Type         ┃ Params ┃ Mode  ┃ FLOPs ┃
+┡━━━╇━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ 0 │ model │ PredictModel │  119 K │ train │     0 │
+└───┴───────┴──────────────┴────────┴───────┴───────┘
+Trainable params: 119 K                                                         
+Non-trainable params: 0                                                         
+Total params: 119 K                                                             
+Total estimated model params size (MB): 0.478                                   
+Modules in train mode: 11                                                       
+Modules in eval mode: 0                                                         
+Total FLOPs: 0                                                                  
+`Trainer.fit` stopped: `max_epochs=20` reached.
+[epoch 0] val_rankic=+0.0908  val_ic=+0.0717  val_top10_ret=+0.00168
+[epoch 1] val_rankic=+0.0862  val_ic=+0.0536  val_top10_ret=+0.00078
+[epoch 2] val_rankic=+0.0849  val_ic=+0.0840  val_top10_ret=+0.00156
+[epoch 3] val_rankic=+0.0992  val_ic=+0.0864  val_top10_ret=+0.00256
+[epoch 4] val_rankic=+0.0869  val_ic=+0.0718  val_top10_ret=+0.00182
+[epoch 5] val_rankic=+0.0783  val_ic=+0.0696  val_top10_ret=+0.00166
+[epoch 6] val_rankic=+0.0631  val_ic=+0.0638  val_top10_ret=+0.00121
+[epoch 7] val_rankic=+0.0646  val_ic=+0.0475  val_top10_ret=+0.00070
+[epoch 8] val_rankic=+0.0628  val_ic=+0.0602  val_top10_ret=+0.00117
+[epoch 9] val_rankic=+0.0722  val_ic=+0.0683  val_top10_ret=+0.00166
+[epoch 10] val_rankic=+0.0754  val_ic=+0.0730  val_top10_ret=+0.00226
+[epoch 11] val_rankic=+0.0694  val_ic=+0.0655  val_top10_ret=+0.00144
+[epoch 12] val_rankic=+0.0757  val_ic=+0.0706  val_top10_ret=+0.00193
+[epoch 13] val_rankic=+0.0676  val_ic=+0.0692  val_top10_ret=+0.00171
+[epoch 14] val_rankic=+0.0794  val_ic=+0.0730  val_top10_ret=+0.00205
+[epoch 15] val_rankic=+0.0806  val_ic=+0.0735  val_top10_ret=+0.00223
+[epoch 16] val_rankic=+0.0829  val_ic=+0.0719  val_top10_ret=+0.00195
+[epoch 17] val_rankic=+0.0801  val_ic=+0.0730  val_top10_ret=+0.00216
+[epoch 18] val_rankic=+0.0808  val_ic=+0.0731  val_top10_ret=+0.00231
+[epoch 19] val_rankic=+0.0795  val_ic=+0.0732  val_top10_ret=+0.00236
+Epoch 19/19 ━━━━━━━━━━━━━━━━ 155/155 0:00:29 •        5.34it/s v_num: 0.000     
+                                     0:00:00                   train_loss:      
+                                                               -0.017           
+                                                               val_rankic: 0.079
+                                                               val_ic: 0.073    
+                                                               val_ret: 0.002   
+Traceback (most recent call last):
+  File "/autodl-fs/data/lingqiData/Model/Trading/diag_epoch.py", line 154, in <module>
+    main()
+  File "/autodl-fs/data/lingqiData/Model/Trading/diag_epoch.py", line 140, in main
+    ckpts, m = train_fold_all_ckpts()
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/Model/Trading/diag_epoch.py", line 74, in train_fold_all_ckpts
+    ckpts = sorted(glob.glob(out_dir + "/*.ckpt"),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/autodl-fs/data/lingqiData/Model/Trading/diag_epoch.py", line 75, in <lambda>
+    key=lambda p: float(re.search(r'val_rankic=([-\d.]+)', p).group(1)))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: could not convert string to float: '0.0908.'

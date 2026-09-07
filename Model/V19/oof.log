@@ -1,0 +1,19 @@
+[oof] valid_pool: 120 天 20250217~20250808
+[oof] 因子 120 天加载完成, 848 因子
+[oof] a1 (epoch=2-val_rankic=0.0987.ckpt) 落盘
+[oof] a2 (epoch=1-val_rankic=0.0661.ckpt) 落盘
+[oof] a3 (epoch=0-val_rankic=0.0688.ckpt) 落盘
+[oof] a4 (epoch=0-val_rankic=0.0740.ckpt) 落盘
+[oof] a5 (epoch=0-val_rankic=0.1168.ckpt) 落盘
+[oof] a6 (epoch=0-val_rankic=0.0562.ckpt) 落盘
+[oof] a7 (epoch=3-val_rankic=0.0397.ckpt) 落盘
+[oof] a8 (epoch=0-val_rankic=0.0567.ckpt) 落盘
+[oof] c1 (epoch=0-val_rankic=0.1195.ckpt) 落盘
+[oof] c2 (epoch=17-val_rankic=0.0831.ckpt) 落盘
+[oof] c3 (epoch=10-val_rankic=0.0576.ckpt) 落盘
+[oof] c4 (epoch=0-val_rankic=0.0707.ckpt) 落盘
+[oof] c5 (epoch=20-val_rankic=0.1094.ckpt) 落盘
+[oof] c6 (epoch=0-val_rankic=0.0874.ckpt) 落盘
+[oof] c7 (epoch=1-val_rankic=0.0352.ckpt) 落盘
+[oof] c8 (epoch=0-val_rankic=0.0684.ckpt) 落盘
+[oof] DONE → meta_oof/
