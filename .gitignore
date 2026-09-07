@@ -41,6 +41,7 @@ Model/*/model_test/
 Model/*/model_train/
 Model/*/model_pred/
 Model/*/crash_bak/
+Model/*/meta_oof/
 *.pkl
 *.pth
 *.ckpt
