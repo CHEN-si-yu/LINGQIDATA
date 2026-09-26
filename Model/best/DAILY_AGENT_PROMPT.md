@@ -19,19 +19,35 @@
   / pending{exec_day,factor_dt,sells[],buys[]}; 双腿各一份: slow 与 fast)
 - 成交日志: `Model/best/paper_trades.csv`; 净值历史: `Model/best/equity_history.csv`
 - 引擎口径参考(勿改代码): `Model/Trading/engine.py` 与 `daily_frozen.py`
+- **V8 影子打分单元(观察用, 不参与决策)**: `Model/best/v8_shadow/`(V8 原版
+  9/2 checkpoint, 训练截止 20250809), 打分文件
+  `v8_shadow/model_pred/2026q3/all_zscore_score.fea`, 由 daily_ops 同步刷新
 
 **慢腿(slow)** = Top2 双仓, 持有≤20日, 收盘排名>300 退出(min_hold 2),
 移动止盈15%(自峰值收盘), 无固定止损; **快腿(fast)** = Top1, 持有5日, 止损8%。
 
 ### 任务步骤
 
-1. **核对数据新鲜度**(快): 读 `trainingdata/fac_all.fea` 最新日期与
-   `Model/best/model_pred/2026q3/all_zscore_score.fea`、V11 的 score 最新日期;
-   若打分落后, 先跑 `python3 analysis.py`(best)与 V11 侧刷新(或直接运行
-   `python3 daily_ops.py`, 它含自动刷新)。
+> **⚠ 回复格式铁律 (用户 2026-09-07 加, 最高优先级): 每条回复的第一段必须是
+> 「明日开盘操作」结论, 单独成段、加粗醒目**, 如 `**明日 (0908) 开盘: 无买卖,
+> 持仓不动**` 或具体的卖出/买入清单 — 这是用户每天最关心的信息, 严禁把它放在
+> 回复末尾或埋在长文里; 开头结论段之后, 再按下面 1~6 顺序展开细节。
+
+1. **核对数据新鲜度**(快): 读 `trainingdata/fac_all.fea` 最新日期, 与三个打分源
+   的最新日期对照: best(`Model/best/model_pred/2026q3/all_zscore_score.fea`)、
+   V11 快腿(`Model/V11/model_pred/2026q3/score_ens_w2.fea`)、V8 影子
+   (`Model/best/v8_shadow/model_pred/2026q3/all_zscore_score.fea`);
+   若任一落后 → 直接运行 `python3 daily_ops.py`, 它含**三源自动刷新**
+   (也可手动: best 与 v8_shadow 各自目录下跑 `python3 analysis.py`)。
 2. **运行** `cd /autodl-fs/data/lingqiData/Model/best && python3 daily_ops.py`,
    展示: 今日结算、当前持仓与净值、明日开盘操作。
-3. **对照我报告的「实际执行情况」逐项核对修正**(核心步骤):
+3. **V8 影子对照**(每次必做, 观察项): daily_ops 输出尾部自带「V8 影子对照」小节
+   (三源刷新后必有数据)。在回复里转述并简短点评:
+   - 两源打分最新因子日是否一致;
+   - 最新因子日 best 与 V8 的慢腿 Top2 候选(代码/名称/打分)及重合情况;
+   - 有实质分歧时(如 Top2 零重合、best 持仓票在 V8 排名跌出前 300)点出,
+     一两句即可, 不做长篇分析, 不据此改变任何建议。
+4. **对照我报告的「实际执行情况」逐项核对修正**(核心步骤):
    - 若实际与纸面**一致**或我今天**未做任何操作**(空仓/忘了/休市) → 无需改状态,
      说明即可(注意: 错过某日未运行会让当日指令失效, 属正常, 明日按新计划来)。
    - 若**不一致**, 按下面规则修正 paper_state.json(slow/fast 各自独立), 再重跑
@@ -52,15 +68,19 @@
         reason='manual'/hold_days。
      d. **仓位/资金与纸面有出入但一时说不清** → 问我补齐关键信息(哪条腿、哪只票、
         数量、价格), 不要猜。
-4. **收益与记录**: 修正后跑一次 daily_ops 使 equity_history.csv 反映真实持仓;
+5. **收益与记录**: 修正后跑一次 daily_ops 使 equity_history.csv 反映真实持仓;
    展示当日净值与累计收益; 如有 manual 修正, 在回复里列一份"今日修正清单"。
-5. **输出明日操作摘要**(慢腿买入前2 / 快腿买入第1 / 卖出清单), 提醒顺延规则。
+6. **明日操作摘要**已按回复格式铁律呈现在回复开头; 此处确认卖出清单与顺延规则
+   (慢腿买入前2 / 快腿买入第1 / 卖出清单) 的细节即可。
 
 ### 铁律
 
 - 只改 paper_state.json / paper_trades.csv 与运行脚本; **绝不修改**
-  FIXED_STRATEGY.md、engine.py、daily_frozen.py、daily_ops.py、analysis.py 等代码,
-  也不要改动 best/V11 的打分产物来"拟合"我的操作。
+  FIXED_STRATEGY.md、engine.py、daily_frozen.py、daily_ops.py、analysis.py
+  (含 v8_shadow/ 下的拷贝) 等代码, 也不要改动 best/V11/v8_shadow 的打分产物
+  来"拟合"我的操作。
+- **V8 影子仅供对照观察**: 一切结论、明日操作建议与纸面修正一律以
+  best(慢腿)+V11(快腿)为准; 不得因 V8 影子排名与 best 不同而改动 best 的计划。
 - 同日重复运行 daily_ops 是安全的(有防双结算守卫), 但**不要**用 --reset 清空状态
   除非我明确要求重来。
 - 我叙述与文件状态矛盾且无法核实 → 停下来问我, 不擅自抹平。

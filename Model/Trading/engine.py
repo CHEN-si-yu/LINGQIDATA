@@ -83,7 +83,9 @@ def load_market():
                                   .str.replace(".SH", "", regex=False)
     df = df.sort_values(["code", "trade_date"])
     df["prev_close"] = df.groupby("code")["close"].shift(1)
-    df = df[(df["trade_date"] >= "20250801") & (df["trade_date"] <= "20260904")]
+    # 行情末端随 daily_adj.parquet 数据更新滚动 (实盘日结需要当日价格)
+    mkt_end = df["trade_date"].max()
+    df = df[(df["trade_date"] >= "20250801") & (df["trade_date"] <= mkt_end)]
     open_m = df.set_index(["trade_date", "code"])["open"].to_dict()
     high_m = df.set_index(["trade_date", "code"])["high"].to_dict()
     close_m = df.set_index(["trade_date", "code"])["close"].to_dict()
@@ -145,7 +147,7 @@ def run_backtest(scores, cfg, market, tds=None, tdi=None,
     i1 = tdi.get(window[1])
     # 首个开盘执行日 = 窗口首打分日的次日 (20250902)
     i_start = tdi[window[0]] + 1
-    # 尾仓结算缓冲: 至价格数据末尾 (20260904), 期末日强制清仓
+    # 尾仓结算缓冲: 至价格数据末尾 (随行情滚动), 期末日强制清仓
     i_end = min(i1 + 4, len(tds) - 1, tdi.get(market.get("max_date"), len(tds) - 1))
 
     def latest_fd(td):

@@ -1,100 +1,135 @@
 {
   "slow": {
-    "cash": 50000.0,
-    "slots": [],
-    "prev_day": "20260904",
+    "cash": 1785.9830799999982,
+    "slots": [
+      {
+        "code": "002541",
+        "buy_dt": "20260911",
+        "buy_prc": 19.26,
+        "lots": 12,
+        "peak": 19.26,
+        "peak_dt": "20260911",
+        "sell_flag": false,
+        "reason": "",
+        "buy_notional": 23112.000000000004
+      },
+      {
+        "code": "600446",
+        "buy_dt": "20260914",
+        "buy_prc": 10.52,
+        "lots": 23,
+        "peak": 10.52,
+        "peak_dt": "20260914",
+        "sell_flag": false,
+        "reason": "",
+        "buy_notional": 24196.0
+      }
+    ],
+    "prev_day": "20260918",
     "pending": {
-      "exec_day": "20260907",
-      "factor_dt": "20260904",
+      "exec_day": "20260921",
+      "factor_dt": "20260918",
       "sells": [],
       "buys": [
         {
-          "code": "600338",
-          "factor_dt": "20260904"
+          "code": "000513",
+          "factor_dt": "20260918"
         },
         {
-          "code": "002366",
-          "factor_dt": "20260904"
-        },
-        {
-          "code": "000758",
-          "factor_dt": "20260904"
+          "code": "600096",
+          "factor_dt": "20260918"
         },
         {
           "code": "002176",
-          "factor_dt": "20260904"
+          "factor_dt": "20260918"
         },
         {
-          "code": "000612",
-          "factor_dt": "20260904"
+          "code": "600521",
+          "factor_dt": "20260918"
         },
         {
-          "code": "002497",
-          "factor_dt": "20260904"
+          "code": "002183",
+          "factor_dt": "20260918"
         },
         {
-          "code": "000422",
-          "factor_dt": "20260904"
+          "code": "002545",
+          "factor_dt": "20260918"
         },
         {
-          "code": "000762",
-          "factor_dt": "20260904"
+          "code": "600338",
+          "factor_dt": "20260918"
+        },
+        {
+          "code": "600031",
+          "factor_dt": "20260918"
+        },
+        {
+          "code": "000630",
+          "factor_dt": "20260918"
         },
         {
           "code": "000060",
-          "factor_dt": "20260904"
-        },
-        {
-          "code": "603328",
-          "factor_dt": "20260904"
+          "factor_dt": "20260918"
         }
       ]
     }
   },
   "fast": {
-    "cash": 50000.0,
-    "slots": [],
-    "prev_day": "20260904",
+    "cash": 147.25764000000345,
+    "slots": [
+      {
+        "code": "600986",
+        "buy_dt": "20260915",
+        "buy_prc": 7.21,
+        "lots": 69,
+        "peak": 7.21,
+        "peak_dt": "20260915",
+        "sell_flag": false,
+        "reason": "",
+        "buy_notional": 49749.0
+      }
+    ],
+    "prev_day": "20260918",
     "pending": {
-      "exec_day": "20260907",
-      "factor_dt": "20260904",
+      "exec_day": "20260921",
+      "factor_dt": "20260918",
       "sells": [],
       "buys": [
         {
-          "code": "600338",
-          "factor_dt": "20260904"
+          "code": "000513",
+          "factor_dt": "20260918"
         },
         {
-          "code": "002366",
-          "factor_dt": "20260904"
-        },
-        {
-          "code": "000758",
-          "factor_dt": "20260904"
+          "code": "600096",
+          "factor_dt": "20260918"
         },
         {
           "code": "002176",
-          "factor_dt": "20260904"
+          "factor_dt": "20260918"
         },
         {
-          "code": "000612",
-          "factor_dt": "20260904"
+          "code": "600521",
+          "factor_dt": "20260918"
         },
         {
-          "code": "002497",
-          "factor_dt": "20260904"
+          "code": "002183",
+          "factor_dt": "20260918"
         },
         {
-          "code": "000422",
-          "factor_dt": "20260904"
+          "code": "002545",
+          "factor_dt": "20260918"
         },
         {
-          "code": "000762",
-          "factor_dt": "20260904"
+          "code": "600338",
+          "factor_dt": "20260918"
         },
         {
-          "code": "000060",
-          "factor_dt": "20260904"
+          "code": "600031",
+          "factor_dt": "20260918"
+        },
+        {
+          "code": "000630",
+          "factor_dt": "20260918"
         }
       ]
     }

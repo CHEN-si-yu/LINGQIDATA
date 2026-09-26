@@ -4,10 +4,13 @@
 daily_ops.py — Model/best 每日专用推演 + 操作指令 + 收益追踪 (20260906 起)
 
 流程 (每日收盘后数据更新完成, 运行一次):
-  ① 打分刷新: best (慢腿源) / V11 (快腿源) 落后于因子数据最新日 → 自动推演;
+  ① 打分刷新: best (慢腿源) / V11 (快腿源) / V8 影子 (v8_shadow, 仅观察)
+     落后于因子数据最新日 → 自动推演;
   ② 纸面状态推进: 结算今日开盘指令 → 收盘检查 → 产出明日开盘操作;
   ③ 输出: 当前持仓 / 明日买卖清单 (慢腿2只+快腿1只) / 双腿净值;
-  ④ 收益记录: Model/best/equity_history.csv 追加当日净值 (20260906 空仓起点 10W)。
+  ④ 收益记录: Model/best/equity_history.csv 追加当日净值 (20260906 空仓起点 10W);
+  ⑤ V8 影子对照: 打印 V8 与 best 同因子日慢腿 Top2 候选及分歧 (仅观察,
+     结论与建议一律以 best/V11 计划为准)。
 
 状态: Model/best/paper_state.json; 成交日志: Model/best/paper_trades.csv
 用法:
@@ -44,6 +47,9 @@ EQ_PATH = os.path.join(HERE, "equity_history.csv")
 UNITS = {  # 打分源 → (目录, score 相对路径)
     "slow": ("best", "model_pred/2026q3/all_zscore_score.fea"),
     "fast": ("V11", "model_pred/2026q3/score_ens_w2.fea"),
+    # V8 影子 (2026-09-07 加): V8 原版 9/2 checkpoint (训练截止 20250809),
+    # 在 best/v8_shadow/ 下做同步实时推演, 仅供对照观察, 不参与 slow/fast 决策。
+    "v8_shadow": ("best/v8_shadow", "model_pred/2026q3/all_zscore_score.fea"),
 }
 
 
@@ -106,6 +112,7 @@ def record_equity(today, slow_st, fast_st, market):
     rows = []
     if os.path.exists(EQ_PATH):
         rows = pd.read_csv(EQ_PATH)
+        rows["date"] = rows["date"].astype(str)   # CSV 数字日期会被读成 int,与日历 str 对齐
         rows = rows[rows["date"] != today]     # 同日重跑 → 覆盖该日行
     row = dict(date=today, slow_eq=round(sv, 2), fast_eq=round(fv, 2),
                total=round(total, 2), cum_pct=round(total / BASE_TOTAL - 1, 6))
@@ -192,6 +199,38 @@ def run_daily():
                            for b in pend.get("buys", [])) or "无"))
     print(f"\n 双腿合计净值: {row['total']:,.0f} 元 / 10W "
           f"(累计 {row['cum_pct']:+.2%}) — 已记入 {os.path.basename(EQ_PATH)}")
+
+    # ── V8 影子对照 (仅观察; 结论与操作建议一律以 best/V11 计划为准) ──
+    try:
+        v8_df = load_score_df(*UNITS["v8_shadow"])
+        if len(v8_df):
+            fd_v8 = str(v8_df.index.max())
+            fd_best = str(slow_df.index.max())
+            sync = "一致" if fd_v8 == fd_best else "⚠ 不一致"
+            print(f"\n── V8 影子对照 (仅观察, 决策以 best/V11 为准) ──")
+            print(f"  最新因子日: V8 {fd_v8} vs best {fd_best} ({sync})")
+            best_row = slow_df.loc[fd_v8].dropna() \
+                if fd_v8 in slow_df.index else None
+            v8_row = v8_df.loc[fd_v8].dropna()
+            if best_row is not None and len(v8_row):
+                bt = best_row.sort_values(ascending=False).head(2)
+                vt = v8_row.sort_values(ascending=False).head(2)
+                fmt = lambda s: "  ".join(
+                    f"{i} {names.get(str(i), '?')} ({v:+.2f})"
+                    for i, v in s.items())
+                print(f"  慢腿候选 Top2 @ {fd_v8}:")
+                print(f"    best: {fmt(bt)}")
+                print(f"    V8  : {fmt(vt)}")
+                overlap = len(set(bt.index) & set(vt.index))
+                print(f"  两源 Top2 重合 {overlap}/2" + (
+                    "" if overlap else " — 分歧较大, 仅供观察, 不改 best 计划"))
+            else:
+                print("  ⚠ best 打分未覆盖该因子日, 跳过候选对比")
+        else:
+            print("\n[V8 影子] 尚无打分 (首次运行 v8_shadow/analysis.py 后生成)")
+    except Exception as e:
+        print(f"[V8 影子] ⚠ 对照不可用: {e}")
+
     with open(STATE_PATH, "w") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
     print(f" 状态已写入 {os.path.basename(STATE_PATH)}")
